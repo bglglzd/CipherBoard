@@ -21,7 +21,7 @@ initial key parameters are EC P-256 with SHA-256/ECDSA and a long-lived local
 certificate:
 
 ```text
-keytool -genkeypair -v -keystore ~/.local/share/cipherboard/signing/cipherboard-release.jks -storetype PKCS12 -alias cipherboard-release -keyalg EC -groupname secp256r1 -sigalg SHA256withECDSA -validity 10000 -dname "CN=CipherBoard Release, OU=Release Signing, O=CipherBoard"
+keytool -genkeypair -v -keystore ~/.local/share/cipherboard/signing/cipherboard-release.jks -storetype PKCS12 -alias cipherboard-release -keyalg EC -groupname secp256r1 -sigalg SHA256withECDSA -validity 36500 -dname "CN=CipherBoard Release, O=CipherBoard"
 ```
 
 Omit `-storepass` and `-keypass` and answer the password prompts. Generate a

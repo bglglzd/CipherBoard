@@ -13,7 +13,7 @@
   <a href="https://github.com/bglglzd/CipherBoard/actions/workflows/security.yml"><img src="https://github.com/bglglzd/CipherBoard/actions/workflows/security.yml/badge.svg" alt="Security checks status"></a>
   <a href="https://github.com/bglglzd/CipherBoard/actions/workflows/codeql.yml"><img src="https://github.com/bglglzd/CipherBoard/actions/workflows/codeql.yml/badge.svg" alt="CodeQL status"></a>
   <a href="https://github.com/bglglzd/CipherBoard/actions/workflows/instrumentation.yml"><img src="https://github.com/bglglzd/CipherBoard/actions/workflows/instrumentation.yml/badge.svg" alt="Android instrumentation status"></a>
-  <a href="https://github.com/bglglzd/CipherBoard/releases/latest"><img src="https://img.shields.io/github/v/release/bglglzd/CipherBoard?display_name=tag&amp;sort=semver" alt="Latest release"></a>
+  <a href="https://github.com/bglglzd/CipherBoard/releases"><img src="https://img.shields.io/github/v/release/bglglzd/CipherBoard?display_name=tag&amp;sort=semver" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue" alt="GPL-3.0-only license"></a>
 </p>
 
