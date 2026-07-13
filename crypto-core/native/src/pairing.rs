@@ -51,6 +51,10 @@ impl PairingOffer {
         self.capabilities
     }
 
+    pub const fn nonce(&self) -> &[u8; PAIRING_NONCE_BYTES] {
+        &self.nonce
+    }
+
     /// Encode the signed offer for display as a QR code.
     pub fn encode_qr(&self) -> Result<String> {
         encode_text(OFFER_PREFIX, &self.encode_binary()?)
@@ -129,10 +133,13 @@ impl PairingOffer {
             &offer.unsigned_bytes()?,
             signature,
         )?;
+        if offer.encode_binary()?.as_slice() != binary {
+            return Err(ErrorCode::InvalidEncoding.into());
+        }
         Ok(offer)
     }
 
-    fn transcript_hash(&self) -> Result<[u8; 32]> {
+    pub fn transcript_hash(&self) -> Result<[u8; 32]> {
         Ok(Sha256::digest(self.encode_binary()?).into())
     }
 }
@@ -160,6 +167,14 @@ impl PairingResponse {
 
     pub const fn capabilities(&self) -> u32 {
         self.capabilities
+    }
+
+    pub const fn nonce(&self) -> &[u8; PAIRING_NONCE_BYTES] {
+        &self.nonce
+    }
+
+    pub const fn offer_hash(&self) -> &[u8; 32] {
+        &self.offer_hash
     }
 
     pub fn encode_qr(&self) -> Result<String> {
@@ -248,7 +263,98 @@ impl PairingResponse {
             &response.unsigned_bytes()?,
             signature,
         )?;
+        if response.encode_binary()?.as_slice() != binary {
+            return Err(ErrorCode::InvalidEncoding.into());
+        }
         Ok(response)
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(u8)]
+pub enum PairingPayloadType {
+    Offer = 1,
+    Response = 2,
+}
+
+/// Authenticated public metadata safe to expose to the pairing UI and vault index.
+pub struct PairingPayloadMetadata {
+    payload_type: PairingPayloadType,
+    pairing_id: [u8; 16],
+    remote_identity: PublicIdentity,
+    nonce: [u8; PAIRING_NONCE_BYTES],
+    capabilities: u32,
+    expires_at: Option<u64>,
+    expired: bool,
+    offer_hash: [u8; 32],
+}
+
+impl PairingPayloadMetadata {
+    pub const fn payload_type(&self) -> PairingPayloadType {
+        self.payload_type
+    }
+
+    pub const fn pairing_id(&self) -> &[u8; 16] {
+        &self.pairing_id
+    }
+
+    pub const fn remote_identity(&self) -> PublicIdentity {
+        self.remote_identity
+    }
+
+    pub fn remote_identity_fingerprint(&self) -> [u8; 32] {
+        self.remote_identity.fingerprint()
+    }
+
+    pub const fn nonce(&self) -> &[u8; PAIRING_NONCE_BYTES] {
+        &self.nonce
+    }
+
+    pub const fn capabilities(&self) -> u32 {
+        self.capabilities
+    }
+
+    pub const fn expires_at(&self) -> Option<u64> {
+        self.expires_at
+    }
+
+    pub const fn is_expired(&self) -> bool {
+        self.expired
+    }
+
+    pub const fn offer_hash(&self) -> &[u8; 32] {
+        &self.offer_hash
+    }
+}
+
+/// Decode and authenticate a public pairing QR without exposing OTK, Olm payload or signature.
+pub fn parse_pairing_payload(text: &str, now_epoch_seconds: u64) -> Result<PairingPayloadMetadata> {
+    if text.starts_with(OFFER_PREFIX) {
+        let offer = PairingOffer::decode_qr(text)?;
+        Ok(PairingPayloadMetadata {
+            payload_type: PairingPayloadType::Offer,
+            pairing_id: *offer.pairing_id(),
+            remote_identity: offer.identity(),
+            nonce: *offer.nonce(),
+            capabilities: offer.capabilities(),
+            expires_at: Some(offer.expires_at()),
+            expired: now_epoch_seconds > offer.expires_at(),
+            offer_hash: offer.transcript_hash()?,
+        })
+    } else if text.starts_with(RESPONSE_PREFIX) {
+        let response = PairingResponse::decode_qr(text)?;
+        Ok(PairingPayloadMetadata {
+            payload_type: PairingPayloadType::Response,
+            pairing_id: *response.pairing_id(),
+            remote_identity: response.identity(),
+            nonce: *response.nonce(),
+            capabilities: response.capabilities(),
+            expires_at: None,
+            expired: false,
+            offer_hash: *response.offer_hash(),
+        })
+    } else {
+        Err(ErrorCode::InvalidInput.into())
     }
 }
 

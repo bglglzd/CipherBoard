@@ -93,6 +93,16 @@ class InputLogicTest {
         assertEquals("hello there ", text)
     }
 
+    @Test fun secureComposerKeyDoesNotCommitComposingText() {
+        setText("hello")
+        input('w')
+        val beforeText = text
+        val beforeComposing = composingText
+        functionalKeyPress(KeyCode.SECURE_COMPOSER)
+        assertEquals(beforeText, text)
+        assertEquals(beforeComposing, composingText)
+    }
+
     @Test fun deleteCombinedText() {
         setText("hello there э́")
         functionalKeyPress(KeyCode.DELETE)

@@ -294,6 +294,7 @@
     <string name="subtype_generic_student">%s (Студенческая)</string>
     <string name="language_switch_key_behavior">Действие клавиши смены языка</string>
     <string name="emoji" tools:keep="@string/emoji">Эмодзи</string>
+    <string name="secure_composer" tools:keep="@string/secure_composer">Безопасный ввод</string>
     <string name="pinned_toolbar_keys">Выбрать закреплённые клавиши панели инструментов</string>
     <string name="quick_pin_toolbar_keys_summary">При этом отключатся остальные функции долгого нажатия для незакреплённых клавиш панели</string>
     <string name="quick_pin_toolbar_keys">Закреплять клавиши панели инструментов при долгом нажатии</string>
@@ -497,6 +498,9 @@
     <string name="spell_check_suggestions">Показывать варианты исправления правописания</string>
     <string name="spell_check_suggestions_summary">Показывать варианты исправлений при выборе слова с красным подчеркиванием. Требуется установить приложение в качестве проверки орфографии по умолчанию.</string>
     <string name="floating" tools:keep="@string/floating">Плавающая клавиатура</string>
+    <string name="secure_composer_title">Безопасный редактор</string>
+    <string name="secure_composer_placeholder">Пока это экран-заглушка безопасного редактора. Здесь будет размещён шифруемый ввод и выбор контакта.</string>
+    <string name="close_secure_composer">Закрыть</string>
     <string name="prefs_key_gap_scale">Масштаб межклавишного интервала</string>
     <string name="toolbar_only_with_hw_keyboard">Показывать панель инструментов только при использовании физической клавиатуры</string>
     <string name="toolbar_only_with_hw_keyboard_summary">Необходимо включить отображение виртуальной клавиатуры в системных настройках</string>

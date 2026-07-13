@@ -1,7 +1,7 @@
 use cipherboard_crypto::{
-    decode_transport_part, CipherAccount, CipherSession, CoreError, ErrorCode, PairingOffer,
-    PairingResponse, PublicIdentity, Result, SecretBytes, TransportMode, MAX_ENCODED_PART_BYTES,
-    MAX_PARTS, OLM_SESSION_VERSION, PROTOCOL_VERSION,
+    decode_transport_part, parse_pairing_payload, CipherAccount, CipherSession, CoreError,
+    ErrorCode, PairingOffer, PairingResponse, PublicIdentity, Result, SecretBytes, TransportMode,
+    MAX_ENCODED_PART_BYTES, MAX_PARTS, OLM_SESSION_VERSION, PROTOCOL_VERSION,
 };
 use minicbor::{Decoder, Encoder};
 use zeroize::Zeroize;
@@ -21,6 +21,7 @@ const OP_COMPLETE_PAIRING: i32 = 4;
 const OP_ENCRYPT: i32 = 5;
 const OP_DECRYPT: i32 = 6;
 const OP_PARSE_ENVELOPE: i32 = 7;
+const OP_PARSE_PAIRING_PAYLOAD: i32 = 8;
 
 /// Invoke a stateless crypto operation through the bounded CBOR wire format.
 pub fn dispatch(operation: i32, request: &[u8]) -> SecretBytes {
@@ -70,6 +71,7 @@ fn dispatch_inner(operation: i32, input: &[u8]) -> Result<SecretBytes> {
         OP_ENCRYPT => encrypt(input),
         OP_DECRYPT => decrypt(input),
         OP_PARSE_ENVELOPE => parse_envelope(input),
+        OP_PARSE_PAIRING_PAYLOAD => parse_pairing(input),
         _ => Err(ErrorCode::InvalidInput.into()),
     }
 }
@@ -134,9 +136,11 @@ fn respond_offer(input: &[u8]) -> Result<SecretBytes> {
     request.finish()?;
     let account = CipherAccount::deserialize_state(account_state)?;
     let offer = PairingOffer::decode_qr(offer_text)?;
-    let remote = offer.identity();
     let prepared = account.respond_to_pairing_offer(&offer, now, capabilities)?;
     let response_qr = prepared.response.encode_qr()?;
+    let remote = prepared.session.remote_identity();
+    let routing_tag = *prepared.session.routing_tag();
+    let remote_fingerprint = remote.fingerprint();
     let session_state = prepared.session.serialize_state()?;
     encode_safety_and_remote(
         &session_state,
@@ -144,6 +148,8 @@ fn respond_offer(input: &[u8]) -> Result<SecretBytes> {
         response_qr.as_bytes(),
         &prepared.safety_code,
         remote,
+        &routing_tag,
+        &remote_fingerprint,
     )
 }
 
@@ -160,13 +166,18 @@ fn complete_pairing(input: &[u8]) -> Result<SecretBytes> {
     let response = PairingResponse::decode_qr(response_text)?;
     let completed = account.complete_pairing(&offer, &response, now)?;
     let account_state = account.serialize_state()?;
+    let remote = completed.session.remote_identity();
+    let routing_tag = *completed.session.routing_tag();
+    let remote_fingerprint = remote.fingerprint();
     let session_state = completed.session.serialize_state()?;
     encode_safety_and_remote(
         &session_state,
         Some(&account_state),
         &[],
         &completed.safety_code,
-        completed.remote_identity,
+        remote,
+        &routing_tag,
+        &remote_fingerprint,
     )
 }
 
@@ -176,11 +187,13 @@ fn encode_safety_and_remote(
     response_qr: &[u8],
     safety: &cipherboard_crypto::SafetyCode,
     remote: PublicIdentity,
+    routing_tag: &[u8; 16],
+    remote_fingerprint: &[u8; 32],
 ) -> Result<SecretBytes> {
     let decimal = safety.decimal_groups();
     let words = safety.word_code();
     encode_payload(|encoder| {
-        encoder.array(if account_state.is_some() { 8 } else { 7 })?;
+        encoder.array(if account_state.is_some() { 10 } else { 9 })?;
         if let Some(state) = account_state.as_ref() {
             encoder.bytes(state.expose())?;
         }
@@ -190,6 +203,8 @@ fn encode_safety_and_remote(
         encoder.bytes(decimal.as_bytes())?;
         encoder.bytes(words.as_bytes())?;
         encode_identity(encoder, remote)?;
+        encoder.bytes(routing_tag)?;
+        encoder.bytes(remote_fingerprint)?;
         Ok(())
     })
 }
@@ -265,6 +280,30 @@ fn parse_envelope(input: &[u8]) -> Result<SecretBytes> {
             u32::try_from(part.payload().len())
                 .map_err(|_| minicbor::encode::Error::message("size"))?,
         )?;
+        Ok(())
+    })
+}
+
+fn parse_pairing(input: &[u8]) -> Result<SecretBytes> {
+    let mut request = Request::new(input, 3)?;
+    request.version()?;
+    let text = request.utf8(MAX_PAIRING_BYTES)?;
+    let now = request.u64()?;
+    request.finish()?;
+    let metadata = parse_pairing_payload(text, now)?;
+    let remote = metadata.remote_identity();
+    let remote_fingerprint = metadata.remote_identity_fingerprint();
+    encode_payload(|encoder| {
+        encoder.array(10)?;
+        encoder.u8(metadata.payload_type() as u8)?;
+        encoder.bytes(metadata.pairing_id())?;
+        encode_identity(encoder, remote)?;
+        encoder.bytes(&remote_fingerprint)?;
+        encoder.bytes(metadata.nonce())?;
+        encoder.u32(metadata.capabilities())?;
+        encoder.u64(metadata.expires_at().unwrap_or(0))?;
+        encoder.u8(u8::from(metadata.is_expired()))?;
+        encoder.bytes(metadata.offer_hash())?;
         Ok(())
     })
 }

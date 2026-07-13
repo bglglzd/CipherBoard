@@ -33,6 +33,17 @@ class NativeBridgeSmokeTest {
             aliceAccount.clear()
             aliceAccount = offer.accountState
             assertTrue(offer.offerQr.decodeToString().startsWith("CBO1:"))
+            val offerMetadata = crypto.parsePairingPayload(offer.offerQr, NOW + 1)
+            assertEquals(PairingPayloadType.OFFER, offerMetadata.type)
+            assertEquals(PairingPayloadStatus.VALID, offerMetadata.status)
+            assertEquals(NOW + 600, offerMetadata.expiresAtEpochSeconds)
+            assertEquals(CAPABILITIES, offerMetadata.capabilities)
+            assertArrayEquals(aliceCreated.fingerprint, offerMetadata.remoteIdentityFingerprint)
+            assertArrayEquals(aliceCreated.identity.curve25519, offerMetadata.remoteIdentity.curve25519)
+            assertEquals(
+                PairingPayloadStatus.EXPIRED,
+                crypto.parsePairingPayload(offer.offerQr, NOW + 601).status,
+            )
 
             val response = crypto.respondToOffer(
                 accountState = bobAccount,
@@ -42,6 +53,14 @@ class NativeBridgeSmokeTest {
             )
             bobSession = response.sessionState
             assertTrue(response.responseQr.decodeToString().startsWith("CBR1:"))
+            assertArrayEquals(offerMetadata.remoteIdentityFingerprint, response.remoteIdentityFingerprint)
+            val responseMetadata = crypto.parsePairingPayload(response.responseQr, NOW + 2)
+            assertEquals(PairingPayloadType.RESPONSE, responseMetadata.type)
+            assertEquals(PairingPayloadStatus.VALID, responseMetadata.status)
+            assertEquals(null, responseMetadata.expiresAtEpochSeconds)
+            assertArrayEquals(offerMetadata.pairingId, responseMetadata.pairingId)
+            assertArrayEquals(offerMetadata.offerHash, responseMetadata.offerHash)
+            assertArrayEquals(bobCreated.fingerprint, responseMetadata.remoteIdentityFingerprint)
 
             val completed = crypto.completePairing(
                 accountState = aliceAccount,
@@ -53,6 +72,8 @@ class NativeBridgeSmokeTest {
             aliceAccount = completed.accountState
             aliceSession = completed.sessionState
             assertArrayEquals(response.safetyCode.hash, completed.safetyCode.hash)
+            assertArrayEquals(response.routingTag, completed.routingTag)
+            assertArrayEquals(responseMetadata.remoteIdentityFingerprint, completed.remoteIdentityFingerprint)
 
             val plaintext = OwnedSecret.takeOwnership("JNI smoke: Привет 👋".encodeToByteArray())
             val encrypted = try {

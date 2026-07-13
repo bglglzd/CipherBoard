@@ -61,18 +61,22 @@ class CipherBoardCrypto {
             writer.finish()
         }
         return invoke(OP_RESPOND_OFFER, request) { payload ->
-            payload.array(7)
+            payload.array(9)
             val session = payload.bytes(MAX_SESSION_STATE)
             try {
                 val responseQr = payload.bytes(MAX_PAIRING)
                 val safety = payload.safetyCode()
                 val remote = payload.identity()
+                val routingTag = payload.bytes(16)
+                val remoteFingerprint = payload.bytes(32)
                 payload.finish()
                 PairingResponseCreated(
                     OwnedSecret.takeOwnership(session),
                     responseQr,
                     safety,
                     remote,
+                    routingTag,
+                    remoteFingerprint,
                 )
             } catch (error: Throwable) {
                 session.fill(0)
@@ -94,19 +98,23 @@ class CipherBoardCrypto {
             writer.finish()
         }
         return invoke(OP_COMPLETE_PAIRING, request) { payload ->
-            payload.array(8)
+            payload.array(10)
             val updatedAccount = payload.bytes(MAX_ACCOUNT_STATE)
             val session = payload.bytes(MAX_SESSION_STATE)
             try {
                 require(payload.bytes(0).isEmpty())
                 val safety = payload.safetyCode()
                 val remote = payload.identity()
+                val routingTag = payload.bytes(16)
+                val remoteFingerprint = payload.bytes(32)
                 payload.finish()
                 PairingCompleted(
                     OwnedSecret.takeOwnership(updatedAccount),
                     OwnedSecret.takeOwnership(session),
                     safety,
                     remote,
+                    routingTag,
+                    remoteFingerprint,
                 )
             } catch (error: Throwable) {
                 updatedAccount.fill(0)
@@ -196,6 +204,40 @@ class CipherBoardCrypto {
         }
     }
 
+    fun parsePairingPayload(
+        qrPayload: ByteArray,
+        nowEpochSeconds: Long,
+    ): PairingPayloadMetadata {
+        require(nowEpochSeconds >= 0)
+        val request = CborWriter().use { writer ->
+            writer.array(3).uint(WIRE_VERSION.toLong()).bytes(qrPayload).uint(nowEpochSeconds).finish()
+        }
+        return invoke(OP_PARSE_PAIRING_PAYLOAD, request) { payload ->
+            payload.array(10)
+            val type = PairingPayloadType.fromWire(payload.uint().toInt())
+            val pairingId = payload.bytes(16)
+            val remote = payload.identity()
+            val remoteFingerprint = payload.bytes(32)
+            val nonce = payload.bytes(32)
+            val capabilities = payload.uint()
+            val expiresAt = payload.uint().let { if (it == 0L) null else it }
+            val expired = payload.uint().also { require(it in 0..1) } == 1L
+            val offerHash = payload.bytes(32)
+            payload.finish()
+            PairingPayloadMetadata(
+                type = type,
+                pairingId = pairingId,
+                remoteIdentity = remote,
+                remoteIdentityFingerprint = remoteFingerprint,
+                nonce = nonce,
+                capabilities = capabilities,
+                expiresAtEpochSeconds = expiresAt,
+                status = if (expired) PairingPayloadStatus.EXPIRED else PairingPayloadStatus.VALID,
+                offerHash = offerHash,
+            )
+        }
+    }
+
     private fun <T> invoke(operation: Int, request: ByteArray, decode: (CborReader) -> T): T {
         val response = try {
             NativeBridge.nativeInvoke(operation, request)
@@ -240,6 +282,7 @@ class CipherBoardCrypto {
         const val OP_ENCRYPT = 5
         const val OP_DECRYPT = 6
         const val OP_PARSE_ENVELOPE = 7
+        const val OP_PARSE_PAIRING_PAYLOAD = 8
 
         const val MAX_ACCOUNT_STATE = 1024 * 1024
         const val MAX_SESSION_STATE = 4 * 1024 * 1024

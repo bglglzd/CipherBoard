@@ -1,7 +1,8 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use cipherboard_crypto::{
-    decode_transport_part, encode_transport_parts, reassemble_transport_parts, CipherAccount,
-    CipherSession, ErrorCode, PairingOffer, PairingResponse, SecretBytes, TransportMode, MAX_PARTS,
+    decode_transport_part, encode_transport_parts, parse_pairing_payload,
+    reassemble_transport_parts, CipherAccount, CipherSession, ErrorCode, PairingOffer,
+    PairingPayloadType, PairingResponse, SecretBytes, TransportMode, MAX_PARTS,
 };
 use minicbor::Encoder;
 use proptest::prelude::*;
@@ -89,6 +90,77 @@ fn pairing_qr_and_bidirectional_first_messages() {
         TransportMode::Universal,
     );
     assert_eq!(decrypt(&mut paired.alice_state, &reply), b"Hello, Alice");
+}
+
+#[test]
+fn authenticated_pairing_metadata_exposes_only_public_ui_fields() {
+    let mut alice = CipherAccount::new();
+    let bob = CipherAccount::new();
+    let offer = alice.create_pairing_offer(NOW, 600, CAPS).expect("offer");
+    let offer_qr = offer.encode_qr().expect("offer QR");
+    let offer_metadata = parse_pairing_payload(&offer_qr, NOW + 1).expect("offer metadata");
+    assert!(offer_metadata.payload_type() == PairingPayloadType::Offer);
+    assert_eq!(offer_metadata.pairing_id(), offer.pairing_id());
+    assert!(offer_metadata.remote_identity() == alice.public_identity());
+    assert_eq!(
+        offer_metadata.remote_identity_fingerprint(),
+        alice.public_identity().fingerprint()
+    );
+    assert_eq!(offer_metadata.nonce(), offer.nonce());
+    assert_eq!(offer_metadata.capabilities(), CAPS);
+    assert_eq!(offer_metadata.expires_at(), Some(NOW + 600));
+    assert!(!offer_metadata.is_expired());
+    assert_eq!(
+        offer_metadata.offer_hash(),
+        &offer.transcript_hash().expect("hash")
+    );
+
+    let expired = parse_pairing_payload(&offer_qr, NOW + 601).expect("expired metadata");
+    assert!(expired.is_expired());
+
+    let prepared = bob
+        .respond_to_pairing_offer(&offer, NOW + 1, u32::MAX)
+        .expect("response");
+    let response_qr = prepared.response.encode_qr().expect("response QR");
+    let response_metadata =
+        parse_pairing_payload(&response_qr, NOW + 2).expect("response metadata");
+    assert!(response_metadata.payload_type() == PairingPayloadType::Response);
+    assert_eq!(response_metadata.pairing_id(), offer.pairing_id());
+    assert!(response_metadata.remote_identity() == bob.public_identity());
+    assert_eq!(
+        response_metadata.remote_identity_fingerprint(),
+        bob.public_identity().fingerprint()
+    );
+    assert_eq!(response_metadata.nonce(), prepared.response.nonce());
+    assert_eq!(response_metadata.capabilities(), CAPS);
+    assert_eq!(response_metadata.expires_at(), None);
+    assert!(!response_metadata.is_expired());
+    assert_eq!(response_metadata.offer_hash(), offer_metadata.offer_hash());
+}
+
+#[test]
+fn pairing_metadata_rejects_tampering_and_noncanonical_cbor() {
+    let mut account = CipherAccount::new();
+    let offer = account.create_pairing_offer(NOW, 60, CAPS).expect("offer");
+    let qr = offer.encode_qr().expect("QR");
+
+    let mut tampered = qr.clone().into_bytes();
+    let last = tampered.last_mut().expect("non-empty QR");
+    *last = if *last == b'A' { b'B' } else { b'A' };
+    let tampered = String::from_utf8(tampered).expect("ASCII");
+    assert!(parse_pairing_payload(&tampered, NOW).is_err());
+
+    let mut binary = URL_SAFE_NO_PAD
+        .decode(qr.strip_prefix("CBO1:").expect("prefix"))
+        .expect("base64");
+    assert_eq!(binary[1], 1);
+    binary[1] = 0x18;
+    binary.insert(2, 1);
+    let noncanonical = format!("CBO1:{}", URL_SAFE_NO_PAD.encode(binary));
+    let error = parse_pairing_payload(&noncanonical, NOW)
+        .err()
+        .expect("noncanonical CBOR");
+    assert_eq!(error.code(), ErrorCode::InvalidEncoding);
 }
 
 #[test]

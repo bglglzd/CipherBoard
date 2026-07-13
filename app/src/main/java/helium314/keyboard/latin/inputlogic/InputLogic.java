@@ -808,6 +808,9 @@ public final class InputLogic {
                 commitTyped(sv, LastComposedWord.NOT_A_SEPARATOR);
                 mLatinIME.launchEmojiSearch();
                 break;
+            case KeyCode.SECURE_COMPOSER:
+                mLatinIME.launchSecureComposer();
+                break;
             case KeyCode.SEND_INTENT_ONE, KeyCode.SEND_INTENT_TWO, KeyCode.SEND_INTENT_THREE:
                 IntentUtils.handleSendIntentKey(mLatinIME, event.getKeyCode());
             case KeyCode.IME_HIDE_UI:

@@ -42,14 +42,69 @@ class PairingResponseCreated(
     val responseQr: ByteArray,
     val safetyCode: SafetyCode,
     val remoteIdentity: PublicIdentity,
-)
+    val routingTag: ByteArray,
+    val remoteIdentityFingerprint: ByteArray,
+) {
+    init {
+        require(routingTag.size == 16)
+        require(remoteIdentityFingerprint.size == 32)
+    }
+}
 
 class PairingCompleted(
     val accountState: OwnedSecret,
     val sessionState: OwnedSecret,
     val safetyCode: SafetyCode,
     val remoteIdentity: PublicIdentity,
-)
+    val routingTag: ByteArray,
+    val remoteIdentityFingerprint: ByteArray,
+) {
+    init {
+        require(routingTag.size == 16)
+        require(remoteIdentityFingerprint.size == 32)
+    }
+}
+
+enum class PairingPayloadType(internal val wireValue: Int) {
+    OFFER(1),
+    RESPONSE(2),
+    ;
+
+    companion object {
+        internal fun fromWire(value: Int): PairingPayloadType = entries.firstOrNull { it.wireValue == value }
+            ?: throw IllegalArgumentException("Unknown pairing payload type")
+    }
+}
+
+enum class PairingPayloadStatus {
+    VALID,
+    EXPIRED,
+}
+
+class PairingPayloadMetadata(
+    val type: PairingPayloadType,
+    val pairingId: ByteArray,
+    val remoteIdentity: PublicIdentity,
+    val remoteIdentityFingerprint: ByteArray,
+    val nonce: ByteArray,
+    val capabilities: Long,
+    val expiresAtEpochSeconds: Long?,
+    val status: PairingPayloadStatus,
+    val offerHash: ByteArray,
+) {
+    init {
+        require(pairingId.size == 16)
+        require(remoteIdentityFingerprint.size == 32)
+        require(nonce.size == 32)
+        require(capabilities in 0..0xffff_ffffL)
+        require(expiresAtEpochSeconds == null || expiresAtEpochSeconds > 0)
+        require(offerHash.size == 32)
+        require(type == PairingPayloadType.OFFER || expiresAtEpochSeconds == null)
+        require(type == PairingPayloadType.OFFER || status == PairingPayloadStatus.VALID)
+    }
+
+    override fun toString(): String = "PairingPayloadMetadata(type=$type,status=$status)"
+}
 
 enum class TransportMode(internal val wireValue: Int) {
     UNIVERSAL(0),
@@ -78,5 +133,36 @@ data class EnvelopeMetadata(
     val payloadBytes: Long,
 )
 
+enum class CryptoErrorCode(val wireValue: Int) {
+    INVALID_INPUT(1),
+    SIZE_LIMIT(2),
+    UNSUPPORTED_VERSION(3),
+    INVALID_ENCODING(4),
+    MISSING_FIELD(5),
+    DUPLICATE_FIELD(6),
+    UNKNOWN_MANDATORY_FIELD(7),
+    INVALID_SIGNATURE(8),
+    EXPIRED_OFFER(9),
+    INVALID_TRANSCRIPT(10),
+    PAIRING_ALREADY_USED(11),
+    CRYPTO_FAILURE(12),
+    WRONG_CONTACT(13),
+    REPLAY(14),
+    MISSING_PART(15),
+    INCONSISTENT_PARTS(16),
+    TOO_MANY_PARTS(17),
+    INVALID_UTF8(18),
+    INVALID_STATE(19),
+    RANDOM_FAILURE(20),
+    UNKNOWN(-1),
+    ;
+
+    companion object {
+        internal fun fromWire(value: Int): CryptoErrorCode = entries.firstOrNull { it.wireValue == value } ?: UNKNOWN
+    }
+}
+
 class CryptoCoreException(val errorCode: Int) :
-    IllegalStateException("CipherBoard crypto error $errorCode")
+    IllegalStateException("CipherBoard crypto error $errorCode") {
+    val reason: CryptoErrorCode = CryptoErrorCode.fromWire(errorCode)
+}

@@ -23,7 +23,8 @@ pub use envelope::{
 };
 pub use error::{CoreError, ErrorCode, Result};
 pub use pairing::{
-    PairingCompletion, PairingOffer, PairingResponse, PreparedPairingResponse, SafetyCode,
+    parse_pairing_payload, PairingCompletion, PairingOffer, PairingPayloadMetadata,
+    PairingPayloadType, PairingResponse, PreparedPairingResponse, SafetyCode,
     MAX_OFFER_TTL_SECONDS,
 };
 pub use secret::SecretBytes;

@@ -96,6 +96,14 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
             </intent-filter>
         </activity>
 
+        <activity android:name=".secure.SecureComposerActivity"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTop"/>
+
         <activity android:name="helium314.keyboard.keyboard.emoji.EmojiSearchActivity" android:exported="false"
             android:theme="@style/TransparentActivityTheme" android:excludeFromRecents="true" android:noHistory="true"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible" android:configChanges="orientation|screenSize"/>

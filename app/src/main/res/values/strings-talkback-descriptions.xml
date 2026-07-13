@@ -45,6 +45,7 @@
     <string name="spoken_description_to_numeric">Numbers</string>
     <!-- Spoken description for the "Settings" keyboard key. -->
     <string name="spoken_description_settings">Settings</string>
+    <string name="spoken_description_secure_composer">Secure composer</string>
     <!-- Spoken description for the "Tab" keyboard key. -->
     <string name="spoken_description_tab">Tab</string>
     <!-- Spoken description for the "Space" keyboard key. -->

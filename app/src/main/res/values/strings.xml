@@ -372,7 +372,11 @@
     <string name="redo" tools:keep="@string/redo">Redo</string>
     <string name="close_history" tools:keep="@string/close_history">Close clipboard history</string>
     <string name="emoji" tools:keep="@string/emoji">Emoji</string>
+    <string name="secure_composer" tools:keep="@string/secure_composer">Secure compose</string>
     <string name="floating" tools:keep="@string/floating">Floating Keyboard</string>
+    <string name="secure_composer_title">Secure Composer</string>
+    <string name="secure_composer_placeholder">Secure composer is currently available as a placeholder screen. It will host the encrypted message editor and contact actions.</string>
+    <string name="close_secure_composer">Close</string>
     <!-- Title of the setting to set clipboard toolbar keys -->
     <string name="clipboard_toolbar_keys">Select clipboard toolbar keys</string>
     <!-- Title of the setting to set pinned toolbar keys -->

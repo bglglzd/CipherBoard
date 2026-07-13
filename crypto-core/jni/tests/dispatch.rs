@@ -65,6 +65,49 @@ fn every_operation_round_trips_alice_and_bob() {
     let offer = decoder.bytes().expect("offer").to_vec();
     assert!(offer.starts_with(b"CBO1:"));
 
+    let offer_metadata = success(
+        8,
+        &request(3, |encoder| {
+            encoder.bytes(&offer).expect("offer");
+            encoder.u64(NOW + 1).expect("now");
+        }),
+    );
+    let mut decoder = Decoder::new(&offer_metadata);
+    assert_eq!(decoder.array().expect("pairing metadata"), Some(10));
+    assert_eq!(decoder.u8().expect("offer type"), 1);
+    let pairing_id = decoder.bytes().expect("pairing ID").to_vec();
+    assert_eq!(pairing_id.len(), 16);
+    assert_eq!(decoder.bytes().expect("remote curve").len(), 32);
+    assert_eq!(decoder.bytes().expect("remote ed").len(), 32);
+    let offer_fingerprint = decoder.bytes().expect("fingerprint").to_vec();
+    assert_eq!(offer_fingerprint.len(), 32);
+    assert_eq!(decoder.bytes().expect("nonce").len(), 32);
+    assert_eq!(decoder.u32().expect("capabilities"), 7);
+    assert_eq!(decoder.u64().expect("expiry"), NOW + 600);
+    assert_eq!(decoder.u8().expect("expired"), 0);
+    let offer_hash = decoder.bytes().expect("offer hash").to_vec();
+    assert_eq!(offer_hash.len(), 32);
+    assert_eq!(decoder.position(), offer_metadata.len());
+
+    let expired_metadata = success(
+        8,
+        &request(3, |encoder| {
+            encoder.bytes(&offer).expect("offer");
+            encoder.u64(NOW + 601).expect("now");
+        }),
+    );
+    let mut decoder = Decoder::new(&expired_metadata);
+    assert_eq!(decoder.array().expect("expired metadata"), Some(10));
+    decoder.u8().expect("type");
+    decoder.bytes().expect("pairing ID");
+    decoder.bytes().expect("curve");
+    decoder.bytes().expect("ed");
+    decoder.bytes().expect("fingerprint");
+    decoder.bytes().expect("nonce");
+    decoder.u32().expect("capabilities");
+    decoder.u64().expect("expiry");
+    assert_eq!(decoder.u8().expect("expired"), 1);
+
     let response_payload = success(
         3,
         &request(5, |encoder| {
@@ -75,7 +118,7 @@ fn every_operation_round_trips_alice_and_bob() {
         }),
     );
     let mut decoder = Decoder::new(&response_payload);
-    assert_eq!(decoder.array().expect("response result"), Some(7));
+    assert_eq!(decoder.array().expect("response result"), Some(9));
     let mut bob_session = decoder.bytes().expect("session").to_vec();
     let response = decoder.bytes().expect("response").to_vec();
     assert!(response.starts_with(b"CBR1:"));
@@ -84,6 +127,33 @@ fn every_operation_round_trips_alice_and_bob() {
     assert!(!decoder.bytes().expect("words").is_empty());
     assert_eq!(decoder.bytes().expect("remote curve").len(), 32);
     assert_eq!(decoder.bytes().expect("remote ed").len(), 32);
+    let bob_routing_tag = decoder.bytes().expect("routing tag").to_vec();
+    assert_eq!(bob_routing_tag.len(), 16);
+    assert_eq!(
+        decoder.bytes().expect("remote fingerprint"),
+        offer_fingerprint
+    );
+
+    let response_metadata = success(
+        8,
+        &request(3, |encoder| {
+            encoder.bytes(&response).expect("response");
+            encoder.u64(NOW + 2).expect("now");
+        }),
+    );
+    let mut decoder = Decoder::new(&response_metadata);
+    assert_eq!(decoder.array().expect("response metadata"), Some(10));
+    assert_eq!(decoder.u8().expect("response type"), 2);
+    assert_eq!(decoder.bytes().expect("pairing ID"), pairing_id);
+    assert_eq!(decoder.bytes().expect("remote curve").len(), 32);
+    assert_eq!(decoder.bytes().expect("remote ed").len(), 32);
+    let response_fingerprint = decoder.bytes().expect("fingerprint").to_vec();
+    assert_eq!(response_fingerprint.len(), 32);
+    assert_eq!(decoder.bytes().expect("nonce").len(), 32);
+    assert_eq!(decoder.u32().expect("capabilities"), 7);
+    assert_eq!(decoder.u64().expect("no expiry"), 0);
+    assert_eq!(decoder.u8().expect("not expired"), 0);
+    assert_eq!(decoder.bytes().expect("offer hash"), offer_hash);
 
     let complete_payload = success(
         4,
@@ -95,7 +165,7 @@ fn every_operation_round_trips_alice_and_bob() {
         }),
     );
     let mut decoder = Decoder::new(&complete_payload);
-    assert_eq!(decoder.array().expect("completion"), Some(8));
+    assert_eq!(decoder.array().expect("completion"), Some(10));
     let _alice_account = decoder.bytes().expect("updated account");
     let mut alice_session = decoder.bytes().expect("session").to_vec();
     assert!(decoder.bytes().expect("empty response").is_empty());
@@ -104,6 +174,11 @@ fn every_operation_round_trips_alice_and_bob() {
     let _words = decoder.bytes().expect("words");
     assert_eq!(decoder.bytes().expect("remote curve").len(), 32);
     assert_eq!(decoder.bytes().expect("remote ed").len(), 32);
+    assert_eq!(decoder.bytes().expect("routing tag"), bob_routing_tag);
+    assert_eq!(
+        decoder.bytes().expect("remote fingerprint"),
+        response_fingerprint
+    );
 
     let plaintext = "JNI: Привет 👋".as_bytes();
     let encrypted_payload = success(
