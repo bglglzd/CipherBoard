@@ -233,6 +233,10 @@ public final class InputLogic {
         }
     }
 
+    public boolean isBatchInputGenerationCurrent(final int generation) {
+        return mInputLogicHandler.isGenerationCurrent(generation);
+    }
+
     /**
      * React to a string input.
      * <p>
@@ -535,7 +539,13 @@ public final class InputLogic {
                     KeyCode.CLIPBOARD_CUT,
                     KeyCode.CLIPBOARD_CLEAR_HISTORY,
                     KeyCode.UNDO,
-                    KeyCode.REDO -> true;
+                    KeyCode.REDO,
+                    KeyCode.SETTINGS,
+                    KeyCode.EMOJI_SEARCH,
+                    KeyCode.SECURE_DECRYPT,
+                    KeyCode.SEND_INTENT_ONE,
+                    KeyCode.SEND_INTENT_TWO,
+                    KeyCode.SEND_INTENT_THREE -> true;
             default -> false;
         };
     }
@@ -750,11 +760,11 @@ public final class InputLogic {
                 // is being handled in {@link KeyboardState#onEvent(Event,int)}.
                 // If disabled, current clipboard content is committed.
                 if (!sv.mClipboardHistoryEnabled) {
-                    paste(mLatinIME.getCurrentInputEditorInfo().packageName);
+                    paste(mLatinIME.getEffectiveEditorInfo().packageName);
                 }
                 break;
             case KeyCode.CLIPBOARD_PASTE:
-                paste(mLatinIME.getCurrentInputEditorInfo().packageName);
+                paste(mLatinIME.getEffectiveEditorInfo().packageName);
                 break;
             case KeyCode.SHIFT_ENTER:
                 // todo: try using sendDownUpKeyEventWithMetaState() and remove the key code maybe
@@ -894,9 +904,18 @@ public final class InputLogic {
                     handleNonFunctionalEvent(event, inputTransaction, handler);
                     return;
                 }
-                // unknown event
-                Log.e(TAG, "unknown event, key code: "+keyCode+", codepoint "+event.getCodePoint()+", meta: "+event.getMetaState());
-                if (DebugFlags.DEBUG_ENABLED)
+                // A code point is user content. Never include it in diagnostics for the
+                // CipherBoard private editor, even when the user enabled HeliBoard debug mode.
+                final boolean detailedDebug = shouldEmitDetailedInputDebug(
+                        DebugFlags.DEBUG_ENABLED,
+                        inputTransaction.getSettingsValues().mInputAttributes.mIsCipherBoardSecureEditor);
+                if (detailedDebug) {
+                    Log.e(TAG, "unknown event, key code: " + keyCode + ", codepoint "
+                            + event.getCodePoint() + ", meta: " + event.getMetaState());
+                } else {
+                    Log.e(TAG, "unknown input event (details redacted)");
+                }
+                if (detailedDebug)
                     throw new RuntimeException("Unknown event");
         }
     }
@@ -1483,7 +1502,7 @@ public final class InputLogic {
     }
 
     void unlearnWord(String word, SettingsValues settingsValues, DictionaryFacilitator.UnlearnEvent event) {
-        if (settingsValues.mIncognitoModeEnabled) return;
+        if (mLatinIME.isEmbeddedSecureComposerActive() || settingsValues.mIncognitoModeEnabled) return;
         NgramContext ngramContext = mConnection.getNgramContextFromNthPreviousWord(settingsValues.mSpacingAndPunctuations, 2);
         long timeStampInSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
         mDictionaryFacilitator.unlearnFromUserHistory(word, ngramContext, timeStampInSeconds, event);
@@ -1674,7 +1693,7 @@ public final class InputLogic {
 
     private void performAdditionToUserHistoryDictionary(final SettingsValues settingsValues,
             final String suggestion, @NonNull final NgramContext ngramContext) {
-        if (settingsValues.mIncognitoModeEnabled) return;
+        if (mLatinIME.isEmbeddedSecureComposerActive() || settingsValues.mIncognitoModeEnabled) return;
         // For addition to user history we want suggestions (even if just for autocorrect) or a gestured word.
         // That's to avoid unintended additions in some sensitive fields, or fields that
         // expect to receive non-words.
@@ -1696,7 +1715,8 @@ public final class InputLogic {
     }
 
     private void addToHistoryIfEmoji(final String text, final SettingsValues settingsValues) {
-        if (mLastComposedWord == LastComposedWord.NOT_A_COMPOSED_WORD // we want a last composed word, also to avoid storing consecutive emojis
+        if (mLatinIME.isEmbeddedSecureComposerActive()
+            || mLastComposedWord == LastComposedWord.NOT_A_COMPOSED_WORD // we want a last composed word, also to avoid storing consecutive emojis
             || mWordComposer.isComposingWord() // emoji will be part of the word in this case, better do nothing
             || !settingsValues.mBigramPredictionEnabled // this is only for next word suggestions, so they need to be enabled
             || settingsValues.mIncognitoModeEnabled
@@ -1918,16 +1938,16 @@ public final class InputLogic {
         final int separatorLength = separatorString.length();
         // TODO: should we check our saved separator against the actual contents of the text view?
         final int deleteLength = cancelLength + separatorLength;
-        if (DebugFlags.DEBUG_ENABLED) {
+        if (shouldEmitDetailedInputDebug(
+                DebugFlags.DEBUG_ENABLED,
+                inputTransaction.getSettingsValues().mInputAttributes.mIsCipherBoardSecureEditor)) {
             if (mWordComposer.isComposingWord()) {
                 throw new RuntimeException("revertCommit, but we are composing a word");
             }
             final CharSequence wordBeforeCursor =
                     mConnection.getTextBeforeCursor(deleteLength, 0).subSequence(0, cancelLength);
             if (!TextUtils.equals(committedWord, wordBeforeCursor)) {
-                throw new RuntimeException("revertCommit check failed: we thought we were "
-                        + "reverting \"" + committedWord
-                        + "\", but before the cursor we found \"" + wordBeforeCursor + "\"");
+                throw new RuntimeException("revertCommit check failed (text redacted)");
             }
         }
         mConnection.deleteTextBeforeCursor(deleteLength);
@@ -2045,7 +2065,7 @@ public final class InputLogic {
      * @return the editor info for the current editor
      */
     private EditorInfo getCurrentInputEditorInfo() {
-        return mLatinIME.getCurrentInputEditorInfo();
+        return mLatinIME.getEffectiveEditorInfo();
     }
 
     /**
@@ -2416,7 +2436,10 @@ public final class InputLogic {
     private void commitChosenWord(final SettingsValues settingsValues, final String chosenWord,
             final int commitType, final String separatorString) {
         long startTimeMillis = 0;
-        if (DebugFlags.DEBUG_ENABLED) {
+        final boolean detailedDebug = shouldEmitDetailedInputDebug(
+                DebugFlags.DEBUG_ENABLED,
+                settingsValues.mInputAttributes.mIsCipherBoardSecureEditor);
+        if (detailedDebug) {
             startTimeMillis = SystemClock.elapsedRealtime();
             Log.d(TAG, "commitChosenWord() : [" + chosenWord + "]");
         }
@@ -2424,7 +2447,7 @@ public final class InputLogic {
         // can't find any drawback (performance, neither when setting nor when reading)
         final CharSequence chosenWordWithSuggestions = getTextWithSuggestionSpan(mLatinIME, chosenWord,
                 mSuggestedWords, getDictionaryFacilitatorLocale());
-        if (DebugFlags.DEBUG_ENABLED) {
+        if (detailedDebug) {
             long runTimeMillis = SystemClock.elapsedRealtime() - startTimeMillis;
             Log.d(TAG, "commitChosenWord() : " + runTimeMillis + " ms to run "
                     + "SuggestionSpanUtils.getTextWithSuggestionSpan()");
@@ -2435,7 +2458,7 @@ public final class InputLogic {
         // previous word.
         final NgramContext ngramContext = mConnection.getNgramContextFromNthPreviousWord(
                 settingsValues.mSpacingAndPunctuations, mWordComposer.isComposingWord() ? 2 : 1);
-        if (DebugFlags.DEBUG_ENABLED) {
+        if (detailedDebug) {
             long runTimeMillis = SystemClock.elapsedRealtime() - startTimeMillis;
             Log.d(TAG, "commitChosenWord() : " + runTimeMillis + " ms to run "
                     + "Connection.getNgramContextFromNthPreviousWord()");
@@ -2443,7 +2466,7 @@ public final class InputLogic {
             startTimeMillis = SystemClock.elapsedRealtime();
         }
         mConnection.commitText(chosenWordWithSuggestions, 1);
-        if (DebugFlags.DEBUG_ENABLED) {
+        if (detailedDebug) {
             long runTimeMillis = SystemClock.elapsedRealtime() - startTimeMillis;
             Log.d(TAG, "commitChosenWord() : " + runTimeMillis + " ms to run "
                     + "Connection.commitText");
@@ -2451,7 +2474,7 @@ public final class InputLogic {
         }
         // Add the word to the user history dictionary
         performAdditionToUserHistoryDictionary(settingsValues, chosenWord, ngramContext);
-        if (DebugFlags.DEBUG_ENABLED) {
+        if (detailedDebug) {
             long runTimeMillis = SystemClock.elapsedRealtime() - startTimeMillis;
             Log.d(TAG, "commitChosenWord() : " + runTimeMillis + " ms to run "
                     + "performAdditionToUserHistoryDictionary()");
@@ -2462,11 +2485,16 @@ public final class InputLogic {
         // LastComposedWord#didCommitTypedWord by string equality of the remembered
         // strings.
         mLastComposedWord = mWordComposer.commitWord(commitType, chosenWord, separatorString, ngramContext);
-        if (DebugFlags.DEBUG_ENABLED) {
+        if (detailedDebug) {
             long runTimeMillis = SystemClock.elapsedRealtime() - startTimeMillis;
             Log.d(TAG, "commitChosenWord() : " + runTimeMillis + " ms to run "
                     + "WordComposer.commitWord()");
         }
+    }
+
+    static boolean shouldEmitDetailedInputDebug(
+            final boolean debugEnabled, final boolean cipherBoardSecureEditor) {
+        return debugEnabled && !cipherBoardSecureEditor;
     }
 
     /**
@@ -2674,7 +2702,7 @@ public final class InputLogic {
 
     private void setInlineEmojiSearchAction(boolean on) {
         if (on != isInlineEmojiSearchAction()) {
-            KeyboardSwitcher.getInstance().loadKeyboard(mLatinIME.getCurrentInputEditorInfo(), Settings.getValues(),
+            KeyboardSwitcher.getInstance().loadKeyboard(mLatinIME.getEffectiveEditorInfo(), Settings.getValues(),
                             mLatinIME.getCurrentAutoCapsState(), mLatinIME.getCurrentRecapitalizeState(),
                             on? new KeyboardLayoutSet.InternalAction(KeyCode.INLINE_EMOJI_SEARCH_DONE,"!icon/close_history") : null);
         }

@@ -23,7 +23,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -32,6 +31,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import helium314.keyboard.latin.R
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -188,6 +190,7 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
     }
 
     private fun configureSecureWindow() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         window.decorView.apply {
@@ -203,25 +206,24 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
 
     private fun buildContentView() {
         val horizontalPadding = dp(20)
+        val topPadding = dp(18)
+        val bottomPadding = dp(14)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(horizontalPadding, dp(18), horizontalPadding, dp(14))
+            setPadding(horizontalPadding, topPadding, horizontalPadding, bottomPadding)
             filterTouchesWhenObscured = true
             isSaveEnabled = false
-            setOnApplyWindowInsetsListener { view, insets ->
-                val top: Int
-                val bottom: Int
-                if (Build.VERSION.SDK_INT >= 30) {
-                    val systemBars = insets.getInsets(WindowInsets.Type.systemBars())
-                    top = systemBars.top
-                    bottom = systemBars.bottom
-                } else {
-                    @Suppress("DEPRECATION")
-                    top = insets.systemWindowInsetTop
-                    @Suppress("DEPRECATION")
-                    bottom = insets.systemWindowInsetBottom
-                }
-                view.setPadding(horizontalPadding, dp(18) + top, horizontalPadding, dp(14) + bottom)
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val safeDrawing = insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or
+                        WindowInsetsCompat.Type.displayCutout(),
+                )
+                view.setPadding(
+                    horizontalPadding + safeDrawing.left,
+                    topPadding + safeDrawing.top,
+                    horizontalPadding + safeDrawing.right,
+                    bottomPadding + safeDrawing.bottom,
+                )
                 insets
             }
         }

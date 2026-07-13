@@ -170,6 +170,7 @@ class InputLogicTest {
         assertTrue(!settingsValues.mSuggestionsEnabled)
         assertTrue(!settingsValues.mAutoCorrectEnabled)
         assertTrue(!settingsValues.mKeyPreviewPopupOn)
+        assertTrue(!settingsValues.mGestureInputEnabled)
         assertTrue(!settingsValues.mGestureFloatingPreviewTextEnabled)
         assertTrue(!settingsValues.mSlidingKeyInputPreviewEnabled)
         assertTrue(

@@ -429,7 +429,12 @@ class SecureKeyboardRuntime private constructor(
                         } finally {
                             pendingBytes.fill(0)
                         }
-                        PreparedOutbound(contactId, encrypted.messageId, encrypted.parts.toList())
+                        PreparedOutbound(
+                            contactId,
+                            encrypted.messageId,
+                            encrypted.parts.toList(),
+                            markCommitUncertain = ::markOutboundCommitUncertain,
+                        )
                     } finally {
                         encrypted.sessionState.close()
                         encrypted.messageId.fill(0)
@@ -452,7 +457,12 @@ class SecureKeyboardRuntime private constructor(
         recordStore.completeOutbound(operationId)
     }
 
-    /** Returns ciphertext-only operations that are safe to retry after a process crash. */
+    /** Must succeed before any ciphertext is handed to an external InputConnection. */
+    fun markOutboundCommitUncertain(operationId: ByteArray): Boolean = operationLock.withLock {
+        recordStore.markOutboundCommitUncertain(operationId)
+    }
+
+    /** Returns ciphertext-only operations, including uncertain records that must not be retried. */
     fun pendingOutbound(): List<PreparedOutbound> = operationLock.withLock {
         recordStore.listPendingOutbound().map { pending ->
             try {
@@ -460,6 +470,8 @@ class SecureKeyboardRuntime private constructor(
                     pending.contactId,
                     pending.operationId,
                     PendingCiphertextCodec.decode(pending.ciphertext),
+                    pending.state,
+                    ::markOutboundCommitUncertain,
                 )
             } catch (error: IllegalArgumentException) {
                 throw SecureRuntimeException(SecureRuntimeError.CORRUPT_STATE, error)

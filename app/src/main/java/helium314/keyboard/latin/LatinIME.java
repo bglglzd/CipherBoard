@@ -31,6 +31,8 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputBinding;
+import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InlineSuggestion;
 import android.view.inputmethod.InlineSuggestionsRequest;
 import android.view.inputmethod.InlineSuggestionsResponse;
@@ -47,11 +49,14 @@ import helium314.keyboard.keyboard.KeyboardMode;
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
 import helium314.keyboard.keyboard.emoji.EmojiSearchActivity;
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet;
-import helium314.keyboard.secure.SecureComposerActivity;
+import helium314.keyboard.secure.CiphertextDeliveryResult;
+import helium314.keyboard.secure.EmbeddedSecureComposerController;
 import helium314.keyboard.secure.SecureImeBridge;
+import helium314.keyboard.secure.SecureVaultUnlockActivity;
 import helium314.keyboard.secure.decrypt.CiphertextClipboardActivity;
 import helium314.keyboard.secure.decrypt.CiphertextSelection;
 import helium314.keyboard.secure.decrypt.SecureMessageViewerActivity;
+import helium314.keyboard.secure.home.CipherBoardHomeActivity;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
 import helium314.keyboard.latin.common.InsetsOutlineProvider;
 import helium314.keyboard.dictionarypack.DictionaryPackConstants;
@@ -91,6 +96,7 @@ import helium314.keyboard.latin.utils.StatsUtilsManager;
 import helium314.keyboard.latin.utils.SubtypeLocaleUtils;
 import helium314.keyboard.latin.utils.SubtypeSettings;
 import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime;
+import org.cipherboard.securekeyboard.runtime.PreparedOutbound;
 import helium314.keyboard.latin.utils.SubtypeState;
 import helium314.keyboard.latin.utils.ToolbarMode;
 import helium314.keyboard.settings.SettingsActivity2;
@@ -145,6 +151,7 @@ public class LatinIME extends InputMethodService implements
     private View mInputView;
     private InsetsOutlineProvider mInsetsUpdater;
     private SuggestionStripView mSuggestionStripView;
+    private EmbeddedSecureComposerController mEmbeddedSecureComposer;
 
     private RichInputMethodManager mRichImm;
     final KeyboardSwitcher mKeyboardSwitcher;
@@ -164,6 +171,16 @@ public class LatinIME extends InputMethodService implements
 
     private final BroadcastReceiver mDictionaryDumpBroadcastReceiver =
             new DictionaryDumpBroadcastReceiver(this);
+
+    private final BroadcastReceiver mSecureScreenOffReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(final Context context, final Intent intent) {
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())
+                    && mEmbeddedSecureComposer != null) {
+                mEmbeddedSecureComposer.onScreenOff();
+            }
+        }
+    };
 
     FoldableUtils.FoldableObserver foldableObserver;
 
@@ -211,7 +228,7 @@ public class LatinIME extends InputMethodService implements
         private static final int ARG1_NOT_GESTURE_INPUT = 0;
         private static final int ARG1_DISMISS_GESTURE_FLOATING_PREVIEW_TEXT = 1;
         private static final int ARG1_SHOW_GESTURE_FLOATING_PREVIEW_TEXT = 2;
-        private static final int ARG2_UNUSED = 0;
+        private static final int ARG2_NO_GESTURE_GENERATION = -1;
         private static final int ARG1_TRUE = 1;
 
         private int mDelayInMillisecondsToUpdateSuggestions;
@@ -250,6 +267,10 @@ public class LatinIME extends InputMethodService implements
                             latinIme.getCurrentRecapitalizeState());
                     break;
                 case MSG_SHOW_GESTURE_PREVIEW_AND_SET_SUGGESTIONS:
+                    if (msg.arg2 != ARG2_NO_GESTURE_GENERATION
+                            && !latinIme.mInputLogic.isBatchInputGenerationCurrent(msg.arg2)) {
+                        break;
+                    }
                     if (msg.arg1 == ARG1_NOT_GESTURE_INPUT) {
                         final SuggestedWords suggestedWords = (SuggestedWords) msg.obj;
                         latinIme.setSuggestedWords(suggestedWords);
@@ -270,6 +291,7 @@ public class LatinIME extends InputMethodService implements
                     latinIme.resetDictionaryFacilitatorIfNecessary();
                     break;
                 case MSG_UPDATE_TAIL_BATCH_INPUT_COMPLETED:
+                    if (!latinIme.mInputLogic.isBatchInputGenerationCurrent(msg.arg2)) break;
                     final SuggestedWords suggestedWords = (SuggestedWords) msg.obj;
                     latinIme.mInputLogic.onUpdateTailBatchInputCompleted(
                             latinIme.mSettings.getCurrent(),
@@ -390,23 +412,38 @@ public class LatinIME extends InputMethodService implements
         }
 
         public void showGesturePreviewAndSetSuggestions(final SuggestedWords suggestedWords,
-                                                        final boolean dismissGestureFloatingPreviewText) {
+                                                         final boolean dismissGestureFloatingPreviewText) {
+            showGesturePreviewAndSetSuggestions(
+                    suggestedWords, dismissGestureFloatingPreviewText,
+                    ARG2_NO_GESTURE_GENERATION);
+        }
+
+        public void showGesturePreviewAndSetSuggestions(final SuggestedWords suggestedWords,
+                final boolean dismissGestureFloatingPreviewText, final int generation) {
             removeMessages(MSG_SHOW_GESTURE_PREVIEW_AND_SET_SUGGESTIONS);
             final int arg1 = dismissGestureFloatingPreviewText
                     ? ARG1_DISMISS_GESTURE_FLOATING_PREVIEW_TEXT
                     : ARG1_SHOW_GESTURE_FLOATING_PREVIEW_TEXT;
             obtainMessage(MSG_SHOW_GESTURE_PREVIEW_AND_SET_SUGGESTIONS, arg1,
-                    ARG2_UNUSED, suggestedWords).sendToTarget();
+                    generation, suggestedWords).sendToTarget();
         }
 
         public void setSuggestions(final SuggestedWords suggestedWords) {
             removeMessages(MSG_SHOW_GESTURE_PREVIEW_AND_SET_SUGGESTIONS);
             obtainMessage(MSG_SHOW_GESTURE_PREVIEW_AND_SET_SUGGESTIONS,
-                    ARG1_NOT_GESTURE_INPUT, ARG2_UNUSED, suggestedWords).sendToTarget();
+                    ARG1_NOT_GESTURE_INPUT, ARG2_NO_GESTURE_GENERATION,
+                    suggestedWords).sendToTarget();
         }
 
-        public void showTailBatchInputResult(final SuggestedWords suggestedWords) {
-            obtainMessage(MSG_UPDATE_TAIL_BATCH_INPUT_COMPLETED, suggestedWords).sendToTarget();
+        public void showTailBatchInputResult(
+                final SuggestedWords suggestedWords, final int generation) {
+            obtainMessage(MSG_UPDATE_TAIL_BATCH_INPUT_COMPLETED,
+                    0, generation, suggestedWords).sendToTarget();
+        }
+
+        public void cancelGestureMessages() {
+            removeMessages(MSG_SHOW_GESTURE_PREVIEW_AND_SET_SUGGESTIONS);
+            removeMessages(MSG_UPDATE_TAIL_BATCH_INPUT_COMPLETED);
         }
 
         public void postSwitchLanguage(final InputMethodSubtype subtype) {
@@ -552,6 +589,7 @@ public class LatinIME extends InputMethodService implements
         mDisplayContext = KtxKt.getDisplayContext(this);
         KeyboardSwitcher.init(this);
         super.onCreate();
+        mEmbeddedSecureComposer = new EmbeddedSecureComposerController(this);
 
         loadSettings();
         mClipboardHistoryManager.onCreate();
@@ -585,12 +623,15 @@ public class LatinIME extends InputMethodService implements
             restartAfterUnlockFilter.addAction(Intent.ACTION_USER_UNLOCKED);
         registerReceiver(mRestartAfterDeviceUnlockReceiver, restartAfterUnlockFilter);
 
+        ContextCompat.registerReceiver(this, mSecureScreenOffReceiver,
+                new IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED);
+
         StatsUtils.onCreate(mSettings.getCurrent(), mRichImm);
     }
 
     private void loadSettings() {
         final Locale locale = mRichImm.getCurrentSubtypeLocale();
-        final EditorInfo editorInfo = getCurrentInputEditorInfo();
+        final EditorInfo editorInfo = getEffectiveEditorInfo();
         final InputAttributes inputAttributes = new InputAttributes(
                 editorInfo, isFullscreenMode(), getPackageName());
         mSettings.loadSettings(this, locale, inputAttributes);
@@ -610,11 +651,20 @@ public class LatinIME extends InputMethodService implements
 
     private void refreshPersonalizationDictionarySession(
             final SettingsValues currentSettingsValues) {
-        if (!currentSettingsValues.mUsePersonalizedDicts) {
+        if (shouldClearPersonalizationStorage(
+                currentSettingsValues.mUsePersonalizedDicts,
+                currentSettingsValues.mInputAttributes.mIsCipherBoardSecureEditor)) {
             // Remove user history dictionaries.
             PersonalizationHelper.removeAllUserHistoryDictionaries(this);
             mDictionaryFacilitator.clearUserHistoryDictionary(this);
         }
+    }
+
+    static boolean shouldClearPersonalizationStorage(
+            final boolean usePersonalizedDictionaries, final boolean secureEditor) {
+        // A private editor disables learning only for this session. Deleting the user's normal
+        // keyboard history here would be both surprising and irreversible.
+        return !usePersonalizedDictionaries && !secureEditor;
     }
 
     // Note that this method is called from a non-UI thread.
@@ -696,6 +746,7 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onDestroy() {
+        closeEmbeddedSecureComposer(false);
         SecureImeBridge.clear();
         mClipboardHistoryManager.onDestroy();
         mDictionaryFacilitator.closeDictionaries();
@@ -706,6 +757,7 @@ public class LatinIME extends InputMethodService implements
         unregisterReceiver(mDictionaryPackInstallReceiver);
         unregisterReceiver(mDictionaryDumpBroadcastReceiver);
         unregisterReceiver(mRestartAfterDeviceUnlockReceiver);
+        unregisterReceiver(mSecureScreenOffReceiver);
         mStatsUtilsManager.onDestroy(this /* context */);
         super.onDestroy();
         mHandler.removeCallbacksAndMessages(null);
@@ -757,7 +809,34 @@ public class LatinIME extends InputMethodService implements
     @Override
     public View onCreateInputView() {
         StatsUtils.onCreateInputView();
-        return mKeyboardSwitcher.onCreateInputView(KtxKt.getDisplayContext(this), mIsHardwareAcceleratedDrawingEnabled);
+        final View inputView = mKeyboardSwitcher.onCreateInputView(
+                KtxKt.getDisplayContext(this), mIsHardwareAcceleratedDrawingEnabled);
+        if (mEmbeddedSecureComposer != null) {
+            mEmbeddedSecureComposer.attach(inputView);
+        }
+        return inputView;
+    }
+
+    /** Connection used by HeliBoard's composing engine, never by ciphertext delivery. */
+    public InputConnection getInputConnectionForInputLogic() {
+        if (mEmbeddedSecureComposer != null) {
+            final InputConnection local = mEmbeddedSecureComposer.localInputConnection();
+            if (local != null) return local;
+        }
+        return getCurrentInputConnection();
+    }
+
+    /** Editor contract seen by HeliBoard while the embedded private draft owns input. */
+    public EditorInfo getEffectiveEditorInfo() {
+        if (mEmbeddedSecureComposer != null) {
+            final EditorInfo secure = mEmbeddedSecureComposer.effectiveEditorInfo();
+            if (secure != null) return secure;
+        }
+        return getCurrentInputEditorInfo();
+    }
+
+    public boolean isEmbeddedSecureComposerActive() {
+        return mEmbeddedSecureComposer != null && mEmbeddedSecureComposer.isActive();
     }
 
     @Override
@@ -841,7 +920,20 @@ public class LatinIME extends InputMethodService implements
 
     private void onStartInputInternal(final EditorInfo editorInfo, final boolean restarting) {
         super.onStartInput(editorInfo, restarting);
-        setCipherBoardImeWindowSecure(InputAttributes.isCipherBoardSecureEditor(editorInfo));
+        if (isEmbeddedSecureComposerActive()) {
+            final InputBinding binding = getCurrentInputBinding();
+            final int uid = binding == null ? -1 : binding.getUid();
+            final android.os.IBinder connectionToken =
+                    binding == null ? null : binding.getConnectionToken();
+            final boolean returnedFromUnlock =
+                    mEmbeddedSecureComposer.consumeUnlockReturn(editorInfo, uid, connectionToken);
+            if (!returnedFromUnlock
+                    && !mEmbeddedSecureComposer.acceptsHost(editorInfo, uid, connectionToken)) {
+                closeEmbeddedSecureComposer(false);
+            }
+        }
+        setCipherBoardImeWindowSecure(isEmbeddedSecureComposerActive()
+                || InputAttributes.isCipherBoardSecureEditor(editorInfo));
 
         final RichInputMethodSubtype subtypeForApp = editorInfo == null
             ? null :
@@ -852,15 +944,40 @@ public class LatinIME extends InputMethodService implements
             // found a better subtype using hint locales and saved-per-app subtype, that we should switch to.
             mHandler.postSwitchLanguage(subtypeForLocales);
         }
-        deliverPendingCiphertext(editorInfo);
+        if (!isEmbeddedSecureComposerActive()) deliverPendingCiphertext(editorInfo);
     }
 
     void onStartInputViewInternal(final EditorInfo editorInfo, final boolean restarting) {
         super.onStartInputView(editorInfo, restarting);
 
+        if (isEmbeddedSecureComposerActive()) {
+            final InputBinding binding = getCurrentInputBinding();
+            final int uid = binding == null ? -1 : binding.getUid();
+            final android.os.IBinder connectionToken =
+                    binding == null ? null : binding.getConnectionToken();
+            final boolean returnedFromUnlock =
+                    mEmbeddedSecureComposer.consumeUnlockReturn(editorInfo, uid, connectionToken);
+            if (!returnedFromUnlock
+                    && !mEmbeddedSecureComposer.acceptsHost(editorInfo, uid, connectionToken)) {
+                closeEmbeddedSecureComposer(false);
+            }
+        }
+        if (isEmbeddedSecureComposerActive()) {
+            mEmbeddedSecureComposer.refreshAfterInputStarted();
+        }
+
         // onStartInput can run before the restored host connection is ready; this is a safe retry
         // through the same one-shot editor-scoped gate.
-        deliverPendingCiphertext(editorInfo);
+        if (!isEmbeddedSecureComposerActive()) deliverPendingCiphertext(editorInfo);
+
+        final EditorInfo inputEditorInfo = getEffectiveEditorInfo();
+        if (inputEditorInfo == null) {
+            Log.e(TAG, "Null EditorInfo in onStartInputView()");
+            if (DebugFlags.DEBUG_ENABLED) {
+                throw new NullPointerException("Null EditorInfo in onStartInputView()");
+            }
+            return;
+        }
 
         mDictionaryFacilitator.onStartInput();
         // Switch to the null consumer to handle cases leading to early exit below, for which we
@@ -872,7 +989,7 @@ public class LatinIME extends InputMethodService implements
         // If we are starting input in a different text field from before, we'll have to reload
         // settings, so currentSettingsValues can't be final.
         SettingsValues currentSettingsValues = mSettings.getCurrent();
-        boolean inputTypeChanged = !currentSettingsValues.isSameInputType(editorInfo);
+        boolean inputTypeChanged = !currentSettingsValues.isSameInputType(inputEditorInfo);
         boolean isDifferentTextField = !restarting || inputTypeChanged;
 
         // we want to reload the settings before calling updateKeyboardTheme, because updateKeyboardTheme reads SettingsValues.mToolbarMode
@@ -885,19 +1002,13 @@ public class LatinIME extends InputMethodService implements
         switcher.updateKeyboardTheme(mDisplayContext);
         MainKeyboardView mainKeyboardView = switcher.getMainKeyboardView();
         currentSettingsValues = mSettings.getCurrent(); // settingsValues may have been reloaded
-        setCipherBoardImeWindowSecure(
-                currentSettingsValues.mInputAttributes.mIsCipherBoardSecureEditor);
+        setCipherBoardImeWindowSecure(isEmbeddedSecureComposerActive()
+                || currentSettingsValues.mInputAttributes.mIsCipherBoardSecureEditor);
 
-        if (editorInfo == null) {
-            Log.e(TAG, "Null EditorInfo in onStartInputView()");
-            if (DebugFlags.DEBUG_ENABLED) {
-                throw new NullPointerException("Null EditorInfo in onStartInputView()");
-            }
-            return;
-        }
-        Log.i(TAG, (restarting ? "Res" : "S") +"tarting input. Cursor position = " + editorInfo.initialSelStart + "," + editorInfo.initialSelEnd);
+        Log.i(TAG, (restarting ? "Res" : "S") +"tarting input. Cursor position = "
+                + inputEditorInfo.initialSelStart + "," + inputEditorInfo.initialSelEnd);
         if (DebugFlags.DEBUG_ENABLED) {
-            EditorInfoCompatUtils.INSTANCE.debugLog(editorInfo, TAG);
+            EditorInfoCompatUtils.INSTANCE.debugLog(inputEditorInfo, TAG);
         }
 
         // In landscape mode, this method gets called without the input view being created.
@@ -906,7 +1017,7 @@ public class LatinIME extends InputMethodService implements
         }
 
         // Update to a gesture consumer with the current editor and IME state.
-        mGestureConsumer = GestureConsumer.newInstance(editorInfo,
+        mGestureConsumer = GestureConsumer.newInstance(inputEditorInfo,
                 mInputLogic.getPrivateCommandPerformer(),
                 mRichImm.getCurrentSubtypeLocale(),
                 switcher.getKeyboard());
@@ -914,10 +1025,10 @@ public class LatinIME extends InputMethodService implements
         // Forward this event to the accessibility utilities, if enabled.
         final AccessibilityUtils accessUtils = AccessibilityUtils.Companion.getInstance();
         if (accessUtils.isTouchExplorationEnabled()) {
-            accessUtils.onStartInputViewInternal(mainKeyboardView, editorInfo, restarting);
+            accessUtils.onStartInputViewInternal(mainKeyboardView, inputEditorInfo, restarting);
         }
 
-        StatsUtils.onStartInputView(editorInfo.inputType,
+        StatsUtils.onStartInputView(inputEditorInfo.inputType,
                 Settings.getValues().mDisplayOrientation,
                 !isDifferentTextField);
 
@@ -945,7 +1056,7 @@ public class LatinIME extends InputMethodService implements
 
             // TODO[IL]: Can the following be moved to InputLogic#startInput?
             if (!mInputLogic.mConnection.resetCachesUponCursorMoveAndReturnSuccess(
-                    editorInfo.initialSelStart, editorInfo.initialSelEnd,
+                    inputEditorInfo.initialSelStart, inputEditorInfo.initialSelEnd,
                     false /* shouldFinishComposition */)) {
                 // Sometimes, while rotating, for some reason the framework tells the app we are not
                 // connected to it and that means we can't refresh the cache. In this case, schedule
@@ -1012,6 +1123,22 @@ public class LatinIME extends InputMethodService implements
     @Override
     public void onWindowShown() {
         super.onWindowShown();
+        if (isEmbeddedSecureComposerActive()) {
+            final InputBinding binding = getCurrentInputBinding();
+            final EditorInfo editorInfo = getCurrentInputEditorInfo();
+            final int uid = binding == null ? -1 : binding.getUid();
+            final android.os.IBinder connectionToken =
+                    binding == null ? null : binding.getConnectionToken();
+            final boolean returnedFromUnlock = mEmbeddedSecureComposer.consumeUnlockReturn(
+                    editorInfo, uid, connectionToken);
+            if (!returnedFromUnlock
+                    && !mEmbeddedSecureComposer.acceptsHost(editorInfo, uid, connectionToken)) {
+                closeEmbeddedSecureComposer(false);
+                return;
+            }
+            mEmbeddedSecureComposer.refreshAfterInputStarted();
+            setCipherBoardImeWindowSecure(true);
+        }
         if (isInputViewShown()) {
             if (mInputView != null && Settings.getValues().mIsFloatingKeyboard)
                 FloatingKeyboardUtils.setFloating(mInputView);
@@ -1024,7 +1151,10 @@ public class LatinIME extends InputMethodService implements
     public void onWindowHidden() {
         super.onWindowHidden();
         Log.i(TAG, "onWindowHidden");
-        if (isCipherBoardSecureEditor()) {
+        if (isEmbeddedSecureComposerActive()
+                && !mEmbeddedSecureComposer.isAwaitingUnlock()) {
+            closeEmbeddedSecureComposer(false);
+        } else if (!isEmbeddedSecureComposerActive() && isCipherBoardSecureEditor()) {
             mInputLogic.finishInput(true);
             setNeutralSuggestionStrip();
             setCipherBoardImeWindowSecure(false);
@@ -1037,12 +1167,16 @@ public class LatinIME extends InputMethodService implements
     }
 
     void onFinishInputInternal() {
-        if (isCipherBoardSecureEditor()) {
+        final boolean preserveEmbedded = isEmbeddedSecureComposerActive()
+                && mEmbeddedSecureComposer.isAwaitingUnlock();
+        if (isEmbeddedSecureComposerActive() && !preserveEmbedded) {
+            closeEmbeddedSecureComposer(false);
+        } else if (!isEmbeddedSecureComposerActive() && isCipherBoardSecureEditor()) {
             mInputLogic.finishInput(true);
             setNeutralSuggestionStrip();
         }
         super.onFinishInput();
-        setCipherBoardImeWindowSecure(false);
+        setCipherBoardImeWindowSecure(preserveEmbedded);
         Log.i(TAG, "onFinishInput");
 
         mDictionaryFacilitator.onFinishInput();
@@ -1055,6 +1189,10 @@ public class LatinIME extends InputMethodService implements
     void onFinishInputViewInternal(final boolean finishingInput) {
         super.onFinishInputView(finishingInput);
         Log.i(TAG, "onFinishInputView");
+        if (isEmbeddedSecureComposerActive()) {
+            if (mEmbeddedSecureComposer.isAwaitingUnlock() || !finishingInput) return;
+            closeEmbeddedSecureComposer(false);
+        }
         cleanupInternalStateForFinishInput();
     }
 
@@ -1085,6 +1223,7 @@ public class LatinIME extends InputMethodService implements
                     + ", nss=" + newSelStart + ", nse=" + newSelEnd
                     + ", cs=" + composingSpanStart + ", ce=" + composingSpanEnd);
         }
+        if (isEmbeddedSecureComposerActive()) return;
 
         // This call happens whether our view is displayed or not, but if it's not then we should
         // not attempt recorrection. This is true even with a hardware keyboard connected: if the
@@ -1114,6 +1253,7 @@ public class LatinIME extends InputMethodService implements
      */
     @Override
     public void onExtractedTextClicked() {
+        if (isEmbeddedSecureComposerActive()) return;
         if (mSettings.getCurrent().needsToLookupSuggestions()) {
             return;
         }
@@ -1132,6 +1272,7 @@ public class LatinIME extends InputMethodService implements
      */
     @Override
     public void onExtractedCursorMovement(final int dx, final int dy) {
+        if (isEmbeddedSecureComposerActive()) return;
         if (mSettings.getCurrent().needsToLookupSuggestions()) {
             return;
         }
@@ -1142,6 +1283,10 @@ public class LatinIME extends InputMethodService implements
     @Override
     public void hideWindow() {
         Log.i(TAG, "hideWindow");
+        if (isEmbeddedSecureComposerActive()
+                && !mEmbeddedSecureComposer.isAwaitingUnlock()) {
+            closeEmbeddedSecureComposer(false);
+        }
         if (hasSuggestionStripView() && mSettings.getCurrent().mToolbarMode == ToolbarMode.EXPANDABLE)
             mSuggestionStripView.setToolbarVisibility(false);
         mKeyboardSwitcher.onHideWindow();
@@ -1167,6 +1312,7 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onDisplayCompletions(final CompletionInfo[] applicationSpecifiedCompletions) {
+        if (isEmbeddedSecureComposerActive()) return;
         if (DebugFlags.DEBUG_ENABLED) {
             Log.i(TAG, "Received completions:");
             if (applicationSpecifiedCompletions != null) {
@@ -1288,7 +1434,8 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public boolean onEvaluateFullscreenMode() {
-        if (isImeSuppressedByHardwareKeyboard() || mSettings.getCurrent().mIsFloatingKeyboard) {
+        if (isEmbeddedSecureComposerActive() || isImeSuppressedByHardwareKeyboard()
+                || mSettings.getCurrent().mIsFloatingKeyboard) {
             // If there is a hardware keyboard or we're floating, disable full screen mode.
             return false;
         }
@@ -1443,7 +1590,12 @@ public class LatinIME extends InputMethodService implements
     // This method is public for testability of LatinIME, but also in the future it should
     // completely replace #onCodeInput.
     public void onEvent(@NonNull final Event event) {
-        if (blocksExternalInputAction(isCipherBoardSecureEditor(), event.getKeyCode())) {
+        if (isEmbeddedSecureComposerActive()
+                && event.getKeyCode() != KeyCode.SECURE_COMPOSER
+                && !canAcceptEmbeddedPlaintextInput()) {
+            return;
+        }
+        if (shouldBlockExternalInputAction(event.getKeyCode())) {
             return;
         }
         if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
@@ -1459,13 +1611,18 @@ public class LatinIME extends InputMethodService implements
 
     private boolean isCipherBoardSecureEditor() {
         final SettingsValues current = mSettings.getCurrent();
-        return current != null && current.mInputAttributes.mIsCipherBoardSecureEditor;
+        return isEmbeddedSecureComposerActive()
+                || current != null && current.mInputAttributes.mIsCipherBoardSecureEditor;
     }
 
     static boolean blocksExternalInputAction(final boolean secureEditor, final int keyCode) {
         return secureEditor && (KeyCode.VOICE_INPUT == keyCode
                 || KeyCode.SYSTEM_INPUT_METHOD_PICKER == keyCode
                 || InputLogic.isCipherBoardSecureEditorBlockedKey(keyCode));
+    }
+
+    public boolean shouldBlockExternalInputAction(final int keyCode) {
+        return blocksExternalInputAction(isCipherBoardSecureEditor(), keyCode);
     }
 
     void setCipherBoardImeWindowSecure(final boolean secure) {
@@ -1480,6 +1637,7 @@ public class LatinIME extends InputMethodService implements
 
     public void onTextInput(@Nullable String rawText) {
         if (rawText == null) return;
+        if (isEmbeddedSecureComposerActive() && !canAcceptEmbeddedPlaintextInput()) return;
         // TODO: have the keyboard pass the correct key code when we need it.
         Event event = Event.createSoftwareTextEvent(rawText, KeyCode.MULTIPLE_CODE_POINTS, null);
         InputTransaction completeInputTransaction = mInputLogic.onTextInput(mSettings.getCurrent(),
@@ -1490,20 +1648,24 @@ public class LatinIME extends InputMethodService implements
     }
 
     public void onStartBatchInput() {
+        if (isEmbeddedSecureComposerActive()) return;
         mInputLogic.onStartBatchInput(mSettings.getCurrent(), mKeyboardSwitcher, mHandler);
         mGestureConsumer.onGestureStarted(mRichImm.getCurrentSubtypeLocale(), mKeyboardSwitcher.getKeyboard());
     }
 
     public void onUpdateBatchInput(final InputPointers batchPointers) {
+        if (isEmbeddedSecureComposerActive()) return;
         mInputLogic.onUpdateBatchInput(batchPointers);
     }
 
     public void onEndBatchInput(final InputPointers batchPointers) {
+        if (isEmbeddedSecureComposerActive()) return;
         mInputLogic.onEndBatchInput(batchPointers);
         mGestureConsumer.onGestureCompleted(batchPointers);
     }
 
     public void onCancelBatchInput() {
+        if (isEmbeddedSecureComposerActive()) return;
         mInputLogic.onCancelBatchInput(mHandler);
         mGestureConsumer.onGestureCanceled();
     }
@@ -1605,6 +1767,7 @@ public class LatinIME extends InputMethodService implements
      *  returns whether a clipboard suggestion has been set.
      */
     public boolean tryShowClipboardSuggestion() {
+        if (isEmbeddedSecureComposerActive()) return false;
         final View clipboardView = mClipboardHistoryManager.getClipboardSuggestionView(getCurrentInputEditorInfo(), mSuggestionStripView);
         if (clipboardView != null && hasSuggestionStripView()) {
             mSuggestionStripView.setExternalSuggestionView(clipboardView, false);
@@ -1620,6 +1783,10 @@ public class LatinIME extends InputMethodService implements
     // and there is a selection of text or it's the start of a line.
     @Override
     public void setNeutralSuggestionStrip() {
+        if (isEmbeddedSecureComposerActive()) {
+            setSuggestedWords(SuggestedWords.getEmptyInstance());
+            return;
+        }
         final SettingsValues currentSettings = mSettings.getCurrent();
         if (tryShowClipboardSuggestion()) {
             // clipboard suggestion has been set
@@ -1732,8 +1899,10 @@ public class LatinIME extends InputMethodService implements
     // Hooks for hardware keyboard
     @Override
     public boolean onKeyDown(final int keyCode, final KeyEvent keyEvent) {
+        if (isEmbeddedSecureComposerActive() && !canAcceptEmbeddedPlaintextInput()) return true;
         if (mKeyboardActionListener.onKeyDown(keyCode, keyEvent))
             return true;
+        if (isEmbeddedSecureComposerActive()) return true;
         return super.onKeyDown(keyCode, keyEvent);
     }
 
@@ -1741,7 +1910,18 @@ public class LatinIME extends InputMethodService implements
     public boolean onKeyUp(final int keyCode, final KeyEvent keyEvent) {
         if (mKeyboardActionListener.onKeyUp(keyCode, keyEvent))
             return true;
+        if (isEmbeddedSecureComposerActive()) return true;
         return super.onKeyUp(keyCode, keyEvent);
+    }
+
+    @Override
+    public boolean onKeyLongPress(final int keyCode, final KeyEvent keyEvent) {
+        return isEmbeddedSecureComposerActive() || super.onKeyLongPress(keyCode, keyEvent);
+    }
+
+    @Override
+    public boolean onKeyMultiple(final int keyCode, final int count, final KeyEvent keyEvent) {
+        return isEmbeddedSecureComposerActive() || super.onKeyMultiple(keyCode, count, keyEvent);
     }
 
     // onKeyDown and onKeyUp are the main events we are interested in. There are two more events
@@ -1794,13 +1974,140 @@ public class LatinIME extends InputMethodService implements
     }
 
     public void launchSecureComposer() {
+        if (isEmbeddedSecureComposerActive()) {
+            requestCloseEmbeddedSecureComposer();
+            return;
+        }
+        final View inputView = mInputView;
+        if (inputView == null) return;
+        // Finish any normal host composition before the resolver starts pointing at local RAM.
+        mInputLogic.commitTyped(mSettings.getCurrent(), LastComposedWord.NOT_A_SEPARATOR);
+        inputView.post(this::openEmbeddedSecureComposer);
+    }
+
+    private void openEmbeddedSecureComposer() {
+        if (isEmbeddedSecureComposerActive() || mEmbeddedSecureComposer == null) return;
+        final EditorInfo hostEditor = getCurrentInputEditorInfo();
+        final InputBinding binding = getCurrentInputBinding();
+        final InputConnection hostConnection = getCurrentInputConnection();
+        if (hostEditor == null || binding == null || hostConnection == null
+                || !mEmbeddedSecureComposer.activate(
+                        hostEditor, binding.getUid(), binding.getConnectionToken())) {
+            mKeyboardSwitcher.showToast(
+                    getString(R.string.embedded_secure_unavailable), true);
+            return;
+        }
+        mInputLogic.finishInput(false);
+        restartInputLogicForEffectiveEditor(true);
+        setCipherBoardImeWindowSecure(true);
+    }
+
+    public void requestCloseEmbeddedSecureComposer() {
+        final View inputView = mInputView;
+        if (inputView == null) {
+            closeEmbeddedSecureComposer(false);
+        } else {
+            inputView.post(() -> closeEmbeddedSecureComposer(true));
+        }
+    }
+
+    public void forceCloseEmbeddedSecureComposer() {
+        closeEmbeddedSecureComposer(false);
+    }
+
+    private void closeEmbeddedSecureComposer(final boolean restoreHostEditor) {
+        if (!isEmbeddedSecureComposerActive()) return;
+        // Resolve finishComposingText against the local connection before destroying it.
+        mInputLogic.finishInput(true);
+        mEmbeddedSecureComposer.deactivate();
+        if (restoreHostEditor && getCurrentInputEditorInfo() != null
+                && getCurrentInputConnection() != null) {
+            restartInputLogicForEffectiveEditor(false);
+        }
+        setCipherBoardImeWindowSecure(
+                InputAttributes.isCipherBoardSecureEditor(getCurrentInputEditorInfo()));
+        if (mInputView != null) updateFullscreenMode();
+    }
+
+    private void restartInputLogicForEffectiveEditor(final boolean enteringPrivateMode) {
+        loadSettings();
+        final SettingsValues values = mSettings.getCurrent();
+        final EditorInfo editorInfo = getEffectiveEditorInfo();
+        mInputLogic.startInput(
+                mRichImm.getCombiningRulesExtraValueOfCurrentSubtype(), values);
+        if (editorInfo != null) {
+            mInputLogic.mConnection.resetCachesUponCursorMoveAndReturnSuccess(
+                    Math.max(0, editorInfo.initialSelStart),
+                    Math.max(0, editorInfo.initialSelEnd), false);
+            mInputLogic.mConnection.tryFixIncorrectCursorPosition();
+        }
+        if (mKeyboardSwitcher.getMainKeyboardView() != null) {
+            mKeyboardSwitcher.reloadMainKeyboard();
+            if (enteringPrivateMode) mKeyboardSwitcher.setAlphabetKeyboard();
+        }
+        setNeutralSuggestionStrip();
+        if (mInputView != null) mInputView.requestLayout();
+    }
+
+    public void launchEmbeddedVaultUnlock() {
+        if (!isEmbeddedSecureComposerActive()) return;
+        mEmbeddedSecureComposer.markUnlockStarted();
+        final Intent intent = new Intent(this, SecureVaultUnlockActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        try {
+            startActivity(intent);
+        } catch (RuntimeException error) {
+            final InputBinding binding = getCurrentInputBinding();
+            mEmbeddedSecureComposer.consumeUnlockReturn(
+                    getCurrentInputEditorInfo(),
+                    binding == null ? -1 : binding.getUid(),
+                    binding == null ? null : binding.getConnectionToken());
+        }
+    }
+
+    public void openCipherBoardHomeFromEmbeddedComposer() {
+        closeEmbeddedSecureComposer(true);
+        requestHideSelf(0);
+        final Intent intent = new Intent(this, CipherBoardHomeActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
+    }
+
+    public void prepareEmbeddedDraftForEncryption() {
+        if (!isEmbeddedSecureComposerActive()) return;
+        mInputLogic.commitTyped(mSettings.getCurrent(), LastComposedWord.NOT_A_SEPARATOR);
+    }
+
+    public boolean canAcceptEmbeddedPlaintextInput() {
+        return isEmbeddedSecureComposerActive()
+                && mEmbeddedSecureComposer.acceptsPlaintextInput();
+    }
+
+    public void clearEmbeddedSecureDraft() {
+        if (!isEmbeddedSecureComposerActive()) return;
+        mInputLogic.finishInput(true);
+        mEmbeddedSecureComposer.clearDraftFromIme();
+        restartInputLogicForEffectiveEditor(true);
+    }
+
+    public CiphertextDeliveryResult deliverEmbeddedSecureOutbound(
+            final PreparedOutbound outbound) {
+        if (!isEmbeddedSecureComposerActive()) {
+            return CiphertextDeliveryResult.NO_HANDOFF;
+        }
         final EditorInfo editorInfo = getCurrentInputEditorInfo();
-        final int inputType = editorInfo == null ? InputType.TYPE_NULL : editorInfo.inputType;
-        final android.view.inputmethod.InputBinding binding = getCurrentInputBinding();
-        final String handoffToken = editorInfo == null ? null : SecureImeBridge.beginSession(
+        final InputBinding binding = getCurrentInputBinding();
+        final InputConnection hostConnection = getCurrentInputConnection();
+        if (editorInfo == null || binding == null || hostConnection == null
+                || !mEmbeddedSecureComposer.acceptsHost(
+                        editorInfo, binding.getUid(), binding.getConnectionToken())) {
+            return CiphertextDeliveryResult.NO_HANDOFF;
+        }
+        final String token = SecureImeBridge.beginSession(
                 editorInfo.packageName,
-                binding == null ? -1 : binding.getUid(),
-                binding == null ? null : binding.getConnectionToken(),
+                binding.getUid(),
+                binding.getConnectionToken(),
                 editorInfo.fieldId,
                 editorInfo.fieldName,
                 editorInfo.inputType,
@@ -1809,18 +2116,29 @@ public class LatinIME extends InputMethodService implements
                 editorInfo.initialSelStart,
                 editorInfo.initialSelEnd,
                 getPackageName());
-        final Intent intent = new Intent().setClass(this, SecureComposerActivity.class)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(SecureComposerActivity.EXTRA_HOST_IS_PASSWORD_FIELD, isPasswordInputType(inputType));
-        if (handoffToken != null) {
-            intent.putExtra(SecureComposerActivity.EXTRA_IME_HANDOFF_TOKEN, handoffToken);
+        if (token == null) return CiphertextDeliveryResult.NO_HANDOFF;
+        if (!SecureImeBridge.activateComposer(token) || !SecureImeBridge.arm(token, outbound)) {
+            SecureImeBridge.cancelSession(token);
+            return CiphertextDeliveryResult.NO_HANDOFF;
         }
-        try {
-            startActivity(intent);
-        } catch (RuntimeException error) {
-            if (handoffToken != null) SecureImeBridge.cancelSession(handoffToken);
-            throw error;
+        final CiphertextDeliveryResult result = SecureImeBridge.deliver(
+                editorInfo.packageName,
+                binding.getUid(),
+                binding.getConnectionToken(),
+                editorInfo.fieldId,
+                editorInfo.fieldName,
+                editorInfo.inputType,
+                editorInfo.imeOptions,
+                editorInfo.privateImeOptions,
+                editorInfo.initialSelStart,
+                editorInfo.initialSelEnd,
+                ciphertext -> hostConnection.commitText(ciphertext, 1),
+                operationId -> SecureKeyboardRuntime.Companion.get()
+                        .completeOutbound(operationId));
+        if (result == CiphertextDeliveryResult.NO_HANDOFF) {
+            SecureImeBridge.cancelSession(token);
         }
+        return result;
     }
 
     private static boolean isPasswordInputType(final int inputType) {

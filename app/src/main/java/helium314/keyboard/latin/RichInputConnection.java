@@ -139,6 +139,13 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         mNestLevel = 0;
     }
 
+    private InputConnection resolveInputConnection() {
+        if (mParent instanceof LatinIME) {
+            return ((LatinIME)mParent).getInputConnectionForInputLogic();
+        }
+        return mParent.getCurrentInputConnection();
+    }
+
     public boolean isConnected() {
         return mIC != null;
     }
@@ -217,7 +224,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     public void beginBatchEdit() {
         if (++mNestLevel == 1) {
-            mIC = mParent.getCurrentInputConnection();
+            mIC = resolveInputConnection();
             if (isConnected()) {
                 mIC.beginBatchEdit();
             }
@@ -289,7 +296,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         // be necessary when reloading text. Only when called by setSelection, mComposingText isn't
         // always empty, but looks like things still work normally
         mComposingText.setLength(0);
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         // Call upon the inputconnection directly since our own method is using the cache, and
         // we want to refresh it.
         final CharSequence textBeforeCursor = getTextBeforeCursorAndDetectLaggyConnection(
@@ -417,7 +424,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      */
     public int getCursorCapsMode(final int inputType,
             final SpacingAndPunctuations spacingAndPunctuations, final boolean hasSpaceBefore) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return Constants.TextUtils.CAP_MODE_OFF;
         }
@@ -498,7 +505,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     @Nullable private CharSequence getTextBeforeCursorAndDetectLaggyConnection(
             final int operation, final long timeout, final int n, final int flags) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return null;
         }
@@ -565,7 +572,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     @Nullable private CharSequence getTextAfterCursorAndDetectLaggyConnection(
             final int operation, final long timeout, final int n, final int flags) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return null;
         }
@@ -622,7 +629,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
     }
 
     public void performEditorAction(final int actionId) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (isConnected()) {
             mIC.performEditorAction(actionId);
         }
@@ -733,7 +740,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
                 // Note that the check may also fail because the text field is not yet updated, so we don't want to check everything!
                 final CharSequence lastChar = mIC.getTextBeforeCursor(1, 0);
                 if (lastChar == null || lastChar.length() == 0 || text.charAt(text.length() - 1) != lastChar.charAt(0)) {
-                    Log.w(TAG, "did set " + text + ", but got " + mIC.getTextBeforeCursor(text.length(), 0) + " as last character");
+                    Log.w(TAG, "composing text verification failed for length " + text.length());
                     return false;
                 }
             }
@@ -851,7 +858,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
     @NonNull
     public NgramContext getNgramContextFromNthPreviousWord(
             final SpacingAndPunctuations spacingAndPunctuations, final int n) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return NgramContext.EMPTY_PREV_WORDS_INFO;
         }
@@ -885,7 +892,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      */
     @Nullable public TextRange getWordRangeAtCursor(final SpacingAndPunctuations spacingAndPunctuations,
             final String script) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return null;
         }
@@ -1117,7 +1124,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      * being initial and thus possibly outdated)
      */
     public void tryFixIncorrectCursorPosition() {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         final CharSequence textBeforeCursor = getTextBeforeCursor(
                 Constants.EDITOR_CONTENTS_CACHE_SIZE, 0);
         final CharSequence selectedText = isConnected() ? mIC.getSelectedText(0 /* flags */) : null;
@@ -1161,7 +1168,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     @Override
     public boolean performPrivateCommand(final String action, final Bundle data) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return false;
         }
@@ -1199,7 +1206,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      * out that we actually need more detailed error codes)
      */
     public boolean requestCursorUpdates(final boolean enableMonitor, final boolean requestImmediateCallback) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (!isConnected()) {
             return false;
         }
@@ -1210,7 +1217,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     // doesn't work in many apps that support normal clipboard pasting, possibly just because they don't have mime types in editorInfo
     public void commitContent(InputContentInfoCompat contentInfo, @NonNull EditorInfo editorInfo) {
-        mIC = mParent.getCurrentInputConnection();
+        mIC = resolveInputConnection();
         if (isConnected())
             InputConnectionCompat.commitContent(mIC, editorInfo, contentInfo, InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null);
     }

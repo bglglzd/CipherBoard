@@ -87,6 +87,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         }
 
         if (event.isHandled) {
+            if (latinIME.shouldBlockExternalInputAction(event.keyCode)) return true
             inputLogic.onCodeInput(
                 settings.current, event,
                 keyboardSwitcher.getKeyboardCapsMode(), // TODO: this is not necessarily correct for a hardware keyboard right now
@@ -99,6 +100,9 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean) {
+        if (latinIME.isEmbeddedSecureComposerActive() &&
+            (primaryCode == KeyCode.TOGGLE_AUTOCORRECT || primaryCode == KeyCode.TOGGLE_INCOGNITO_MODE)
+        ) return
         when (primaryCode) {
             KeyCode.TOGGLE_AUTOCORRECT -> return settings.toggleAutoCorrect()
             KeyCode.TOGGLE_INCOGNITO_MODE -> {
@@ -129,7 +133,8 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     override fun onTextInput(text: String?) = latinIME.onTextInput(text)
 
     override fun onContent(content: InputContentInfoCompat) {
-        val editorInfo = latinIME.currentInputEditorInfo
+        if (latinIME.isEmbeddedSecureComposerActive()) return
+        val editorInfo = latinIME.effectiveEditorInfo ?: return
         val editorMimeTypes = EditorInfoCompat.getContentMimeTypes(editorInfo)
         if (editorMimeTypes.any { content.description.hasMimeType(it) }) {
             connection.commitContent(content, editorInfo)

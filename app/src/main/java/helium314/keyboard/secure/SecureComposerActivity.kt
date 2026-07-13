@@ -44,6 +44,8 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.fragment.app.FragmentActivity
 import helium314.keyboard.latin.InputAttributes
@@ -103,6 +105,7 @@ class SecureComposerActivity : FragmentActivity() {
     private var biometricPrompt: BiometricPrompt? = null
     private var pendingPromptAction: VaultUnlockAction.AuthenticationRequired? = null
     private var selectedPendingCount = 0
+    private var selectedUncertainPendingCount = 0
     private var selectedPendingStateKnown = false
     private var standaloneReplyMode = false
 
@@ -129,7 +132,9 @@ class SecureComposerActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.decorView.importantForContentCapture =
                 View.IMPORTANT_FOR_CONTENT_CAPTURE_NO_EXCLUDE_DESCENDANTS
@@ -302,7 +307,7 @@ class SecureComposerActivity : FragmentActivity() {
 
         pendingButton = Button(this).apply {
             visibility = View.GONE
-            setOnClickListener { retryPendingCiphertext() }
+            setOnClickListener { handlePendingCiphertext() }
         }
         content.addView(pendingButton, matchWidth())
 
@@ -310,6 +315,20 @@ class SecureComposerActivity : FragmentActivity() {
         return ScrollView(this).apply {
             isFillViewport = true
             addView(content, matchWidth())
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val safeDrawing = insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or
+                        WindowInsetsCompat.Type.displayCutout(),
+                )
+                val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                view.setPadding(
+                    safeDrawing.left,
+                    safeDrawing.top,
+                    safeDrawing.right,
+                    maxOf(safeDrawing.bottom, ime.bottom),
+                )
+                insets
+            }
         }
     }
 
@@ -505,7 +524,8 @@ class SecureComposerActivity : FragmentActivity() {
     }
 
     private fun updateEditorEnabledState() {
-        val usable = canComposeForSelectedContact() && selectedPendingStateKnown && selectedPendingCount == 0
+        val usable = canComposeForSelectedContact() && selectedPendingStateKnown &&
+            selectedPendingCount == 0 && selectedUncertainPendingCount == 0
         editor.isEnabled = usable
         if (::ownerName.isInitialized) ownerName.isEnabled = cipherBoardImeSelected && runtime.isVaultUnlocked
         encryptButton.isEnabled = usable && editor.text?.isNotEmpty() == true && messageWithinSelectedLimit()
@@ -547,7 +567,9 @@ class SecureComposerActivity : FragmentActivity() {
     private fun encryptAndInsert() {
         if (!enforceImeTrust()) return
         updatePendingCiphertext()
-        if (!canComposeForSelectedContact() || !selectedPendingStateKnown || selectedPendingCount != 0) {
+        if (!canComposeForSelectedContact() || !selectedPendingStateKnown ||
+            selectedPendingCount != 0 || selectedUncertainPendingCount != 0
+        ) {
             contactStatus.setText(R.string.secure_retry_pending_before_new_message)
             return
         }
@@ -611,7 +633,14 @@ class SecureComposerActivity : FragmentActivity() {
                 runCatching {
                     runtime.pendingOutbound().let { pending ->
                         try {
-                            pending.count { it.matchesContact(contactId) }
+                            var ready = 0
+                            var uncertain = 0
+                            pending.forEach { outbound ->
+                                if (outbound.matchesContact(contactId)) {
+                                    if (outbound.canAutomaticallyRetry) ready++ else uncertain++
+                                }
+                            }
+                            PendingCiphertextCounts(ready, uncertain)
                         } finally {
                             pending.forEach(PreparedOutbound::close)
                         }
@@ -624,19 +653,39 @@ class SecureComposerActivity : FragmentActivity() {
             null
         }
         selectedPendingStateKnown = result?.isSuccess == true
-        selectedPendingCount = result?.getOrDefault(0) ?: 0
-        val canRetry = canHandoffToSelectedContact() && selectedPendingStateKnown && selectedPendingCount > 0
-        pendingButton.visibility = if (canRetry) View.VISIBLE else View.GONE
-        pendingButton.isEnabled = canRetry
-        if (canRetry) {
-            pendingButton.text = resources.getQuantityString(
-                R.plurals.secure_retry_pending_ciphertext,
-                selectedPendingCount,
-                selectedPendingCount,
-            )
-            contactStatus.setText(R.string.secure_retry_pending_before_new_message)
+        val counts = result?.getOrDefault(PendingCiphertextCounts.EMPTY) ?: PendingCiphertextCounts.EMPTY
+        selectedPendingCount = counts.ready
+        selectedUncertainPendingCount = counts.uncertain
+        val hasUncertain = selectedUncertainPendingCount > 0
+        val canAct = selectedPendingStateKnown && if (hasUncertain) {
+            canComposeForSelectedContact()
+        } else {
+            selectedPendingCount > 0 && canHandoffToSelectedContact()
+        }
+        pendingButton.visibility = if (canAct) View.VISIBLE else View.GONE
+        pendingButton.isEnabled = canAct
+        if (canAct) {
+            if (hasUncertain) {
+                pendingButton.setText(R.string.embedded_secure_acknowledge_uncertain)
+                pendingButton.contentDescription =
+                    getString(R.string.embedded_secure_acknowledge_uncertain_description)
+                contactStatus.setText(R.string.embedded_secure_delivery_uncertain)
+            } else {
+                pendingButton.text = resources.getQuantityString(
+                    R.plurals.secure_retry_pending_ciphertext,
+                    selectedPendingCount,
+                    selectedPendingCount,
+                )
+                pendingButton.contentDescription = pendingButton.text
+                contactStatus.setText(R.string.secure_retry_pending_before_new_message)
+            }
         }
         updateEditorEnabledState()
+    }
+
+    private fun handlePendingCiphertext() {
+        if (selectedUncertainPendingCount > 0) acknowledgeUncertainDelivery()
+        else retryPendingCiphertext()
     }
 
     private fun retryPendingCiphertext() {
@@ -648,7 +697,9 @@ class SecureComposerActivity : FragmentActivity() {
         val contactId = contact.internalId()
         val pending = runCatching {
             runtime.pendingOutbound().let { candidates ->
-                val selected = candidates.firstOrNull { it.matchesContact(contactId) }
+                val selected = candidates.firstOrNull {
+                    it.canAutomaticallyRetry && it.matchesContact(contactId)
+                }
                 candidates.filter { it !== selected }.forEach(PreparedOutbound::close)
                 selected
             }
@@ -671,6 +722,43 @@ class SecureComposerActivity : FragmentActivity() {
             }
         } finally {
             pending.close()
+        }
+    }
+
+    private fun acknowledgeUncertainDelivery() {
+        if (!runtime.isVaultUnlocked) return requestVaultUnlock()
+        if (!enforceImeTrust()) return
+        val contactId = contacts.getOrNull(contactSpinner.selectedItemPosition)?.internalId() ?: return
+        val pending = try {
+            runtime.pendingOutbound().let { candidates ->
+                val selected = candidates.firstOrNull {
+                    !it.canAutomaticallyRetry && it.matchesContact(contactId)
+                }
+                candidates.filter { it !== selected }.forEach(PreparedOutbound::close)
+                selected
+            }
+        } catch (error: Throwable) {
+            showFailure(error)
+            null
+        } finally {
+            contactId.fill(0)
+        } ?: return
+        try {
+            val operationId = pending.operationId()
+            val completed = try {
+                runtime.completeOutbound(operationId)
+            } finally {
+                operationId.fill(0)
+            }
+            contactStatus.setText(
+                if (completed) R.string.embedded_secure_uncertain_cleared
+                else R.string.secure_operation_failed,
+            )
+        } catch (error: Throwable) {
+            showFailure(error)
+        } finally {
+            pending.close()
+            updatePendingCiphertext()
         }
     }
 
@@ -852,6 +940,12 @@ class SecureComposerActivity : FragmentActivity() {
         private const val SMS_OLM_OVERHEAD_BUDGET = 512
         private const val SMS_PLAINTEXT_LIMIT_BYTES =
             SMS_CHUNK_BYTES * MAX_TRANSPORT_PARTS * 3 / 4 - SMS_OLM_OVERHEAD_BUDGET
+    }
+}
+
+private data class PendingCiphertextCounts(val ready: Int, val uncertain: Int) {
+    companion object {
+        val EMPTY = PendingCiphertextCounts(0, 0)
     }
 }
 
