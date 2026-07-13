@@ -161,6 +161,31 @@ jobs:
             :app:assembleRelease
           git diff --exit-code -- app/gradle.lockfile '**/Cargo.lock'
           dirty=$(git status --porcelain=v1 --untracked-files=all)
+          # Older tags stored CRLF in Git; Gradle can normalize the unused Windows wrapper on Linux.
+          if [[ "$dirty" == ' M gradlew.bat' ]]; then
+            python - <<'PY'
+          import pathlib
+          import stat
+          import subprocess
+
+          path = pathlib.Path("gradlew.bat")
+          committed = subprocess.check_output(["git", "show", "HEAD:gradlew.bat"])
+          working = path.read_bytes()
+
+          def normalize_line_endings(data: bytes) -> bytes:
+              without_crlf = data.replace(b"\r\n", b"")
+              if b"\r" in without_crlf:
+                  raise SystemExit("gradlew.bat contains a bare carriage return")
+              return data.replace(b"\r\n", b"\n")
+
+          if normalize_line_endings(committed) != normalize_line_endings(working):
+              raise SystemExit("gradlew.bat changed beyond CRLF/LF normalization")
+          if path.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+              raise SystemExit("gradlew.bat unexpectedly became executable")
+          PY
+            echo 'Accepted CRLF/LF-only normalization of gradlew.bat.'
+            dirty=
+          fi
           if [[ -n "$dirty" ]]; then
             echo 'Release build modified the checked-out source tree:' >&2
             printf '%s\n' "$dirty" >&2
