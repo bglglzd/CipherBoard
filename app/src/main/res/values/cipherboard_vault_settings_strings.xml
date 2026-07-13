@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <string name="cipherboard_vault_settings_title">Vault settings</string>
+    <string name="cipherboard_vault_settings_description">The Vault keeps identity and ratchet state encrypted under a user-authenticated Android Keystore key. The master key is non-exportable.</string>
+    <string name="cipherboard_vault_settings_timeout">Lock after CipherBoard leaves the foreground</string>
+    <string name="cipherboard_vault_settings_immediate">Immediately</string>
+    <string name="cipherboard_vault_settings_30_seconds">After 30 seconds</string>
+    <string name="cipherboard_vault_settings_1_minute">After 1 minute (default)</string>
+    <string name="cipherboard_vault_settings_5_minutes">After 5 minutes</string>
+    <string name="cipherboard_viewer_timeout">Hide decrypted messages automatically</string>
+    <string name="cipherboard_viewer_timeout_description">The timer restarts while the protected viewer remains visible.</string>
+    <string name="cipherboard_viewer_15_seconds">After 15 seconds</string>
+    <string name="cipherboard_viewer_30_seconds">After 30 seconds</string>
+    <string name="cipherboard_viewer_1_minute">After 1 minute (default)</string>
+    <string name="cipherboard_viewer_5_minutes">After 5 minutes</string>
+    <string name="cipherboard_vault_settings_lock_boundaries">The Vault always locks after reboot, screen lock, manual lock, Keystore invalidation, and expiry of the selected background timeout.</string>
+    <string name="cipherboard_vault_settings_lock_now">Lock Vault now</string>
+    <string name="cipherboard_vault_settings_locked">Vault locked</string>
+    <string name="cipherboard_vault_settings_save_failed">The lock policy could not be saved.</string>
+</resources>

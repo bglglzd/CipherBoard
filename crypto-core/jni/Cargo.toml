@@ -21,7 +21,8 @@ proptest = "=1.6.0"
 [profile.release]
 codegen-units = 1
 lto = true
-panic = "abort"
+# JNI contains a catch_unwind boundary so malformed untrusted input cannot abort the IME process.
+panic = "unwind"
 strip = "symbols"
 
 [lints.rust]

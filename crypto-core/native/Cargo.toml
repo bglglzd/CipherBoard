@@ -25,7 +25,8 @@ proptest = "=1.6.0"
 [profile.release]
 codegen-units = 1
 lto = true
-panic = "abort"
+# Keep release tests and the JNI dependency compatible with the catch_unwind boundary.
+panic = "unwind"
 strip = "symbols"
 
 [lints.rust]

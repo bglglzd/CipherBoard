@@ -10,7 +10,9 @@ const ENVELOPE_FIELDS: u64 = 9;
 const MAX_MAP_FIELDS: u64 = 32;
 const OPTIONAL_FIELD_START: u64 = 128;
 const UNIVERSAL_CHUNK_BYTES: usize = 16 * 1024;
-const SMS_CHUNK_BYTES: usize = 72;
+// Keeps every complete CB1 envelope within one 153-character concatenated GSM segment,
+// including the worst-case part counters and capability value.
+const SMS_CHUNK_BYTES: usize = 48;
 const MAX_OPTIONAL_VALUE_BYTES: usize = 1024;
 
 /// Maximum decoded Olm message size accepted by the parser.

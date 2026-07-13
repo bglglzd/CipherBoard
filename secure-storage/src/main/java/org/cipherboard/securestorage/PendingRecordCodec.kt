@@ -3,10 +3,15 @@ package org.cipherboard.securestorage
 import java.nio.ByteBuffer
 
 internal object PendingRecordCodec {
-    fun encode(identifier: ByteArray, payload: ByteArray): ByteArray {
+    fun encodedSize(identifier: ByteArray, payloadSize: Int): Int {
         require(identifier.size in MIN_ID_BYTES..MAX_ID_BYTES)
-        require(payload.size <= RecordCrypto.MAX_RECORD_BYTES - HEADER_BYTES - identifier.size)
-        return ByteBuffer.allocate(HEADER_BYTES + identifier.size + payload.size)
+        require(payloadSize >= 0)
+        require(payloadSize <= RecordCrypto.MAX_RECORD_BYTES - HEADER_BYTES - identifier.size)
+        return Math.addExact(Math.addExact(HEADER_BYTES, identifier.size), payloadSize)
+    }
+
+    fun encode(identifier: ByteArray, payload: ByteArray): ByteArray {
+        return ByteBuffer.allocate(encodedSize(identifier, payload.size))
             .putInt(FORMAT_VERSION)
             .putInt(identifier.size)
             .put(identifier)

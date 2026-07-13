@@ -163,7 +163,8 @@
     <string name="select_color_accent">Акцент</string>
     <string name="settings_screen_about">О приложении</string>
     <string name="version">Версия</string>
-    <string name="about_github_link">Посмотреть на GitHub</string>
+    <string name="app_slogan">Офлайн-клавиатура с защищённой личной перепиской</string>
+    <string name="about_github_link">Исходный код основы HeliBoard</string>
     <string name="license">Лицензия с открытым исходным кодом</string>
     <string name="gnu_gpl">Стандартная общественная лицензия GNU v3.0</string>
     <string name="dialog_close">Закрыть</string>
@@ -295,6 +296,7 @@
     <string name="language_switch_key_behavior">Действие клавиши смены языка</string>
     <string name="emoji" tools:keep="@string/emoji">Эмодзи</string>
     <string name="secure_composer" tools:keep="@string/secure_composer">Безопасный ввод</string>
+    <string name="secure_decrypt" tools:keep="@string/secure_decrypt">Расшифровать выделенное</string>
     <string name="pinned_toolbar_keys">Выбрать закреплённые клавиши панели инструментов</string>
     <string name="quick_pin_toolbar_keys_summary">При этом отключатся остальные функции долгого нажатия для незакреплённых клавиш панели</string>
     <string name="quick_pin_toolbar_keys">Закреплять клавиши панели инструментов при долгом нажатии</string>
@@ -429,8 +431,8 @@
     <string name="suggest_punctuation">Подсказки по пунктуации</string>
     <string name="suggest_punctuation_summary">Показывать пунктуацию, если нет других подсказок</string>
     <string name="space_swipe_hide_keyboard_entry">Скрыть клавиатуру</string>
-    <string name="about_wiki_link">Перейти на Wiki</string>
-    <string name="about_wiki_link_description">Любой пользователь GitHub может улучшить Wiki!</string>
+    <string name="about_wiki_link">Wiki исходного проекта HeliBoard</string>
+    <string name="about_wiki_link_description">Справочная документация основы клавиатуры</string>
     <string name="save_subtype_per_app">Запоминать язык для каждого приложения</string>
     <string name="subtype_khipro_bn">%s (Кипро)</string>
     <string name="clipboard_history_pinned_first">Показывать закреплённые элементы вверху</string>
@@ -499,8 +501,81 @@
     <string name="spell_check_suggestions_summary">Показывать варианты исправлений при выборе слова с красным подчеркиванием. Требуется установить приложение в качестве проверки орфографии по умолчанию.</string>
     <string name="floating" tools:keep="@string/floating">Плавающая клавиатура</string>
     <string name="secure_composer_title">Безопасный редактор</string>
-    <string name="secure_composer_placeholder">Пока это экран-заглушка безопасного редактора. Здесь будет размещён шифруемый ввод и выбор контакта.</string>
     <string name="close_secure_composer">Закрыть</string>
+    <string name="secure_composer_privacy_note">Текст остаётся в этом защищённом редакторе. Во внешнее приложение вставляется только зашифрованный текст CB1.</string>
+    <string name="secure_cipherboard_ime_required">Чтобы ввести защищённый текст, сначала выберите CipherBoard как текущую клавиатуру.</string>
+    <string name="secure_vault_locked">Хранилище заблокировано</string>
+    <string name="secure_vault_unlocked_level">Хранилище разблокировано · Keystore: %1$s</string>
+    <string name="secure_unlock_vault">Разблокировать хранилище</string>
+    <string name="secure_unlock_vault_description">Используйте строгую биометрию или код блокировки устройства</string>
+    <string name="secure_vault_unlock_cancelled">Разблокировка отменена</string>
+    <string name="secure_vault_unlock_failed">Аутентификация не подтверждена</string>
+    <string name="secure_vault_key_invalidated">Ключ Android Keystore больше недействителен. Локальные защищённые данные открыть нельзя.</string>
+    <string name="secure_password_host_warning">Текущее поле внешнего приложения предназначено для пароля. CipherBoard ничего не вставит без нажатия «Зашифровать», но полученный шифротекст станет виден этому приложению.</string>
+    <string name="secure_password_host_continue">Продолжить защищённый ввод</string>
+    <string name="secure_create_identity_required">Создайте локальную криптографическую личность перед сопряжением. После очистки данных приложения личность изменится.</string>
+    <string name="secure_local_owner_name">Локальное имя устройства</string>
+    <string name="secure_create_identity">Создать личность</string>
+    <string name="secure_local_name_required">Введите локальное имя</string>
+    <string name="secure_recipient">Получатель</string>
+    <string name="secure_no_contacts">Нет сопряжённых контактов</string>
+    <string name="secure_pair_contact_first">Сначала сопрягите и проверьте контакт в настройках CipherBoard.</string>
+    <string name="secure_message_hint">Сообщение</string>
+    <string name="secure_transport_universal">Универсальный</string>
+    <string name="secure_transport_sms">Компактный SMS</string>
+    <string name="secure_size_estimate">Символов: %1$d · шифротекст: около %2$d символов · SMS-частей: около %3$d</string>
+    <string name="secure_encrypt_and_insert">Зашифровать и вставить</string>
+    <string name="secure_encrypt_save_for_reply">Зашифровать ответ</string>
+    <string name="secure_clear">Очистить</string>
+    <string name="secure_contact_verified">Проверен</string>
+    <string name="secure_contact_unverified">Не проверен — сравните Safety Number, прежде чем доверять контакту.</string>
+    <string name="secure_contact_key_changed">Ключ изменился — требуется повторное сопряжение.</string>
+    <string name="secure_contact_session_error">Ошибка сессии — выполните сопряжение заново.</string>
+    <string name="secure_contact_pairing_required">Требуется сопряжение</string>
+    <string name="secure_contact_not_ready">Этому контакту нельзя отправлять защищённые сообщения до восстановления сопряжения.</string>
+    <string name="secure_ciphertext_pending">Шифротекст сохранён, но внешнее поле не приняло его. Откройте CipherBoard для повторной попытки.</string>
+    <string name="secure_no_pending_for_contact">Для выбранного контакта нет ожидающего шифротекста.</string>
+    <string name="secure_retry_pending_before_new_message">Перед созданием нового сообщения повторите вставку ожидающего шифротекста для этого контакта.</string>
+    <plurals name="secure_retry_pending_ciphertext">
+        <item quantity="one">Повторить вставку %d сохранённого шифротекста</item>
+        <item quantity="few">Повторить вставку %d сохранённых шифротекстов</item>
+        <item quantity="many">Повторить вставку %d сохранённых шифротекстов</item>
+        <item quantity="other">Повторить вставку %d сохранённого шифротекста</item>
+    </plurals>
+    <string name="secure_invalid_unicode">Сообщение содержит некорректный Unicode и не может быть закодировано.</string>
+    <string name="secure_message_too_large">Сообщение слишком велико для выбранного транспорта.</string>
+    <string name="secure_message_replay">Это зашифрованное сообщение уже было обработано.</string>
+    <string name="secure_vault_corrupt">Защищённое локальное хранилище не удалось безопасно прочитать.</string>
+    <string name="secure_operation_failed">Не удалось завершить защищённую операцию.</string>
+    <string name="secure_select_ciphertext_hint">Выделите шифротекст CB1 целиком. Если приложение не предоставляет выделение, скопируйте только шифротекст и выберите «Расшифровать в CipherBoard».</string>
+    <string name="secure_clipboard_decrypt_title">Расшифровать скопированный шифротекст</string>
+    <string name="secure_clipboard_decrypt_description">Скопируйте в исходном приложении только полный шифротекст CB1. CipherBoard прочитает буфер обмена лишь после нажатия кнопки ниже и никогда не поместит туда открытый текст.</string>
+    <string name="secure_clipboard_decrypt_action">Взять шифротекст из буфера обмена</string>
+    <string name="secure_clipboard_decrypt_invalid">Буфер обмена не содержит одного полного шифротекста CB1 допустимого формата.</string>
+    <string name="cipherboard_process_text_label">Расшифровать в CipherBoard</string>
+    <string name="secure_viewer_title">Защищённое сообщение</string>
+    <string name="secure_viewer_contact">От: %1$s</string>
+    <string name="secure_viewer_verified">Проверенный контакт</string>
+    <string name="secure_viewer_unverified">Safety Number контакта не проверен</string>
+    <string name="secure_viewer_reply">Ответить защищённо</string>
+    <string name="secure_viewer_hide_now">Скрыть сейчас</string>
+    <string name="secure_decrypt_checking">Проверка зашифрованного сообщения…</string>
+    <string name="secure_decrypt_confirmation_required">Подтвердите расшифровку: после неё состояние защищённой сессии будет обновлено.</string>
+    <string name="secure_decrypt_confirm">Расшифровать</string>
+    <string name="secure_decrypt_unlocking">Разблокируйте хранилище, чтобы расшифровать сообщение.</string>
+    <string name="secure_decrypt_invalid_selection">Выделенный текст не является полным сообщением CipherBoard.</string>
+    <string name="secure_decrypt_unsupported_version">Сообщение использует неподдерживаемую версию CipherBoard.</string>
+    <string name="secure_decrypt_missing_part">Не хватает одной или нескольких частей зашифрованного сообщения.</string>
+    <string name="secure_decrypt_too_many_parts">В зашифрованном сообщении слишком много частей.</string>
+    <string name="secure_decrypt_wrong_contact">Подходящий сопряжённый контакт не найден.</string>
+    <string name="secure_decrypt_vault_locked">Хранилище заблокировано. Разблокируйте его и повторите попытку.</string>
+    <string name="secure_decrypt_auth_cancelled">Разблокировка хранилища отменена.</string>
+    <string name="secure_decrypt_replay">Это зашифрованное сообщение уже было обработано.</string>
+    <string name="secure_decrypt_key_changed">Ключ контакта изменился. Перед расшифровкой выполните сопряжение заново.</string>
+    <string name="secure_decrypt_session_error">Защищённая сессия не может расшифровать сообщение. Выполните сопряжение заново.</string>
+    <string name="secure_decrypt_invalid_ciphertext">Зашифрованное сообщение повреждено или не прошло проверку подлинности.</string>
+    <string name="secure_decrypt_unavailable">Защищённая расшифровка сейчас недоступна.</string>
+    <string name="secure_reply_unavailable">Не удалось открыть безопасный редактор.</string>
     <string name="prefs_key_gap_scale">Масштаб межклавишного интервала</string>
     <string name="toolbar_only_with_hw_keyboard">Показывать панель инструментов только при использовании физической клавиатуры</string>
     <string name="toolbar_only_with_hw_keyboard_summary">Необходимо включить отображение виртуальной клавиатуры в системных настройках</string>
@@ -542,10 +617,10 @@
     <string name="gesture_data_add_key">Добавить клавишу панели инструментов</string>
     <string name="gesture_data_no_known_dict">Фоновый сбор данных собирает только те слова, которые поступают из встроенных словарей или доступны в &lt;a href=%s&gt;репозитории словарей&lt;/a&gt;. В данный момент у вас не включён такой словарь.</string>
     <string name="gesture_data_swipe_o_scope">Инструмент для визуализации данных жестов: &lt;a href=%s&gt;Swipe-O-Scope&lt;/a&gt;</string>
-    <string name="about_community_links">Ссылки на сообщество</string>
+    <string name="about_community_links">Сообщество исходного проекта HeliBoard</string>
     <string name="auto_correct_capitalized_suggestions">Автоисправление заглавных букв в подсказках</string>
     <string name="auto_correct_capitalized_suggestions_description">Нажатие Shift меняет регистр подсказки и активирует автоисправление</string>
     <string name="prefs_hint_font_scale">Масштаб шрифта подсказок клавиш</string>
-    <string name="about_community_links_description">Темы, редактор макета, обсуждения…</string>
+    <string name="about_community_links_description">Темы, редактор раскладок и обсуждения исходной клавиатуры</string>
     <string name="subtype_tok">Токи пона</string>
 </resources>

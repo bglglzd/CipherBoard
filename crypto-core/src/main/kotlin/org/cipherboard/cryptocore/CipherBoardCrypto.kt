@@ -130,6 +130,7 @@ class CipherBoardCrypto {
         capabilities: Long,
         mode: TransportMode,
     ): EncryptionPrepared {
+        require(plaintext.size <= MAX_PLAINTEXT_BYTES) { "Plaintext exceeds protocol limit" }
         val request = CborWriter(initialCapacity = plaintext.size + 256).use { writer ->
             writer.array(5).uint(WIRE_VERSION.toLong())
             sessionState.use(writer::bytes)
@@ -169,7 +170,7 @@ class CipherBoardCrypto {
             var plaintext: ByteArray? = null
             try {
                 val messageId = payload.bytes(16)
-                plaintext = payload.bytes(MAX_PLAINTEXT)
+                plaintext = payload.bytes(MAX_PLAINTEXT_BYTES)
                 payload.finish()
                 DecryptionPrepared(
                     OwnedSecret.takeOwnership(nextState),
@@ -273,23 +274,23 @@ class CipherBoardCrypto {
         wordCode = ascii(128),
     )
 
-    private companion object {
-        const val OP_PROTOCOL = 0
-        const val OP_CREATE_ACCOUNT = 1
-        const val OP_CREATE_OFFER = 2
-        const val OP_RESPOND_OFFER = 3
-        const val OP_COMPLETE_PAIRING = 4
-        const val OP_ENCRYPT = 5
-        const val OP_DECRYPT = 6
-        const val OP_PARSE_ENVELOPE = 7
-        const val OP_PARSE_PAIRING_PAYLOAD = 8
+    companion object {
+        private const val OP_PROTOCOL = 0
+        private const val OP_CREATE_ACCOUNT = 1
+        private const val OP_CREATE_OFFER = 2
+        private const val OP_RESPOND_OFFER = 3
+        private const val OP_COMPLETE_PAIRING = 4
+        private const val OP_ENCRYPT = 5
+        private const val OP_DECRYPT = 6
+        private const val OP_PARSE_ENVELOPE = 7
+        private const val OP_PARSE_PAIRING_PAYLOAD = 8
 
-        const val MAX_ACCOUNT_STATE = 1024 * 1024
-        const val MAX_SESSION_STATE = 4 * 1024 * 1024
-        const val MAX_PLAINTEXT = 192 * 1024
-        const val MAX_PAIRING = 32 * 1024
-        const val MAX_PART = 32 * 1024
-        const val MAX_PARTS = 128
+        private const val MAX_ACCOUNT_STATE = 1024 * 1024
+        private const val MAX_SESSION_STATE = 4 * 1024 * 1024
+        const val MAX_PLAINTEXT_BYTES = 192 * 1024
+        private const val MAX_PAIRING = 32 * 1024
+        private const val MAX_PART = 32 * 1024
+        private const val MAX_PARTS = 128
     }
 }
 

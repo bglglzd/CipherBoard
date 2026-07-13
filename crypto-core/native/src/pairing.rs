@@ -331,6 +331,9 @@ impl PairingPayloadMetadata {
 pub fn parse_pairing_payload(text: &str, now_epoch_seconds: u64) -> Result<PairingPayloadMetadata> {
     if text.starts_with(OFFER_PREFIX) {
         let offer = PairingOffer::decode_qr(text)?;
+        if offer.expires_at().saturating_sub(now_epoch_seconds) > MAX_OFFER_TTL_SECONDS {
+            return Err(ErrorCode::InvalidInput.into());
+        }
         Ok(PairingPayloadMetadata {
             payload_type: PairingPayloadType::Offer,
             pairing_id: *offer.pairing_id(),
@@ -576,6 +579,8 @@ impl CipherAccount {
 fn validate_offer_time(offer: &PairingOffer, now: u64) -> Result<()> {
     if now > offer.expires_at {
         Err(ErrorCode::ExpiredOffer.into())
+    } else if offer.expires_at - now > MAX_OFFER_TTL_SECONDS {
+        Err(ErrorCode::InvalidInput.into())
     } else {
         Ok(())
     }

@@ -13,10 +13,6 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WRITE_USER_DICTIONARY" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- CameraX pulls Media3's network-state declaration; QR scanning is fully offline. -->
-    <uses-permission
-        android:name="android.permission.ACCESS_NETWORK_STATE"
-        tools:node="remove" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
@@ -41,7 +37,7 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
         <service android:name="LatinIME"
                 android:label="@string/english_ime_name"
                 android:permission="android.permission.BIND_INPUT_METHOD"
-                android:directBootAware="true"
+                android:directBootAware="false"
                 android:exported="true">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
@@ -61,48 +57,108 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
         </service>
 
         <!-- Activities -->
-        <activity android:name="helium314.keyboard.settings.SettingsActivity"
-                android:theme="@style/platformActivityTheme"
-                android:icon="@mipmap/ic_launcher"
-                android:windowSoftInputMode="adjustResize"
-                android:exported="true">
+        <activity
+            android:name="helium314.keyboard.secure.home.CipherBoardHomeActivity"
+            android:label="@string/cipherboard_home_title"
+            android:theme="@style/platformActivityTheme"
+            android:icon="@mipmap/ic_launcher"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="helium314.keyboard.secure.home.SecurityInfoActivity"
+            android:label="@string/cipherboard_security_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false" />
+
+        <activity
+            android:name="helium314.keyboard.secure.home.LicenseInfoActivity"
+            android:label="@string/cipherboard_licenses_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false" />
+
+        <activity
+            android:name="helium314.keyboard.secure.home.ContactDetailsActivity"
+            android:label="@string/cipherboard_contact_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true" />
+
+        <activity
+            android:name="helium314.keyboard.secure.home.VaultSettingsActivity"
+            android:label="@string/cipherboard_vault_settings_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false" />
+
+        <activity
+            android:name="helium314.keyboard.secure.pairing.PairingActivity"
+            android:label="@string/cipherboard_pairing_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true" />
+
+        <activity android:name="helium314.keyboard.settings.SettingsActivity"
+                android:theme="@style/platformActivityTheme"
+                android:icon="@mipmap/ic_launcher"
+                android:windowSoftInputMode="adjustResize"
+                android:exported="false" />
+
         <!-- separate activity that's used internally, only necessary in case the launcher icon is disabled on Android < 10 -->
         <activity android:name="helium314.keyboard.settings.SettingsActivity2"
             android:theme="@style/platformActivityTheme"
             android:icon="@mipmap/ic_launcher"
             android:windowSoftInputMode="adjustResize"
-            android:exported="true">
-            <!-- intent filter for opening .dict files -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:mimeType="application/octet-stream" android:scheme="content" android:host="*" android:pathPattern=".*\\.dict" />
-            </intent-filter>
-        </activity>
+            android:exported="false" />
 
         <activity android:name=".spellcheck.SpellCheckerSettingsActivity"
                 android:theme="@style/platformActivityTheme"
                 android:label="@string/spell_checker_service_name"
-                android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-            </intent-filter>
-        </activity>
+                android:exported="false" />
 
-        <activity android:name=".secure.SecureComposerActivity"
+        <activity android:name="helium314.keyboard.secure.SecureComposerActivity"
             android:theme="@style/platformActivityTheme"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
             android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:launchMode="singleTop"/>
+            android:finishOnTaskLaunch="true"/>
+
+        <activity
+            android:name="helium314.keyboard.secure.decrypt.SecureMessageViewerActivity"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true" />
+
+        <activity
+            android:name="helium314.keyboard.secure.decrypt.CiphertextClipboardActivity"
+            android:label="@string/secure_clipboard_decrypt_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true" />
+
+        <!-- Export is required by ACTION_PROCESS_TEXT. The activity validates action, MIME type,
+             strict envelope limits, and always returns RESULT_CANCELED without replacement text. -->
+        <activity
+            android:name="helium314.keyboard.secure.decrypt.ProcessTextDecryptActivity"
+            android:label="@string/cipherboard_process_text_label"
+            android:theme="@style/platformActivityTheme"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <activity android:name="helium314.keyboard.keyboard.emoji.EmojiSearchActivity" android:exported="false"
             android:theme="@style/TransparentActivityTheme" android:excludeFromRecents="true" android:noHistory="true"
@@ -110,12 +166,11 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
 
         <!-- Broadcast receivers -->
         <receiver android:name="SystemBroadcastReceiver"
-                android:directBootAware="true"
-                android:exported="true">
+                android:directBootAware="false"
+                android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.USER_INITIALIZE" />
                 <action android:name="android.intent.action.LOCALE_CHANGED" />
             </intent-filter>

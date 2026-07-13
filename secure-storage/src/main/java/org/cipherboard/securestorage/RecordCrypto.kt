@@ -37,8 +37,11 @@ internal class RecordCrypto(
         require(revision > 0) { "Invalid record revision" }
         require(plaintext.size <= MAX_RECORD_BYTES) { "Record is too large" }
         val nonce = ByteArray(NONCE_BYTES).also(random::nextBytes)
-        val aad = aad(kind, recordKey, schemaVersion, revision)
+        var additionalData: ByteArray? = null
+        var ciphertext: ByteArray? = null
+        var succeeded = false
         try {
+            additionalData = aad(kind, recordKey, schemaVersion, revision)
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
                 Cipher.ENCRYPT_MODE,
@@ -46,10 +49,17 @@ internal class RecordCrypto(
                 GCMParameterSpec(TAG_BITS, nonce),
                 random,
             )
-            cipher.updateAAD(aad)
-            return EncryptedRecord(schemaVersion, revision, nonce, cipher.doFinal(plaintext))
+            cipher.updateAAD(additionalData)
+            ciphertext = cipher.doFinal(plaintext)
+            val result = EncryptedRecord(schemaVersion, revision, nonce, checkNotNull(ciphertext))
+            succeeded = true
+            return result
         } finally {
-            aad.wipe()
+            additionalData?.wipe()
+            if (!succeeded) {
+                nonce.wipe()
+                ciphertext?.wipe()
+            }
         }
     }
 

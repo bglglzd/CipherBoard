@@ -35,4 +35,7 @@ interface Combiner {
      * Reset the state of this combiner, for example when the cursor was moved.
      */
     fun reset()
+
+    /** Best-effort overwrite for the long-lived buffers used by CipherBoard's secure editor. */
+    fun resetSecurely() = reset()
 }

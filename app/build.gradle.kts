@@ -7,6 +7,23 @@ val cipherboardProductName = providers.gradleProperty("cipherboard.productName")
 val cipherboardVersionCode = providers.gradleProperty("cipherboard.versionCode").get().toInt()
 val cipherboardVersionName = providers.gradleProperty("cipherboard.versionName").get()
 val cipherboardArtifactName = providers.gradleProperty("cipherboard.artifactName").get()
+val cipherboardBuildToolsVersion = providers.gradleProperty("cipherboard.buildToolsVersion").get()
+val generatedLicenseAssets = layout.buildDirectory.dir("generated/cipherboardLicenseAssets")
+val prepareLicenseAssets by tasks.registering(Sync::class) {
+    from(rootProject.files(
+        "LICENSE",
+        "LICENSE-Apache-2.0",
+        "LICENSE-BlueOak-1.0.0",
+        "LICENSE-BSD-3-Clause-NOTICES",
+        "LICENSE-CC-BY-SA-4.0",
+        "LICENSES.md",
+        "THIRD_PARTY_NOTICES.md",
+        "UPSTREAM.md",
+    )) {
+        into("licenses")
+    }
+    into(generatedLicenseAssets)
+}
 
 plugins {
     id("com.android.application")
@@ -17,6 +34,7 @@ plugins {
 
 android {
     compileSdk = 36
+    buildToolsVersion = cipherboardBuildToolsVersion
 
     defaultConfig {
         applicationId = cipherboardApplicationId
@@ -24,7 +42,11 @@ android {
         targetSdk = 36
         versionCode = cipherboardVersionCode
         versionName = cipherboardVersionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resValue("string", "english_ime_name", cipherboardProductName)
+        resValue("string", "ime_settings", "$cipherboardProductName Settings")
+        resValue("string", "spell_checker_service_name", "$cipherboardProductName Spell Checker")
+        resValue("string", "android_spell_checker_settings", "$cipherboardProductName Spell Checker Settings")
         buildConfigField("String", "PRODUCT_NAME", "\"$cipherboardProductName\"")
         ndk {
             abiFilters.clear()
@@ -39,6 +61,10 @@ android {
             isShrinkResources = false
             isDebuggable = false
             isJniDebuggable = false
+            ndk {
+                abiFilters.clear()
+                abiFilters += "arm64-v8a"
+            }
         }
         create("nouserlib") { // same as release, but does not allow the user to provide a library
             matchingFallbacks += listOf("release")
@@ -46,15 +72,18 @@ android {
             isShrinkResources = false
             isDebuggable = false
             isJniDebuggable = false
+            ndk {
+                abiFilters.clear()
+                abiFilters += "arm64-v8a"
+            }
         }
         debug {
-            // "normal" debug has minify for smaller APK to fit the GitHub 25 MB limit when zipped
-            // and for better performance in case users want to install a debug APK
-            isMinifyEnabled = true
+            // Keep framework instrumentation deterministic. Release remains fully minified.
+            isMinifyEnabled = false
             isJniDebuggable = false
             applicationIdSuffix = ".debug"
         }
-        create("runTests") { // build variant for running tests on CI that skips tests known to fail
+        create("runTests") { // unminified build variant for CI instrumentation
             matchingFallbacks += listOf("debug")
             isMinifyEnabled = false
             isJniDebuggable = false
@@ -91,6 +120,12 @@ android {
         compose = true
     }
 
+    androidResources {
+        localeFilters += listOf("en", "ru")
+    }
+
+    sourceSets.getByName("main").assets.srcDir(generatedLicenseAssets)
+
     externalNativeBuild {
         ndkBuild {
             path = File("src/main/jni/Android.mk")
@@ -112,6 +147,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -135,6 +171,8 @@ android {
         abortOnError = true
     }
 }
+
+tasks.named("preBuild").configure { dependsOn(prepareLicenseAssets) }
 
 androidComponents {
     onVariants(selector().all()) { variant ->
@@ -170,12 +208,16 @@ androidComponents {
         }
         tasks.named("check").configure { dependsOn(verifyTask) }
     }
+
 }
 
 dependencies {
     implementation(project(":crypto-core"))
     implementation(project(":pairing"))
     implementation(project(":secure-storage"))
+    implementation("androidx.biometric:biometric:1.1.0")
+    // FragmentActivity + Activity Result APIs require Fragment >= 1.3; use the current stable line.
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
 
     // androidx
     implementation("androidx.core:core-ktx:1.17.0") // 1.18.0 requires minSdk 23
@@ -193,8 +235,8 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.11.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    "debugNoMinifyImplementation"("androidx.compose.ui:ui-tooling")
+    "debugCompileOnly"("androidx.compose.ui:ui-tooling")
+    "debugNoMinifyCompileOnly"("androidx.compose.ui:ui-tooling")
     implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("sh.calvin.reorderable:reorderable:3.1.0") // for easier re-ordering
     implementation("com.github.skydoves:colorpicker-compose:1.1.3") // for user-defined colors
@@ -206,4 +248,10 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.test:runner:1.7.0")
     testImplementation("androidx.test:core:1.7.0")
+
+    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    "debugImplementation"("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 }

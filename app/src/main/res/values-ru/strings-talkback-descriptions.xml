@@ -22,6 +22,7 @@
     <string name="spoken_description_to_numeric">"Цифры."</string>
     <string name="spoken_description_settings">"Настройки."</string>
     <string name="spoken_description_secure_composer">"Безопасный ввод."</string>
+    <string name="spoken_description_secure_decrypt">Расшифровать выделенный шифротекст.</string>
     <string name="spoken_description_tab">"Клавиша Tab."</string>
     <string name="spoken_description_space">"Пробел."</string>
     <string name="spoken_description_mic">"Голосовой ввод."</string>

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package helium314.keyboard.settings
 
-import android.content.Intent
 import android.content.SharedPreferences
-import android.net.Uri
 import android.os.Bundle
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -18,7 +16,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,7 +28,6 @@ import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet
 import helium314.keyboard.latin.InputAttributes
 import helium314.keyboard.latin.R
-import helium314.keyboard.latin.common.FileUtils
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.BackButton
 import helium314.keyboard.latin.utils.ExecutorUtils
@@ -39,9 +35,7 @@ import helium314.keyboard.latin.utils.Theme
 import helium314.keyboard.latin.utils.UncachedInputMethodManagerUtils
 import helium314.keyboard.latin.utils.cleanUnusedMainDicts
 import helium314.keyboard.latin.utils.prefs
-import helium314.keyboard.settings.dialogs.NewDictionaryDialog
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.io.File
 
 // todo: with compose, app startup is slower and UI needs some "warmup" time to be snappy
 //  maybe baseline profiles help?
@@ -53,8 +47,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
     private val prefs by lazy { this.prefs() }
     val prefChanged = MutableStateFlow(0) // simple counter, as the only relevant information is that something changed
     fun prefChanged() = prefChanged.value++
-    private val dictUriFlow = MutableStateFlow<Uri?>(null)
-    private val cachedDictionaryFile by lazy { File(this.cacheDir.path + File.separator + "temp_dict") }
     private var paused = true
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -78,7 +70,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
         cv.setContent {
             Theme {
                 Surface {
-                    val dictUri by dictUriFlow.collectAsState()
                     var showWelcomeWizard by rememberSaveable { mutableStateOf(
                         !UncachedInputMethodManagerUtils.isThisImeCurrent(this, imm)
                                 || !UncachedInputMethodManagerUtils.isThisImeEnabled(this, imm)
@@ -104,24 +95,8 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
                             WelcomeWizard(close = { showWelcomeWizard = false }, finish = this::finish)
                         }
                     }
-                    if (dictUri != null) {
-                        NewDictionaryDialog(
-                            onDismissRequest = { dictUriFlow.value = null },
-                            cachedFile = cachedDictionaryFile,
-                            mainLocale = null
-                        )
-                    }
                 }
             }
-        }
-
-        if (intent?.action == Intent.ACTION_VIEW) {
-            intent?.data?.let {
-                cachedDictionaryFile.delete()
-                FileUtils.copyContentUriToNewFile(it, this, cachedDictionaryFile)
-                dictUriFlow.value = it
-            }
-            intent = null
         }
 
         enableEdgeToEdge()

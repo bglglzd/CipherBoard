@@ -13,15 +13,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.Process;
 
 import helium314.keyboard.latin.utils.KtxKt;
 import helium314.keyboard.latin.utils.Log;
-import android.view.inputmethod.InputMethodManager;
 
 import helium314.keyboard.keyboard.KeyboardLayoutSet;
 import helium314.keyboard.latin.settings.Settings;
-import helium314.keyboard.latin.utils.UncachedInputMethodManagerUtils;
 import helium314.keyboard.settings.SettingsActivity;
 
 /**
@@ -65,23 +62,8 @@ public final class SystemBroadcastReceiver extends BroadcastReceiver {
             KeyboardLayoutSet.Companion.onSystemLocaleChanged();
         }
 
-        // The process that hosts this broadcast receiver is invoked and remains alive even after
-        // 1) the package has been re-installed,
-        // 2) the device has just booted,
-        // 3) a new user has been created.
-        // There is no good reason to keep the process alive if this IME isn't a current IME.
-        final InputMethodManager imm = (InputMethodManager)
-                context.getSystemService(Context.INPUT_METHOD_SERVICE);
-        // Called to check whether this IME has been triggered by the current user or not
-        final boolean isInputMethodManagerValidForUserOfThisProcess =
-                !imm.getInputMethodList().isEmpty();
-        final boolean isCurrentImeOfCurrentUser = isInputMethodManagerValidForUserOfThisProcess
-                && UncachedInputMethodManagerUtils.isThisImeCurrent(context, imm);
-        if (!isCurrentImeOfCurrentUser) {
-            final int myPid = Process.myPid();
-            Log.i(TAG, "Killing my process: pid=" + myPid);
-            Process.killProcess(myPid);
-        }
+        // CipherBoard has a launcher/onboarding surface that must remain usable before the IME is
+        // selected. Android can reclaim this receiver process normally when it becomes cached.
     }
 
     public static void toggleAppIcon(final Context context) {

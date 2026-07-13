@@ -156,6 +156,33 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         mLastSlowInputConnectionTime = -SLOW_INPUTCONNECTION_PERSIST_MS;
     }
 
+    /** Best-effort overwrite of text cached while CipherBoard's plaintext editor was focused. */
+    public void clearCipherBoardSecureEditorState() {
+        wipe(mCommittedTextBeforeComposingText);
+        wipe(mComposingText);
+        if (mTempObjectForCommitText.length() > 0) {
+            mTempObjectForCommitText.replace(
+                    0,
+                    mTempObjectForCommitText.length(),
+                    new String(new char[mTempObjectForCommitText.length()]));
+        }
+        mTempObjectForCommitText.clear();
+        mTempObjectForCommitText.clearSpans();
+        mExpectedSelStart = INVALID_CURSOR_POSITION;
+        mExpectedSelEnd = INVALID_CURSOR_POSITION;
+        mNestLevel = 0;
+        mIC = null;
+        mLastSlowInputConnectionTime = -SLOW_INPUTCONNECTION_PERSIST_MS;
+    }
+
+    private static void wipe(final StringBuilder value) {
+        for (int index = 0; index < value.length(); index++) {
+            value.setCharAt(index, '\0');
+        }
+        value.setLength(0);
+        value.trimToSize();
+    }
+
     private void checkConsistencyForDebug() {
         final ExtractedTextRequest r = new ExtractedTextRequest();
         r.hintMaxChars = 0;

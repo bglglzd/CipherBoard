@@ -15,7 +15,11 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import helium314.keyboard.latin.utils.ExecutorUtils;
 
@@ -58,24 +62,57 @@ public class FileUtils {
      *  still effectively blocking, as we only use small files which are mostly stored locally
      */
     public static void copyContentUriToNewFile(final Uri uri, final Context context, final File outfile) throws IOException {
-        final boolean[] allOk = new boolean[] { true };
+        if (!"content".equals(uri.getScheme())) {
+            throw new IOException("only content URIs are accepted");
+        }
+        final File parent = outfile.getParentFile();
+        if (parent == null || (!parent.exists() && !parent.mkdirs())) {
+            throw new IOException("could not create import directory");
+        }
+        final File temporary = File.createTempFile("cb-import-", ".tmp", parent);
         final CountDownLatch wait = new CountDownLatch(1);
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+        final AtomicReference<InputStream> activeInput = new AtomicReference<>();
+        final AtomicReference<IOException> failure = new AtomicReference<>();
         ExecutorUtils.getBackgroundExecutor(ExecutorUtils.KEYBOARD).execute(() -> {
-            try {
-                copyStreamToNewFile(context.getContentResolver().openInputStream(uri), outfile);
+            try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IOException("content provider returned no stream");
+                activeInput.set(input);
+                if (cancelled.get()) throw new IOException("content read timed out");
+                copyStreamToNewFile(input, temporary);
             } catch (IOException e) {
-                allOk[0] = false;
+                failure.set(e);
+                temporary.delete();
             } finally {
+                activeInput.set(null);
                 wait.countDown();
             }
         });
+        final boolean completed;
         try {
-            wait.await();
+            completed = wait.await(CONTENT_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
-            allOk[0] = false;
+            Thread.currentThread().interrupt();
+            cancelled.set(true);
+            closeQuietly(activeInput.get());
+            temporary.delete();
+            throw new IOException("content read interrupted", e);
         }
-        if (!allOk[0])
-            throw new IOException("could not copy from uri");
+        if (!completed) {
+            cancelled.set(true);
+            closeQuietly(activeInput.get());
+            temporary.delete();
+            throw new IOException("content read timed out");
+        }
+        final IOException error = failure.get();
+        if (error != null) {
+            temporary.delete();
+            throw new IOException("could not copy from content URI", error);
+        }
+        if ((outfile.exists() && !outfile.delete()) || !temporary.renameTo(outfile)) {
+            temporary.delete();
+            throw new IOException("could not commit imported file");
+        }
     }
 
     public static void copyStreamToNewFile(final InputStream in, final File outfile) throws IOException {
@@ -83,18 +120,44 @@ public class FileUtils {
         if (parentFile == null || (!parentFile.exists() && !parentFile.mkdirs())) {
             throw new IOException("could not create parent folder");
         }
-        FileOutputStream out = new FileOutputStream(outfile);
-        copyStreamToOtherStream(in, out);
-        out.close();
+        try (FileOutputStream out = new FileOutputStream(outfile)) {
+            copyStreamToOtherStream(in, out);
+        } catch (IOException error) {
+            outfile.delete();
+            throw error;
+        }
     }
 
     public static void copyStreamToOtherStream(final InputStream in, final OutputStream out) throws IOException {
-        byte[] buf = new byte[1024];
-        int len;
-        while ((len = in.read(buf)) > 0) {
-            out.write(buf, 0, len);
+        if (in == null) throw new IOException("input stream is unavailable");
+        final byte[] buf = new byte[8192];
+        long total = 0;
+        try {
+            int len;
+            while ((len = in.read(buf)) != -1) {
+                if (len == 0) continue;
+                total += len;
+                if (total > MAX_IMPORTED_FILE_BYTES) {
+                    throw new IOException("import exceeds the file size limit");
+                }
+                out.write(buf, 0, len);
+            }
+            out.flush();
+        } finally {
+            Arrays.fill(buf, (byte) 0);
         }
-        out.flush();
     }
+
+    private static void closeQuietly(final InputStream input) {
+        if (input == null) return;
+        try {
+            input.close();
+        } catch (IOException ignored) {
+            // The original timeout or provider error remains authoritative.
+        }
+    }
+
+    private static final long MAX_IMPORTED_FILE_BYTES = 128L * 1024L * 1024L;
+    private static final long CONTENT_READ_TIMEOUT_SECONDS = 15L;
 
 }

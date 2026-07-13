@@ -53,6 +53,12 @@ class CombinerChain(initialText: String, combiningSpec: String) {
         }
     }
 
+    fun resetSecurely() {
+        mCombinedText.overwriteAndClear()
+        mStateFeedback.overwriteAndClear()
+        for (combiner in mCombiners) combiner.resetSecurely()
+    }
+
     private fun updateStateFeedback() {
         mStateFeedback.clear()
         for (i in mCombiners.indices.reversed()) {

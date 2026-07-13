@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <string name="cipherboard_vault_settings_title">Настройки хранилища</string>
+    <string name="cipherboard_vault_settings_description">Хранилище защищает личность и состояние ratchet шифрованием с помощью неэкспортируемого ключа Android Keystore, требующего аутентификации пользователя.</string>
+    <string name="cipherboard_vault_settings_timeout">Блокировать после ухода CipherBoard с переднего плана</string>
+    <string name="cipherboard_vault_settings_immediate">Немедленно</string>
+    <string name="cipherboard_vault_settings_30_seconds">Через 30 секунд</string>
+    <string name="cipherboard_vault_settings_1_minute">Через 1 минуту (по умолчанию)</string>
+    <string name="cipherboard_vault_settings_5_minutes">Через 5 минут</string>
+    <string name="cipherboard_viewer_timeout">Автоматически скрывать расшифрованные сообщения</string>
+    <string name="cipherboard_viewer_timeout_description">Отсчёт начинается заново, пока защищённое окно остаётся видимым.</string>
+    <string name="cipherboard_viewer_15_seconds">Через 15 секунд</string>
+    <string name="cipherboard_viewer_30_seconds">Через 30 секунд</string>
+    <string name="cipherboard_viewer_1_minute">Через 1 минуту (по умолчанию)</string>
+    <string name="cipherboard_viewer_5_minutes">Через 5 минут</string>
+    <string name="cipherboard_vault_settings_lock_boundaries">Хранилище всегда блокируется после перезагрузки, блокировки экрана, ручной команды, инвалидации Keystore и истечения выбранного времени в фоне.</string>
+    <string name="cipherboard_vault_settings_lock_now">Заблокировать хранилище</string>
+    <string name="cipherboard_vault_settings_locked">Хранилище заблокировано</string>
+    <string name="cipherboard_vault_settings_save_failed">Не удалось сохранить политику блокировки.</string>
+</resources>

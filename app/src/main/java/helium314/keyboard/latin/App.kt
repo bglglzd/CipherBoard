@@ -16,6 +16,10 @@ import helium314.keyboard.latin.utils.upgradeToolbarPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime
+import org.cipherboard.securekeyboard.runtime.RuntimeSecureDecryptBackend
+import org.cipherboard.securekeyboard.runtime.VaultPolicyPreferences
+import helium314.keyboard.secure.decrypt.SecureDecryptRuntime
 
 class App : Application() {
     override fun onCreate() {
@@ -24,6 +28,12 @@ class App : Application() {
         FoldableUtils.init(this)
         Settings.init(this)
         SubtypeSettings.init(this)
+        // Robolectric has no AndroidKeyStore provider; production Android always initializes here.
+        if (Build.FINGERPRINT != "robolectric") {
+            val secureRuntime = SecureKeyboardRuntime.initialize(this)
+            secureRuntime.lockPolicy = VaultPolicyPreferences.read(this)
+            SecureDecryptRuntime.install(RuntimeSecureDecryptBackend(secureRuntime, this))
+        }
 
         val scope = CoroutineScope(Dispatchers.Default)
         scope.launch { // do some uncritical work in background for faster startup

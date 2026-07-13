@@ -189,6 +189,11 @@ class HangulCombiner : Combiner {
         history.clear()
     }
 
+    override fun resetSecurely() {
+        composingWord.overwriteAndClear()
+        history.clear()
+    }
+
     sealed class HangulJamo {
         abstract val codePoint: Int
         abstract val modern: Boolean

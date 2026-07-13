@@ -27,6 +27,8 @@ import androidx.annotation.NonNull;
  * Class to hold attributes of the input field.
  */
 public final class InputAttributes {
+    public static final String CIPHERBOARD_SECURE_EDITOR_OPTION =
+            BuildConfig.APPLICATION_ID + ".secureComposer";
     private final String TAG = InputAttributes.class.getSimpleName();
 
     final public String mTargetApplicationPackageName;
@@ -38,6 +40,8 @@ public final class InputAttributes {
     final public boolean mShouldInsertSpacesAutomatically;
     final public boolean mShouldShowVoiceInputKey;
     final public boolean mNoLearning;
+    final public boolean mIsCipherBoardEditor;
+    final public boolean mIsCipherBoardSecureEditor;
     /**
      * Whether the floating gesture preview should be disabled. If true, this should override the
      * corresponding keyboard settings preference, always suppressing the floating preview text.
@@ -54,6 +58,8 @@ public final class InputAttributes {
         mEditorInfo = editorInfo;
         mPackageNameForPrivateImeOptions = packageNameForPrivateImeOptions;
         mTargetApplicationPackageName = null != editorInfo ? editorInfo.packageName : null;
+        mIsCipherBoardEditor = BuildConfig.APPLICATION_ID.equals(mTargetApplicationPackageName);
+        mIsCipherBoardSecureEditor = isCipherBoardSecureEditor(editorInfo);
         mInputType = AppWorkarounds.INSTANCE.adjustInputType(null != editorInfo ? editorInfo.inputType : 0, mTargetApplicationPackageName);
         final int inputClass = mInputType & InputType.TYPE_MASK_CLASS;
         mIsPasswordField = InputTypeUtils.isPasswordInputType(mInputType)
@@ -93,31 +99,34 @@ public final class InputAttributes {
 
         // TODO: Have a helper method in InputTypeUtils
         // Make sure that passwords are not displayed in {@link SuggestionStripView}.
-        mShouldShowSuggestions = !mIsPasswordField && !flagNoSuggestions;
-        mMayOverrideShowingSuggestions = !mIsPasswordField;
+        mShouldShowSuggestions = !mIsPasswordField && !mIsCipherBoardSecureEditor
+                && !flagNoSuggestions;
+        mMayOverrideShowingSuggestions = !mIsPasswordField && !mIsCipherBoardSecureEditor;
 
         mShouldInsertSpacesAutomatically = InputTypeUtils.isAutoSpaceFriendlyType(mInputType);
 
         final boolean noMicrophone = mIsPasswordField
+                || mIsCipherBoardEditor
                 || InputTypeUtils.isEmailVariation(variation)
                 || hasNoMicrophoneKeyOption()
                 || !RichInputMethodManager.isInitialized() // avoid crash when only using spell checker
                 || !RichInputMethodManager.getInstance().isShortcutImeReady();
         mShouldShowVoiceInputKey = !noMicrophone;
 
-        mDisableGestureFloatingPreviewText = InputAttributes.inPrivateImeOptions(
-                mPackageNameForPrivateImeOptions, NO_FLOATING_GESTURE_PREVIEW, editorInfo);
+        mDisableGestureFloatingPreviewText = mIsCipherBoardSecureEditor
+                || InputAttributes.inPrivateImeOptions(
+                        mPackageNameForPrivateImeOptions, NO_FLOATING_GESTURE_PREVIEW, editorInfo);
 
         // autocorrect if explicitly wanted, but also for most multi-line input types (like AOSP keyboard)
         // originally, URI and email were always excluded from autocorrect (in Suggest.java), but this is
         //  and unexpected place, and if the input field explicitly requests autocorrect we should follow the flag
-        mInputTypeShouldAutoCorrect = flagAutoCorrect || (
+        mInputTypeShouldAutoCorrect = !mIsCipherBoardSecureEditor && (flagAutoCorrect || (
                 flagMultiLine
                 && variation != InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
                 && variation != InputType.TYPE_TEXT_VARIATION_URI
                 && !InputTypeUtils.isEmailVariation(variation)
                 && !flagNoSuggestions
-        );
+        ));
 
         mApplicationSpecifiedCompletionOn = flagAutoComplete && isFullscreenMode;
 
@@ -131,10 +140,16 @@ public final class InputAttributes {
                 && InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD != variation;
 
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            mNoLearning = (editorInfo.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0;
-        else
-            mNoLearning = false;
+        mNoLearning = mIsCipherBoardEditor
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && (editorInfo.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0);
+    }
+
+    public static boolean isCipherBoardSecureEditor(final EditorInfo editorInfo) {
+        return editorInfo != null
+                && BuildConfig.APPLICATION_ID.equals(editorInfo.packageName)
+                && StringUtilsKt.containsValueWhenSplit(
+                        editorInfo.privateImeOptions, CIPHERBOARD_SECURE_EDITOR_OPTION, ",");
     }
 
     public boolean isTypeNull() {
@@ -143,6 +158,10 @@ public final class InputAttributes {
 
     public boolean isSameInputType(final EditorInfo editorInfo) {
         return editorInfo.inputType == mInputType && mEditorInfo != null
+                && mIsCipherBoardSecureEditor == isCipherBoardSecureEditor(editorInfo)
+                && (mTargetApplicationPackageName == null
+                        ? editorInfo.packageName == null
+                        : mTargetApplicationPackageName.equals(editorInfo.packageName))
                 && (mEditorInfo.imeOptions & EditorInfo.IME_FLAG_FORCE_ASCII) == (editorInfo.imeOptions & EditorInfo.IME_FLAG_FORCE_ASCII);
     }
 

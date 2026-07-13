@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <string name="cipherboard_contact_title">Contact details</string>
+    <string name="cipherboard_contact_vault_locked">The Vault is locked. Return to CipherBoard and unlock it to view this contact.</string>
+    <string name="cipherboard_contact_unavailable">This contact is unavailable. It may have been deleted, or the protected navigation session expired.</string>
+    <string name="cipherboard_contact_operation_failed">The protected contact record could not be updated. No unsafe partial change was accepted.</string>
+    <string name="cipherboard_contact_name_required">Enter a local contact name.</string>
+    <string name="cipherboard_contact_local_name">Local contact name</string>
+    <string name="cipherboard_contact_rename">Rename locally</string>
+    <string name="cipherboard_contact_save">Save</string>
+    <string name="cipherboard_contact_identity_fingerprint">Identity fingerprint</string>
+    <string name="cipherboard_contact_export_fingerprint">Export public fingerprint</string>
+    <string name="cipherboard_contact_export_fingerprint_confirmation">Only this public fingerprint will be sent to the app you choose. The local contact name, Safety Number, identifiers, and session state are not included. This does not verify or pair a contact.</string>
+    <string name="cipherboard_contact_export_fingerprint_action">Choose app</string>
+    <string name="cipherboard_contact_export_fingerprint_chooser">Export public fingerprint</string>
+    <string name="cipherboard_contact_export_fingerprint_failed">No app accepted the public fingerprint.</string>
+    <string name="cipherboard_contact_safety_number">Safety Number</string>
+    <string name="cipherboard_contact_safety_code">Word code</string>
+    <string name="cipherboard_contact_mark_verified">Mark as verified</string>
+    <string name="cipherboard_contact_trust_changed_key">Trust this new identity</string>
+    <string name="cipherboard_contact_key_changed_warning">Critical warning: this identity key differs from the key previously stored for this contact. Secure messages remain blocked until you compare the new Safety Number in person and explicitly trust it.</string>
+    <string name="cipherboard_contact_recheck_safety">Compare Safety Number again</string>
+    <string name="cipherboard_contact_verify_in_person">Compare both representations with the other person in the same physical location. Do not verify from a screenshot or a message sent through an untrusted transport.</string>
+    <string name="cipherboard_contact_verify_title">Verify Safety Number</string>
+    <string name="cipherboard_contact_verify_confirmation">Confirm only after both devices show exactly the same Safety Number and word code.</string>
+    <string name="cipherboard_contact_confirm_compared">They match</string>
+    <string name="cipherboard_contact_safety_rechecked">Safety Number comparison confirmed; the contact remains verified.</string>
+    <string name="cipherboard_contact_paired_at">Paired</string>
+    <string name="cipherboard_contact_last_active">Last local activity</string>
+    <string name="cipherboard_contact_protocol">Protocol version</string>
+    <string name="cipherboard_contact_repair">Start pairing again</string>
+    <string name="cipherboard_contact_repair_confirmation">This destroys the current session and its pending message state, marks the contact as requiring pairing, and starts a new in-person two-QR exchange. It cannot be undone.</string>
+    <string name="cipherboard_contact_continue">Destroy and continue</string>
+    <string name="cipherboard_contact_destroy_session">Destroy secure session</string>
+    <string name="cipherboard_contact_destroy_confirmation">The ratchet, replay markers, and pending messages for this contact will be deleted. The contact remains visible but cannot exchange messages until paired again.</string>
+    <string name="cipherboard_contact_destroy">Destroy session</string>
+    <string name="cipherboard_contact_delete">Delete contact</string>
+    <string name="cipherboard_contact_delete_confirmation">The local contact record, session, replay markers, and pending messages will be deleted. CipherBoard cannot recover them.</string>
+    <string name="cipherboard_contact_delete_action">Delete permanently</string>
+</resources>

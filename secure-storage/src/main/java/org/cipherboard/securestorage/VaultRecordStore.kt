@@ -21,6 +21,7 @@ data class VersionedSecret(
 }
 
 data class PendingOutbound(
+    val contactId: ByteArray,
     val operationId: ByteArray,
     val ciphertext: ByteArray,
     val revision: Long,
@@ -28,11 +29,13 @@ data class PendingOutbound(
 
 data class PendingDisplay(
     val messageId: ByteArray,
+    val ciphertextDigest: ByteArray,
     val plaintext: OwnedSecret,
     val revision: Long,
 ) : Closeable {
     override fun close() {
         messageId.wipe()
+        ciphertextDigest.wipe()
         plaintext.close()
     }
 }
@@ -141,50 +144,140 @@ class VaultRecordStore(
         newRatchetState: OwnedSecret,
         operationId: ByteArray,
         pendingCiphertext: ByteArray,
+    ) = commitOutboundInternal(
+        contactId,
+        expectedRatchetRevision,
+        ratchetSchemaVersion,
+        newRatchetState,
+        operationId,
+        pendingCiphertext,
+        null,
+    )
+
+    internal fun commitOutboundWithDomainMutation(
+        contactId: ByteArray,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        newRatchetState: OwnedSecret,
+        operationId: ByteArray,
+        pendingCiphertext: ByteArray,
+        domainMutation: DomainMutation.Put,
+    ) = commitOutboundInternal(
+        contactId,
+        expectedRatchetRevision,
+        ratchetSchemaVersion,
+        newRatchetState,
+        operationId,
+        pendingCiphertext,
+        domainMutation,
+    )
+
+    private fun commitOutboundInternal(
+        contactId: ByteArray,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        newRatchetState: OwnedSecret,
+        operationId: ByteArray,
+        pendingCiphertext: ByteArray,
+        domainMutation: DomainMutation.Put?,
     ) {
-        require(expectedRatchetRevision > 0)
-        val ownerKey = IdentifierCodec.contactKey(contactId)
-        val operationKey = IdentifierCodec.operationKey(operationId)
-        val nextRevision = Math.addExact(expectedRatchetRevision, 1)
-        val ratchetPlaintext = newRatchetState.take()
-        val pendingPlaintext = PendingRecordCodec.encode(operationId, pendingCiphertext)
         try {
-            vault.withDek { dek ->
-                val ratchet = recordCrypto.encrypt(
-                    dek, RecordKind.RATCHET, ownerKey, ratchetSchemaVersion, nextRevision, ratchetPlaintext,
-                )
-                val pending = recordCrypto.encrypt(
-                    dek, RecordKind.PENDING_OUTBOUND, operationKey, PENDING_SCHEMA_VERSION, nextRevision, pendingPlaintext,
-                )
+            require(expectedRatchetRevision > 0)
+            require(newRatchetState.size <= RecordCrypto.MAX_RECORD_BYTES)
+            val ownerKey = IdentifierCodec.contactKey(contactId)
+            domainMutation?.let {
+                require(it.expectedRevision > 0 && it.schemaVersion > 0)
+                validateDomainCoordinates(it.kind, it.recordKey)
+                validateDomainCoordinates(it.kind, it.ownerKey)
+                require(it.ownerKey == ownerKey)
+                require(it.plaintext.size <= RecordCrypto.MAX_RECORD_BYTES)
+            }
+            val operationKey = IdentifierCodec.operationKey(operationId)
+            val nextRevision = Math.addExact(expectedRatchetRevision, 1)
+            val contactBoundSize = PendingRecordCodec.encodedSize(contactId, pendingCiphertext.size)
+            PendingRecordCodec.encodedSize(operationId, contactBoundSize)
+            val ratchetPlaintext = newRatchetState.take()
+            try {
+                val contactBoundCiphertext = PendingRecordCodec.encode(contactId, pendingCiphertext)
                 try {
-                    inTransaction(helper.writableDatabase) { db ->
-                        if (!updateRatchet(db, ownerKey, expectedRatchetRevision, ratchet)) {
-                            throw RatchetRevisionConflictException()
+                    val pendingPlaintext = PendingRecordCodec.encode(operationId, contactBoundCiphertext)
+                    try {
+                        vault.withDek { dek ->
+                            val ratchet = recordCrypto.encrypt(
+                                dek, RecordKind.RATCHET, ownerKey, ratchetSchemaVersion, nextRevision, ratchetPlaintext,
+                            )
+                            try {
+                                val pending = recordCrypto.encrypt(
+                                    dek,
+                                    RecordKind.PENDING_OUTBOUND,
+                                    operationKey,
+                                    PENDING_SCHEMA_VERSION,
+                                    nextRevision,
+                                    pendingPlaintext,
+                                )
+                                try {
+                                    val domain = domainMutation?.let { mutation ->
+                                        recordCrypto.encrypt(
+                                            dek,
+                                            mutation.kind,
+                                            mutation.recordKey,
+                                            mutation.schemaVersion,
+                                            Math.addExact(mutation.expectedRevision, 1),
+                                            mutation.plaintext,
+                                        )
+                                    }
+                                    try {
+                                        inTransaction(helper.writableDatabase) { db ->
+                                            if (!updateRatchet(db, ownerKey, expectedRatchetRevision, ratchet)) {
+                                                throw RatchetRevisionConflictException()
+                                            }
+                                            if (domainMutation != null &&
+                                                !updateDomainRecord(db, domainMutation, checkNotNull(domain))
+                                            ) {
+                                                throw RatchetRevisionConflictException()
+                                            }
+                                            if (!insertRecord(
+                                                    db,
+                                                    RecordKind.PENDING_OUTBOUND,
+                                                    operationKey,
+                                                    ownerKey,
+                                                    pending,
+                                                )
+                                            ) {
+                                                throw VaultStorageException("Pending outbound operation already exists")
+                                            }
+                                        }
+                                    } finally {
+                                        domain?.wipe()
+                                    }
+                                } finally {
+                                    pending.wipe()
+                                }
+                            } finally {
+                                ratchet.wipe()
+                            }
                         }
-                        if (!insertRecord(db, RecordKind.PENDING_OUTBOUND, operationKey, ownerKey, pending)) {
-                            throw VaultStorageException("Pending outbound operation already exists")
-                        }
+                    } finally {
+                        pendingPlaintext.wipe()
                     }
                 } finally {
-                    ratchet.wipe()
-                    pending.wipe()
+                    contactBoundCiphertext.wipe()
                 }
+            } finally {
+                ratchetPlaintext.wipe()
             }
         } finally {
-            ratchetPlaintext.wipe()
-            pendingPlaintext.wipe()
+            newRatchetState.close()
         }
     }
 
     fun completeOutbound(operationId: ByteArray): Boolean {
         val key = IdentifierCodec.operationKey(operationId)
-        return vault.withDek {
-            helper.writableDatabase.delete(
-                TABLE_RECORDS,
-                "kind=? AND record_key=?",
-                arrayOf(RecordKind.PENDING_OUTBOUND.toString(), key),
-            ) == 1
-        }
+        return helper.writableDatabase.delete(
+            TABLE_RECORDS,
+            "kind=? AND record_key=?",
+            arrayOf(RecordKind.PENDING_OUTBOUND.toString(), key),
+        ) == 1
     }
 
     fun listPendingOutbound(limit: Int = MAX_PENDING_RESULTS): List<PendingOutbound> {
@@ -194,8 +287,13 @@ class VaultRecordStore(
                 try {
                     val decrypted = recordCrypto.decrypt(dek, RecordKind.PENDING_OUTBOUND, row.recordKey, row.encrypted)
                     try {
-                        val (id, ciphertext) = PendingRecordCodec.decode(decrypted)
-                        PendingOutbound(id, ciphertext, row.encrypted.revision)
+                        val (id, contactBoundCiphertext) = PendingRecordCodec.decode(decrypted)
+                        try {
+                            val (contactId, ciphertext) = PendingRecordCodec.decode(contactBoundCiphertext)
+                            PendingOutbound(contactId, id, ciphertext, row.encrypted.revision)
+                        } finally {
+                            contactBoundCiphertext.wipe()
+                        }
                     } finally {
                         decrypted.wipe()
                     }
@@ -216,50 +314,166 @@ class VaultRecordStore(
         ratchetSchemaVersion: Int,
         newRatchetState: OwnedSecret,
         messageId: ByteArray,
+        ciphertextDigest: ByteArray,
         pendingPlaintext: OwnedSecret,
+    ): AtomicInboundResult = commitInboundInternal(
+        contactId,
+        expectedRatchetRevision,
+        ratchetSchemaVersion,
+        newRatchetState,
+        messageId,
+        ciphertextDigest,
+        pendingPlaintext,
+        null,
+    )
+
+    internal fun commitInboundWithDomainMutation(
+        contactId: ByteArray,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        newRatchetState: OwnedSecret,
+        messageId: ByteArray,
+        ciphertextDigest: ByteArray,
+        pendingPlaintext: OwnedSecret,
+        domainMutation: DomainMutation.Put,
+    ): AtomicInboundResult = commitInboundInternal(
+        contactId,
+        expectedRatchetRevision,
+        ratchetSchemaVersion,
+        newRatchetState,
+        messageId,
+        ciphertextDigest,
+        pendingPlaintext,
+        domainMutation,
+    )
+
+    private fun commitInboundInternal(
+        contactId: ByteArray,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        newRatchetState: OwnedSecret,
+        messageId: ByteArray,
+        ciphertextDigest: ByteArray,
+        pendingPlaintext: OwnedSecret,
+        domainMutation: DomainMutation.Put?,
     ): AtomicInboundResult {
-        require(expectedRatchetRevision > 0)
-        val ownerKey = IdentifierCodec.contactKey(contactId)
-        val displayKey = IdentifierCodec.displayKey(messageId)
-        val replayKey = IdentifierCodec.replayKey(contactId, messageId)
-        val nextRevision = Math.addExact(expectedRatchetRevision, 1)
-        val ratchetBytes = newRatchetState.take()
-        val displayBytes = pendingPlaintext.take()
-        val encodedDisplay = PendingRecordCodec.encode(messageId, displayBytes)
         try {
-            return vault.withDek { dek ->
-                val ratchet = recordCrypto.encrypt(
-                    dek, RecordKind.RATCHET, ownerKey, ratchetSchemaVersion, nextRevision, ratchetBytes,
-                )
-                val display = recordCrypto.encrypt(
-                    dek, RecordKind.PENDING_DISPLAY, displayKey, PENDING_SCHEMA_VERSION, nextRevision, encodedDisplay,
-                )
+            require(expectedRatchetRevision > 0)
+            require(ciphertextDigest.size == CIPHERTEXT_DIGEST_BYTES)
+            require(newRatchetState.size <= RecordCrypto.MAX_RECORD_BYTES)
+            val ownerKey = IdentifierCodec.contactKey(contactId)
+            domainMutation?.let {
+                require(it.expectedRevision > 0 && it.schemaVersion > 0)
+                validateDomainCoordinates(it.kind, it.recordKey)
+                validateDomainCoordinates(it.kind, it.ownerKey)
+                require(it.ownerKey == ownerKey)
+                require(it.plaintext.size <= RecordCrypto.MAX_RECORD_BYTES)
+            }
+            val displayPayloadSize = Math.addExact(CIPHERTEXT_DIGEST_BYTES, pendingPlaintext.size)
+            PendingRecordCodec.encodedSize(messageId, displayPayloadSize)
+            val displayKey = IdentifierCodec.displayKey(messageId)
+            val replayKey = IdentifierCodec.replayKey(contactId, messageId)
+            val nextRevision = Math.addExact(expectedRatchetRevision, 1)
+            val ratchetBytes = newRatchetState.take()
+            try {
+                val displayBytes = pendingPlaintext.take()
                 try {
+                    val boundDisplay = ByteArray(displayPayloadSize)
                     try {
-                        inTransaction(helper.writableDatabase) { db ->
-                            if (!insertReplay(db, replayKey, ownerKey)) {
-                                throw AbortInbound(AtomicInboundResult.REPLAY)
+                        ciphertextDigest.copyInto(boundDisplay)
+                        displayBytes.copyInto(boundDisplay, CIPHERTEXT_DIGEST_BYTES)
+                        val encodedDisplay = PendingRecordCodec.encode(messageId, boundDisplay)
+                        try {
+                            return vault.withDek { dek ->
+                                val ratchet = recordCrypto.encrypt(
+                                    dek, RecordKind.RATCHET, ownerKey, ratchetSchemaVersion, nextRevision, ratchetBytes,
+                                )
+                                try {
+                                    val display = recordCrypto.encrypt(
+                                        dek,
+                                        RecordKind.PENDING_DISPLAY,
+                                        displayKey,
+                                        PENDING_SCHEMA_VERSION,
+                                        nextRevision,
+                                        encodedDisplay,
+                                    )
+                                    try {
+                                        val domain = domainMutation?.let { mutation ->
+                                            recordCrypto.encrypt(
+                                                dek,
+                                                mutation.kind,
+                                                mutation.recordKey,
+                                                mutation.schemaVersion,
+                                                Math.addExact(mutation.expectedRevision, 1),
+                                                mutation.plaintext,
+                                            )
+                                        }
+                                        try {
+                                            try {
+                                                inTransaction(helper.writableDatabase) { db ->
+                                                    if (!insertReplay(db, replayKey, ownerKey)) {
+                                                        throw AbortInbound(AtomicInboundResult.REPLAY)
+                                                    }
+                                                    pruneReplayMarkers(
+                                                        db,
+                                                        ownerKey,
+                                                        replayKey,
+                                                        MAX_REPLAY_MARKERS_PER_CONTACT,
+                                                    )
+                                                    if (!updateRatchet(
+                                                            db,
+                                                            ownerKey,
+                                                            expectedRatchetRevision,
+                                                            ratchet,
+                                                        )
+                                                    ) {
+                                                        throw AbortInbound(AtomicInboundResult.REVISION_CONFLICT)
+                                                    }
+                                                    if (domainMutation != null &&
+                                                        !updateDomainRecord(db, domainMutation, checkNotNull(domain))
+                                                    ) {
+                                                        throw AbortInbound(AtomicInboundResult.REVISION_CONFLICT)
+                                                    }
+                                                    if (!insertRecord(
+                                                            db,
+                                                            RecordKind.PENDING_DISPLAY,
+                                                            displayKey,
+                                                            ownerKey,
+                                                            display,
+                                                        )
+                                                    ) {
+                                                        throw VaultStorageException("Pending display already exists")
+                                                    }
+                                                }
+                                                AtomicInboundResult.COMMITTED
+                                            } catch (abort: AbortInbound) {
+                                                abort.result
+                                            }
+                                        } finally {
+                                            domain?.wipe()
+                                        }
+                                    } finally {
+                                        display.wipe()
+                                    }
+                                } finally {
+                                    ratchet.wipe()
+                                }
                             }
-                            if (!updateRatchet(db, ownerKey, expectedRatchetRevision, ratchet)) {
-                                throw AbortInbound(AtomicInboundResult.REVISION_CONFLICT)
-                            }
-                            if (!insertRecord(db, RecordKind.PENDING_DISPLAY, displayKey, ownerKey, display)) {
-                                throw VaultStorageException("Pending display already exists")
-                            }
+                        } finally {
+                            encodedDisplay.wipe()
                         }
-                        AtomicInboundResult.COMMITTED
-                    } catch (abort: AbortInbound) {
-                        abort.result
+                    } finally {
+                        boundDisplay.wipe()
                     }
                 } finally {
-                    ratchet.wipe()
-                    display.wipe()
+                    displayBytes.wipe()
                 }
+            } finally {
+                ratchetBytes.wipe()
             }
         } finally {
-            ratchetBytes.wipe()
-            displayBytes.wipe()
-            encodedDisplay.wipe()
+            newRatchetState.close()
+            pendingPlaintext.close()
         }
     }
 
@@ -279,30 +493,85 @@ class VaultRecordStore(
         }
     }
 
-    fun readPendingDisplay(messageId: ByteArray): PendingDisplay? {
+    @androidx.annotation.VisibleForTesting
+    internal fun insertReplayMarkerForTesting(
+        contactId: ByteArray,
+        messageId: ByteArray,
+        maxRecords: Int,
+    ): Boolean {
+        require(maxRecords > 0)
+        val ownerKey = IdentifierCodec.contactKey(contactId)
+        val replayKey = IdentifierCodec.replayKey(contactId, messageId)
+        return inTransaction(helper.writableDatabase) { db ->
+            if (!insertReplay(db, replayKey, ownerKey)) return@inTransaction false
+            pruneReplayMarkers(db, ownerKey, replayKey, maxRecords)
+            true
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun replayMarkerCountForTesting(contactId: ByteArray): Int {
+        val ownerKey = IdentifierCodec.contactKey(contactId)
+        helper.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_REPLAY WHERE owner_key=?",
+            arrayOf(ownerKey),
+        ).use { cursor ->
+            check(cursor.moveToFirst())
+            return cursor.getInt(0)
+        }
+    }
+
+    fun readPendingDisplay(contactId: ByteArray, messageId: ByteArray): PendingDisplay? {
         val key = IdentifierCodec.displayKey(messageId)
+        val expectedOwnerKey = IdentifierCodec.contactKey(contactId)
         return vault.withDek { dek ->
-            val secret = readSecret(dek, RecordKind.PENDING_DISPLAY, key) ?: return@withDek null
-            val encoded = secret.secret.take()
+            val row = queryRecord(RecordKind.PENDING_DISPLAY, key) ?: return@withDek null
             try {
-                val (storedId, plaintext) = PendingRecordCodec.decode(encoded)
-                PendingDisplay(storedId, OwnedSecret(plaintext), secret.revision)
+                if (row.ownerKey != expectedOwnerKey) {
+                    throw VaultCorruptException("Pending display owner does not match its contact")
+                }
+                val encoded = recordCrypto.decrypt(dek, RecordKind.PENDING_DISPLAY, key, row.encrypted)
+                try {
+                    val (storedId, boundDisplay) = PendingRecordCodec.decode(encoded)
+                    try {
+                        if (!storedId.contentEquals(messageId) ||
+                            boundDisplay.size < CIPHERTEXT_DIGEST_BYTES
+                        ) {
+                            storedId.wipe()
+                            throw VaultCorruptException("Pending display binding is invalid")
+                        }
+                        val digest = boundDisplay.copyOfRange(0, CIPHERTEXT_DIGEST_BYTES)
+                        val plaintext = boundDisplay.copyOfRange(CIPHERTEXT_DIGEST_BYTES, boundDisplay.size)
+                        PendingDisplay(storedId, digest, OwnedSecret(plaintext), row.encrypted.revision)
+                    } finally {
+                        boundDisplay.wipe()
+                    }
+                } finally {
+                    encoded.wipe()
+                }
             } finally {
-                encoded.wipe()
-                secret.close()
+                row.encrypted.wipe()
             }
         }
     }
 
     fun deletePendingDisplay(messageId: ByteArray): Boolean {
         val key = IdentifierCodec.displayKey(messageId)
-        return vault.withDek {
-            helper.writableDatabase.delete(
-                TABLE_RECORDS,
-                "kind=? AND record_key=?",
-                arrayOf(RecordKind.PENDING_DISPLAY.toString(), key),
-            ) == 1
-        }
+        return helper.writableDatabase.delete(
+            TABLE_RECORDS,
+            "kind=? AND record_key=?",
+            arrayOf(RecordKind.PENDING_DISPLAY.toString(), key),
+        ) == 1
+    }
+
+    /** Deletes encrypted plaintext handoff records that exceeded the crash-recovery window. */
+    fun purgePendingDisplaysCreatedAtOrBefore(cutoffEpochMillis: Long): Int {
+        require(cutoffEpochMillis >= 0)
+        return helper.writableDatabase.delete(
+            TABLE_RECORDS,
+            "kind=? AND created_at<=?",
+            arrayOf(RecordKind.PENDING_DISPLAY.toString(), cutoffEpochMillis.toString()),
+        )
     }
 
     /** Deletes ratchet, all pending operations and replay markers for one random contact ID. */
@@ -344,11 +613,15 @@ class VaultRecordStore(
         }
     }
 
-    internal fun listDomainRecords(kind: Int, limit: Int): List<DomainStoredSecret> {
+    internal fun listDomainRecords(
+        kind: Int,
+        limit: Int,
+        newestFirst: Boolean = false,
+    ): List<DomainStoredSecret> {
         require(kind > 0)
         require(limit in 1..MAX_DOMAIN_RESULTS)
         return vault.withDek { dek ->
-            val rows = queryRecords(kind, limit)
+            val rows = queryRecords(kind, limit, newestFirst)
             val result = ArrayList<DomainStoredSecret>(rows.size)
             try {
                 rows.forEach { row ->
@@ -368,6 +641,17 @@ class VaultRecordStore(
             } finally {
                 rows.forEach { it.encrypted.wipe() }
             }
+        }
+    }
+
+    internal fun countDomainRecords(kind: Int): Int {
+        require(kind > 0)
+        return helper.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_RECORDS WHERE kind=?",
+            arrayOf(kind.toString()),
+        ).use { cursor ->
+            check(cursor.moveToFirst())
+            cursor.getInt(0)
         }
     }
 
@@ -547,7 +831,7 @@ class VaultRecordStore(
         }
     }
 
-    private fun queryRecords(kind: Int, limit: Int): List<StoredRow> {
+    private fun queryRecords(kind: Int, limit: Int, newestFirst: Boolean = false): List<StoredRow> {
         helper.readableDatabase.query(
             TABLE_RECORDS,
             RECORD_COLUMNS,
@@ -555,7 +839,7 @@ class VaultRecordStore(
             arrayOf(kind.toString()),
             null,
             null,
-            "created_at ASC",
+            if (newestFirst) "created_at DESC" else "created_at ASC",
             limit.toString(),
         ).use { cursor ->
             val result = ArrayList<StoredRow>(cursor.count.coerceAtMost(limit))
@@ -650,6 +934,27 @@ class VaultRecordStore(
         return db.insertWithOnConflict(TABLE_REPLAY, null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
     }
 
+    private fun pruneReplayMarkers(
+        db: SQLiteDatabase,
+        ownerKey: String,
+        currentReplayKey: String,
+        maxRecords: Int,
+    ) {
+        require(maxRecords > 0)
+        db.delete(
+            TABLE_REPLAY,
+            """
+            owner_key=? AND replay_key NOT IN (
+                SELECT replay_key FROM $TABLE_REPLAY
+                WHERE owner_key=?
+                ORDER BY (replay_key=?) DESC, received_at DESC, replay_key DESC
+                LIMIT $maxRecords
+            )
+            """.trimIndent(),
+            arrayOf(ownerKey, ownerKey, currentReplayKey),
+        )
+    }
+
     private fun purgeSessionArtifacts(db: SQLiteDatabase, ownerKey: String) {
         db.delete(
             TABLE_RECORDS,
@@ -701,9 +1006,11 @@ class VaultRecordStore(
         private const val TABLE_RECORDS = "encrypted_records"
         private const val TABLE_REPLAY = "replay_ids"
         private const val PENDING_SCHEMA_VERSION = 1
+        private const val CIPHERTEXT_DIGEST_BYTES = 32
         private const val MAX_PENDING_RESULTS = 256
         private const val MAX_DOMAIN_RESULTS = 1_024
         private const val MAX_DOMAIN_MUTATIONS = 8
+        private const val MAX_REPLAY_MARKERS_PER_CONTACT = 8_192
         private const val MAX_STORED_KEY_CHARS = 128
         private val RECORD_COLUMNS = arrayOf(
             "record_key", "owner_key", "schema_version", "revision", "nonce", "ciphertext",

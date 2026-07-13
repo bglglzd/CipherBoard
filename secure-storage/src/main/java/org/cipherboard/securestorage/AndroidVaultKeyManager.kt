@@ -40,6 +40,7 @@ class AndroidVaultKeyManager(
     @Throws(VaultStorageException::class, VaultCorruptException::class)
     fun prepareUnlock(
         requestedMode: VaultAuthenticationMode = VaultAuthenticationMode.BIOMETRIC_OR_DEVICE_CREDENTIAL,
+        forceFreshAuthentication: Boolean = false,
     ): VaultUnlockRequest {
         ensureCredentialStorageAvailable()
         val envelope = envelopeStore.read()
@@ -55,7 +56,7 @@ class AndroidVaultKeyManager(
             )
             when (mode) {
                 VaultAuthenticationMode.BIOMETRIC_STRONG_CRYPTO_OBJECT -> {
-                    val cipher = initCipher(alias, mode, operation, envelope)
+                    val cipher = initCipher(alias, mode, operation, envelope, protectionInfo)
                     VaultUnlockRequest.CryptoObjectAuthentication(
                         operation = operation,
                         cryptoObject = BiometricPrompt.CryptoObject(cipher),
@@ -64,7 +65,11 @@ class AndroidVaultKeyManager(
                     )
                 }
                 VaultAuthenticationMode.BIOMETRIC_OR_DEVICE_CREDENTIAL -> {
-                    completeTimeBoundOperation(alias, operation, envelope, protectionInfo)
+                    if (forceFreshAuthentication) {
+                        promptRequest(operation, mode)
+                    } else {
+                        completeTimeBoundOperation(alias, operation, envelope, protectionInfo)
+                    }
                 }
             }
         } catch (_: UserNotAuthenticatedException) {
@@ -160,7 +165,7 @@ class AndroidVaultKeyManager(
         operation,
         envelope,
         protectionInfo,
-        initCipher(alias, protectionInfo.authenticationMode, operation, envelope),
+        initCipher(alias, protectionInfo.authenticationMode, operation, envelope, protectionInfo),
     )
 
     private fun completeWithCipher(
@@ -216,6 +221,7 @@ class AndroidVaultKeyManager(
         mode: VaultAuthenticationMode,
         operation: VaultOperation,
         envelope: WrappedDekEnvelope?,
+        protectionInfo: KeyProtectionInfo,
     ): Cipher {
         val key = keyStore.getKey(alias, null) as? SecretKey
             ?: throw KeyPermanentlyInvalidatedException()
@@ -227,7 +233,8 @@ class AndroidVaultKeyManager(
                     init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, nonce))
                 }
             }
-            val aad = "$WRAP_AAD_DOMAIN|${mode.name}|$alias".toByteArray(StandardCharsets.US_ASCII)
+            val authenticatedInfo = envelope?.protectionInfo ?: protectionInfo
+            val aad = buildWrapAad(alias, mode, authenticatedInfo)
             try {
                 updateAAD(aad)
             } finally {
@@ -252,21 +259,37 @@ class AndroidVaultKeyManager(
 
     private fun ensureKey(alias: String, mode: VaultAuthenticationMode): KeyProtectionInfo {
         if (keyStore.containsAlias(alias)) {
-            return keyProtectionInfo(alias, mode, null)
+            val existing = inspectKey(alias, mode, strongBoxAttempted = false, strongBoxSucceeded = false)
+            if (existing.securityLevel == KeystoreSecurityLevel.STRONGBOX ||
+                existing.securityLevel == KeystoreSecurityLevel.TRUSTED_ENVIRONMENT
+            ) {
+                return existing
+            }
+            keyStore.deleteEntry(alias)
         }
         val strongBoxAttempted = Build.VERSION.SDK_INT >= 28
         if (strongBoxAttempted) {
             try {
                 generateKey(alias, mode, strongBox = true)
-                return inspectKey(alias, mode, strongBoxAttempted = true, strongBoxSucceeded = true)
+                val generated = inspectKey(alias, mode, strongBoxAttempted = true, strongBoxSucceeded = true)
+                if (generated.securityLevel == KeystoreSecurityLevel.STRONGBOX) return generated
+                if (generated.securityLevel == KeystoreSecurityLevel.TRUSTED_ENVIRONMENT) {
+                    return generated.copy(strongBoxGenerationSucceeded = false)
+                }
+                keyStore.deleteEntry(alias)
             } catch (_: StrongBoxUnavailableException) {
                 // Expected on devices without StrongBox support for this key configuration.
+                runCatching { keyStore.deleteEntry(alias) }
             } catch (e: ProviderException) {
                 if (e.cause !is StrongBoxUnavailableException) throw e
+                runCatching { keyStore.deleteEntry(alias) }
             }
         }
         generateKey(alias, mode, strongBox = false)
-        return inspectKey(alias, mode, strongBoxAttempted, strongBoxSucceeded = false)
+        return requireHardwareBacked(
+            alias,
+            inspectKey(alias, mode, strongBoxAttempted, strongBoxSucceeded = false),
+        )
     }
 
     private fun generateKey(alias: String, mode: VaultAuthenticationMode, strongBox: Boolean) {
@@ -323,12 +346,24 @@ class AndroidVaultKeyManager(
         if (!keyStore.containsAlias(alias)) {
             throw KeyPermanentlyInvalidatedException()
         }
-        return inspectKey(
+        return requireHardwareBacked(
             alias,
-            mode,
-            persisted?.strongBoxAttempted ?: false,
-            persisted?.strongBoxGenerationSucceeded ?: false,
+            inspectKey(
+                alias,
+                mode,
+                persisted?.strongBoxAttempted ?: false,
+                persisted?.strongBoxGenerationSucceeded ?: false,
+            ),
         )
+    }
+
+    private fun requireHardwareBacked(alias: String, info: KeyProtectionInfo): KeyProtectionInfo {
+        if (info.securityLevel == KeystoreSecurityLevel.STRONGBOX ||
+            info.securityLevel == KeystoreSecurityLevel.TRUSTED_ENVIRONMENT
+        ) {
+            return info
+        }
+        throw VaultStorageException("Vault requires a hardware-backed Android Keystore key for $alias")
     }
 
     @Suppress("DEPRECATION")
@@ -379,8 +414,17 @@ class AndroidVaultKeyManager(
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ALIAS_PREFIX = "org.cipherboard.securekeyboard.vault.kek.v1"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val WRAP_AAD_DOMAIN = "CipherBoard/WrappedDek/v1"
+        private const val WRAP_AAD_DOMAIN = "CipherBoard/WrappedDek/v2"
         private const val TAG_BITS = 128
         private const val AUTHORIZATION_WINDOW_SECONDS = 15
+
+        internal fun buildWrapAad(
+            alias: String,
+            mode: VaultAuthenticationMode,
+            protectionInfo: KeyProtectionInfo,
+        ): ByteArray = (
+            "$WRAP_AAD_DOMAIN|$alias|${mode.name}|${protectionInfo.securityLevel.name}|" +
+                "${protectionInfo.strongBoxAttempted}|${protectionInfo.strongBoxGenerationSucceeded}"
+            ).toByteArray(StandardCharsets.US_ASCII)
     }
 }

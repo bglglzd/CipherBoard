@@ -249,6 +249,10 @@ class DeadKeyCombiner : Combiner {
         mDeadSequence.setLength(0)
     }
 
+    override fun resetSecurely() {
+        mDeadSequence.overwriteAndClear()
+    }
+
     override val combiningStateFeedback: CharSequence
         get() = mDeadSequence
 

@@ -33,6 +33,7 @@ import helium314.keyboard.settings.SearchSettingsScreen
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.latin.utils.Theme
 import helium314.keyboard.latin.utils.previewDark
+import helium314.keyboard.secure.home.LicenseInfoActivity
 import androidx.core.content.edit
 
 @Composable
@@ -88,10 +89,7 @@ fun createAboutSettings(context: Context) = listOf(
             name = it.title,
             description = it.description,
             onClick = {
-                val intent = Intent()
-                intent.data = Links.LICENSE.toUri()
-                intent.action = Intent.ACTION_VIEW
-                ctx.startActivity(intent)
+                ctx.startActivity(Intent(ctx, LicenseInfoActivity::class.java))
             },
             icon = R.drawable.ic_settings_about_license
         )

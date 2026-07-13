@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <string name="cipherboard_contact_title">Сведения о контакте</string>
+    <string name="cipherboard_contact_vault_locked">Хранилище заблокировано. Вернитесь в CipherBoard и разблокируйте его, чтобы открыть контакт.</string>
+    <string name="cipherboard_contact_unavailable">Контакт недоступен. Возможно, он удалён или срок защищённого перехода истёк.</string>
+    <string name="cipherboard_contact_operation_failed">Не удалось обновить защищённую запись контакта. Частичные небезопасные изменения не применены.</string>
+    <string name="cipherboard_contact_name_required">Введите локальное имя контакта.</string>
+    <string name="cipherboard_contact_local_name">Локальное имя контакта</string>
+    <string name="cipherboard_contact_rename">Переименовать локально</string>
+    <string name="cipherboard_contact_save">Сохранить</string>
+    <string name="cipherboard_contact_identity_fingerprint">Fingerprint личности</string>
+    <string name="cipherboard_contact_export_fingerprint">Экспортировать публичный fingerprint</string>
+    <string name="cipherboard_contact_export_fingerprint_confirmation">Выбранному приложению будет передан только этот публичный fingerprint. Локальное имя контакта, Safety Number, идентификаторы и состояние сессии не включаются. Это действие не проверяет и не сопрягает контакт.</string>
+    <string name="cipherboard_contact_export_fingerprint_action">Выбрать приложение</string>
+    <string name="cipherboard_contact_export_fingerprint_chooser">Экспорт публичного fingerprint</string>
+    <string name="cipherboard_contact_export_fingerprint_failed">Ни одно приложение не приняло публичный fingerprint.</string>
+    <string name="cipherboard_contact_safety_number">Safety Number</string>
+    <string name="cipherboard_contact_safety_code">Код из слов</string>
+    <string name="cipherboard_contact_mark_verified">Отметить проверенным</string>
+    <string name="cipherboard_contact_trust_changed_key">Доверять этой новой личности</string>
+    <string name="cipherboard_contact_key_changed_warning">Критическое предупреждение: этот ключ личности отличается от ранее сохранённого для контакта. Защищённый обмен заблокирован, пока вы лично не сравните новый Safety Number и явно не подтвердите доверие.</string>
+    <string name="cipherboard_contact_recheck_safety">Снова сравнить Safety Number</string>
+    <string name="cipherboard_contact_verify_in_person">Лично сравните оба представления с другим человеком. Не подтверждайте проверку по снимку экрана или сообщению из недоверенного транспорта.</string>
+    <string name="cipherboard_contact_verify_title">Проверка Safety Number</string>
+    <string name="cipherboard_contact_verify_confirmation">Подтверждайте только тогда, когда на обоих устройствах полностью совпадают Safety Number и код из слов.</string>
+    <string name="cipherboard_contact_confirm_compared">Коды совпадают</string>
+    <string name="cipherboard_contact_safety_rechecked">Сравнение Safety Number подтверждено; контакт остаётся проверенным.</string>
+    <string name="cipherboard_contact_paired_at">Дата сопряжения</string>
+    <string name="cipherboard_contact_last_active">Последняя локальная активность</string>
+    <string name="cipherboard_contact_protocol">Версия протокола</string>
+    <string name="cipherboard_contact_repair">Начать повторное сопряжение</string>
+    <string name="cipherboard_contact_repair_confirmation">Текущая сессия и незавершённые сообщения будут уничтожены, контакт получит статус «Требуется сопряжение», после чего начнётся новый личный обмен двумя QR-кодами. Действие необратимо.</string>
+    <string name="cipherboard_contact_continue">Уничтожить и продолжить</string>
+    <string name="cipherboard_contact_destroy_session">Уничтожить защищённую сессию</string>
+    <string name="cipherboard_contact_destroy_confirmation">Ratchet, метки защиты от повторов и незавершённые сообщения этого контакта будут удалены. Контакт останется в списке, но обмен сообщениями будет невозможен до нового сопряжения.</string>
+    <string name="cipherboard_contact_destroy">Уничтожить сессию</string>
+    <string name="cipherboard_contact_delete">Удалить контакт</string>
+    <string name="cipherboard_contact_delete_confirmation">Локальная запись контакта, сессия, метки защиты от повторов и незавершённые сообщения будут удалены. CipherBoard не сможет их восстановить.</string>
+    <string name="cipherboard_contact_delete_action">Удалить безвозвратно</string>
+</resources>

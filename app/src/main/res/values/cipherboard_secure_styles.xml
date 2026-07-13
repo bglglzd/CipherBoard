@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <style name="CipherBoardSecurePlaintextEditor">
+        <item name="android:allowUndo">false</item>
+    </style>
+</resources>

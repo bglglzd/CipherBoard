@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <string name="cipherboard_pairing_title">Add contact</string>
+    <string name="cipherboard_pairing_intro">Pair in person. One device shows an offer QR code; the other scans it and shows a response QR code.</string>
+    <string name="cipherboard_pairing_contact_name">Local contact name</string>
+    <string name="cipherboard_pairing_name_private">The name stays on this device and is not included in the QR code.</string>
+    <string name="cipherboard_pairing_name_required">Enter a local contact name.</string>
+    <string name="cipherboard_pairing_name_invalid">Use a shorter name without control characters.</string>
+    <string name="cipherboard_pairing_show_offer">Show offer QR</string>
+    <string name="cipherboard_pairing_scan_offer">Scan offer QR</string>
+    <string name="cipherboard_pairing_close">Close</string>
+    <string name="cipherboard_pairing_cancel">Cancel pairing</string>
+    <string name="cipherboard_pairing_done">Done</string>
+    <string name="cipherboard_pairing_working">Preparing protected pairing state…</string>
+    <string name="cipherboard_pairing_offer_title">Offer QR</string>
+    <string name="cipherboard_pairing_offer_description">Let the other person scan this QR code. Then scan the response shown on their device.</string>
+    <string name="cipherboard_pairing_offer_qr_description">One-time CipherBoard pairing offer QR code</string>
+    <string name="cipherboard_pairing_scan_response">Scan response QR</string>
+    <string name="cipherboard_pairing_response_title">Response QR</string>
+    <string name="cipherboard_pairing_response_description">Let the first device scan this response. Compare both Safety Numbers before confirming.</string>
+    <string name="cipherboard_pairing_response_qr_description">One-time CipherBoard pairing response QR code</string>
+    <string name="cipherboard_pairing_scan_offer_title">Scan offer QR</string>
+    <string name="cipherboard_pairing_scan_response_title">Scan response QR</string>
+    <string name="cipherboard_pairing_scan_description">Point the camera at the QR code shown by the other CipherBoard device.</string>
+    <string name="cipherboard_pairing_camera_preview">Camera preview for pairing QR scan</string>
+    <string name="cipherboard_pairing_cancel_scan">Cancel scan</string>
+    <string name="cipherboard_pairing_camera_denied">Camera access was not granted. CipherBoard requests it only when you choose to scan a pairing QR code.</string>
+    <string name="cipherboard_pairing_camera_failed">The camera could not scan the QR code. Check camera permission and try again.</string>
+    <string name="cipherboard_pairing_wrong_offer_qr">This is not a CipherBoard offer QR code.</string>
+    <string name="cipherboard_pairing_wrong_response_qr">This is not the expected CipherBoard response QR code.</string>
+    <string name="cipherboard_pairing_verify_title">Verify contact</string>
+    <string name="cipherboard_pairing_verify_description">Compare these values aloud or side by side. They must match exactly on both devices.</string>
+    <string name="cipherboard_pairing_safety_number">Safety Number</string>
+    <string name="cipherboard_pairing_safety_code">Emoji/word code</string>
+    <string name="cipherboard_pairing_safety_warning">Do not confirm if either value differs. Cancel and begin again in person.</string>
+    <string name="cipherboard_pairing_confirm_safety">Values match — mark verified</string>
+    <string name="cipherboard_pairing_confirm_changed_safety">Values match — store the new untrusted key</string>
+    <string name="cipherboard_pairing_identity_changed_warning">Critical warning: this contact now presents a different identity key. Do not treat it as trusted automatically.</string>
+    <string name="cipherboard_pairing_previous_fingerprint">Previous identity fingerprint</string>
+    <string name="cipherboard_pairing_replacement_fingerprint">New identity fingerprint</string>
+    <string name="cipherboard_pairing_identity_changed_verification_required">Completing pairing stores the new session in a blocked state. Open contact details and compare the Safety Number again before explicitly trusting the new key.</string>
+    <string name="cipherboard_pairing_complete_title">Contact verified</string>
+    <string name="cipherboard_pairing_complete">The one-time pairing state was consumed and the contact session was stored in the encrypted Vault.</string>
+    <string name="cipherboard_pairing_identity_changed_complete_title">New identity not trusted</string>
+    <string name="cipherboard_pairing_identity_changed_complete">The replacement session was stored, but secure messages remain blocked. Open contact details, compare the Safety Number again in person, and explicitly trust the new identity.</string>
+    <string name="cipherboard_pairing_expires">Expires in approximately %1$s</string>
+    <string name="cipherboard_pairing_failed">Pairing could not be completed. Nothing was trusted; cancel and begin again.</string>
+    <string name="cipherboard_pairing_invalid_or_expired">The QR code is invalid, expired, already used, or belongs to another offer.</string>
+    <string name="cipherboard_pairing_interrupted">The in-memory pairing step was interrupted. Start again and use a new one-time QR code.</string>
+    <string name="cipherboard_pairing_vault_locked_title">Vault locked</string>
+    <string name="cipherboard_pairing_vault_locked">Unlock the Vault from the CipherBoard home screen before pairing.</string>
+    <string name="cipherboard_pairing_repair_title">Pair contact again</string>
+    <string name="cipherboard_pairing_repair_description">The previous session for %1$s has been destroyed. Complete a new two-way QR pairing and compare the new Safety Number in person.</string>
+    <string name="cipherboard_pairing_repair_unavailable">This contact cannot be paired again from the current state. Return to contact details and destroy the old session first.</string>
+    <string name="cipherboard_pairing_contact_exists">This device is already stored as another local contact. Open that contact and use its re-pair action instead.</string>
+    <plurals name="cipherboard_pairing_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+</resources>

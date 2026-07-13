@@ -61,7 +61,7 @@ class ClipboardHistoryManager(
 
     override fun onPrimaryClipChanged() {
         // Make sure we read clipboard content only if history settings is set
-        if (latinIME.mSettings.current.mClipboardHistoryEnabled) {
+        if (!isCipherBoardSecureEditor() && latinIME.mSettings.current.mClipboardHistoryEnabled) {
             fetchPrimaryClip()
             dontShowCurrentSuggestion = false
         }
@@ -71,6 +71,7 @@ class ClipboardHistoryManager(
     //  setting whether to store sensitive clip data?
     //  care about other clip items than first?
     private fun fetchPrimaryClip() {
+        if (isCipherBoardSecureEditor()) return
         if (tempPrimaryClip) return // avoid updating history
         val clipData = clipboardManager.primaryClip ?: return
         if (clipData.itemCount == 0) return
@@ -91,6 +92,7 @@ class ClipboardHistoryManager(
     // but KeyEvent.KEYCODE_PASTE for pasting from primary clip works fine
     // (actually we do change the primary clip, but (try to) revert immediately)
     fun pasteWithoutChangingClips(content: InputContentInfoCompat) {
+        if (isCipherBoardSecureEditor()) return
         Log.d(TAG, "trying fallback pasting with system clipboard")
         val primaryClip = clipboardManager.primaryClip
         val tempClip = ClipData(content.description, ClipData.Item(content.contentUri))
@@ -169,6 +171,7 @@ class ClipboardHistoryManager(
     }
 
     fun getClipboardSuggestionView(editorInfo: EditorInfo?, parent: ViewGroup?): View? {
+        if (isCipherBoardSecureEditor()) return null
         // maybe no need to create a new view
         // but a cache has to consider a few possible changes, so better don't implement without need
         clipboardSuggestionView = null
@@ -235,6 +238,9 @@ class ClipboardHistoryManager(
         clipboardSuggestionView = binding.root
         return clipboardSuggestionView
     }
+
+    private fun isCipherBoardSecureEditor(): Boolean =
+        latinIME.mSettings.current.mInputAttributes.mIsCipherBoardSecureEditor
 
     private fun removeClipboardSuggestion() {
         dontShowCurrentSuggestion = true

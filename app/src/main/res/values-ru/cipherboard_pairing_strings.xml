@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<resources>
+    <string name="cipherboard_pairing_title">Добавление контакта</string>
+    <string name="cipherboard_pairing_intro">Выполняйте сопряжение лично. Одно устройство показывает QR-код предложения, второе сканирует его и показывает ответный QR-код.</string>
+    <string name="cipherboard_pairing_contact_name">Локальное имя контакта</string>
+    <string name="cipherboard_pairing_name_private">Имя останется на этом устройстве и не будет включено в QR-код.</string>
+    <string name="cipherboard_pairing_name_required">Введите локальное имя контакта.</string>
+    <string name="cipherboard_pairing_name_invalid">Используйте более короткое имя без управляющих символов.</string>
+    <string name="cipherboard_pairing_show_offer">Показать QR предложения</string>
+    <string name="cipherboard_pairing_scan_offer">Сканировать QR предложения</string>
+    <string name="cipherboard_pairing_close">Закрыть</string>
+    <string name="cipherboard_pairing_cancel">Отменить сопряжение</string>
+    <string name="cipherboard_pairing_done">Готово</string>
+    <string name="cipherboard_pairing_working">Подготовка защищённого состояния сопряжения…</string>
+    <string name="cipherboard_pairing_offer_title">QR предложения</string>
+    <string name="cipherboard_pairing_offer_description">Попросите другого человека отсканировать этот QR-код. Затем отсканируйте ответ на его устройстве.</string>
+    <string name="cipherboard_pairing_offer_qr_description">Одноразовый QR-код предложения сопряжения CipherBoard</string>
+    <string name="cipherboard_pairing_scan_response">Сканировать ответный QR</string>
+    <string name="cipherboard_pairing_response_title">Ответный QR</string>
+    <string name="cipherboard_pairing_response_description">Дайте первому устройству отсканировать этот ответ. Перед подтверждением сравните Safety Number на обоих устройствах.</string>
+    <string name="cipherboard_pairing_response_qr_description">Одноразовый QR-код ответа сопряжения CipherBoard</string>
+    <string name="cipherboard_pairing_scan_offer_title">Сканирование QR предложения</string>
+    <string name="cipherboard_pairing_scan_response_title">Сканирование ответного QR</string>
+    <string name="cipherboard_pairing_scan_description">Наведите камеру на QR-код, показанный на другом устройстве с CipherBoard.</string>
+    <string name="cipherboard_pairing_camera_preview">Изображение камеры для сканирования QR-кода сопряжения</string>
+    <string name="cipherboard_pairing_cancel_scan">Отменить сканирование</string>
+    <string name="cipherboard_pairing_camera_denied">Доступ к камере не предоставлен. CipherBoard запрашивает его только после выбора сканирования QR-кода.</string>
+    <string name="cipherboard_pairing_camera_failed">Не удалось отсканировать QR-код камерой. Проверьте разрешение камеры и повторите попытку.</string>
+    <string name="cipherboard_pairing_wrong_offer_qr">Это не QR-код предложения CipherBoard.</string>
+    <string name="cipherboard_pairing_wrong_response_qr">Это не ожидаемый QR-код ответа CipherBoard.</string>
+    <string name="cipherboard_pairing_verify_title">Проверка контакта</string>
+    <string name="cipherboard_pairing_verify_description">Сравните эти значения вслух или на расположенных рядом экранах. Они должны полностью совпадать.</string>
+    <string name="cipherboard_pairing_safety_number">Safety Number</string>
+    <string name="cipherboard_pairing_safety_code">Код emoji/слов</string>
+    <string name="cipherboard_pairing_safety_warning">Не подтверждайте контакт, если хотя бы одно значение различается. Отмените сопряжение и начните заново при личной встрече.</string>
+    <string name="cipherboard_pairing_confirm_safety">Значения совпадают — отметить проверенным</string>
+    <string name="cipherboard_pairing_confirm_changed_safety">Значения совпадают — сохранить новый недоверенный ключ</string>
+    <string name="cipherboard_pairing_identity_changed_warning">Критическое предупреждение: контакт предъявил другой ключ личности. Не считайте новый ключ доверенным автоматически.</string>
+    <string name="cipherboard_pairing_previous_fingerprint">Предыдущий fingerprint личности</string>
+    <string name="cipherboard_pairing_replacement_fingerprint">Новый fingerprint личности</string>
+    <string name="cipherboard_pairing_identity_changed_verification_required">После завершения новая сессия будет сохранена в заблокированном состоянии. Откройте сведения о контакте и ещё раз сравните Safety Number перед явным подтверждением нового ключа.</string>
+    <string name="cipherboard_pairing_complete_title">Контакт проверен</string>
+    <string name="cipherboard_pairing_complete">Одноразовое состояние сопряжения использовано, а сессия контакта сохранена в зашифрованном хранилище.</string>
+    <string name="cipherboard_pairing_identity_changed_complete_title">Новая личность не подтверждена</string>
+    <string name="cipherboard_pairing_identity_changed_complete">Новая сессия сохранена, но защищённый обмен заблокирован. Откройте сведения о контакте, лично сравните Safety Number ещё раз и явно подтвердите новую личность.</string>
+    <string name="cipherboard_pairing_expires">Истекает примерно через %1$s</string>
+    <string name="cipherboard_pairing_failed">Не удалось завершить сопряжение. Доверие не установлено; отмените операцию и начните заново.</string>
+    <string name="cipherboard_pairing_invalid_or_expired">QR-код повреждён, просрочен, уже использован либо относится к другому предложению.</string>
+    <string name="cipherboard_pairing_interrupted">Этап сопряжения в памяти был прерван. Начните заново с новым одноразовым QR-кодом.</string>
+    <string name="cipherboard_pairing_vault_locked_title">Хранилище заблокировано</string>
+    <string name="cipherboard_pairing_vault_locked">Перед сопряжением разблокируйте хранилище на главном экране CipherBoard.</string>
+    <string name="cipherboard_pairing_repair_title">Повторное сопряжение</string>
+    <string name="cipherboard_pairing_repair_description">Предыдущая сессия контакта %1$s уничтожена. Выполните новое взаимное QR-сопряжение и лично сравните новый Safety Number.</string>
+    <string name="cipherboard_pairing_repair_unavailable">Текущее состояние контакта не допускает повторное сопряжение. Вернитесь к сведениям о контакте и сначала уничтожьте старую сессию.</string>
+    <string name="cipherboard_pairing_contact_exists">Это устройство уже сохранено как другой локальный контакт. Откройте существующий контакт и используйте повторное сопряжение.</string>
+    <plurals name="cipherboard_pairing_minutes">
+        <item quantity="one">%d минуту</item>
+        <item quantity="few">%d минуты</item>
+        <item quantity="many">%d минут</item>
+        <item quantity="other">%d минуты</item>
+    </plurals>
+</resources>

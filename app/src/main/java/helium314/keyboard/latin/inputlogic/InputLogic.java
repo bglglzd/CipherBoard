@@ -206,13 +206,31 @@ public final class InputLogic {
      * Clean up the input logic after input is finished.
      */
     public void finishInput() {
+        finishInput(false);
+    }
+
+    public void finishInput(final boolean clearCipherBoardSecureEditorState) {
         if (mWordComposer.isComposingWord()) {
             mConnection.finishComposingText();
             StatsUtils.onWordCommitUserTyped(mWordComposer.getTypedWord(), mWordComposer.isBatchMode());
         }
-        resetComposingState(true);
+        if (clearCipherBoardSecureEditorState) {
+            mWordComposer.resetSecurely();
+            mLastComposedWord = LastComposedWord.NOT_A_COMPOSED_WORD;
+        } else {
+            resetComposingState(true);
+        }
         mInputLogicHandler.reset();
         mSpaceState = SpaceState.NONE;
+        mEnteredText = null;
+        mWordBeingCorrectedByCursor = null;
+        mJustRevertedACommit = false;
+        mSuggestedWords = SuggestedWords.getEmptyInstance();
+        mCurrentlyPressedHardwareKeys.clear();
+        setInlineEmojiSearchAction(false);
+        if (clearCipherBoardSecureEditorState) {
+            mConnection.clearCipherBoardSecureEditorState();
+        }
     }
 
     /**
@@ -446,6 +464,12 @@ public final class InputLogic {
         mWordBeingCorrectedByCursor = null;
         mJustRevertedACommit = false;
 
+        if (settingsValues.mInputAttributes.mIsCipherBoardSecureEditor
+                && isCipherBoardSecureEditorBlockedKey(event.getKeyCode())) {
+            return new InputTransaction(settingsValues, event, SystemClock.uptimeMillis(), mSpaceState,
+                    getActualCapsMode(settingsValues, keyboardCapsMode));
+        }
+
         Event processedEvent = mWordComposer.processEvent(event);
         InputTransaction inputTransaction = new InputTransaction(settingsValues,
                 processedEvent, SystemClock.uptimeMillis(), mSpaceState,
@@ -497,6 +521,23 @@ public final class InputLogic {
         }
         mConnection.endBatchEdit();
         return inputTransaction;
+    }
+
+    /** Operations which can export or resurrect secure-editor plaintext outside its guarded view. */
+    public static boolean isCipherBoardSecureEditorBlockedKey(final int keyCode) {
+        return switch (keyCode) {
+            case KeyCode.CLIPBOARD,
+                    KeyCode.CLIPBOARD_PASTE,
+                    KeyCode.CLIPBOARD_SELECT_ALL,
+                    KeyCode.CLIPBOARD_SELECT_WORD,
+                    KeyCode.CLIPBOARD_COPY,
+                    KeyCode.CLIPBOARD_COPY_ALL,
+                    KeyCode.CLIPBOARD_CUT,
+                    KeyCode.CLIPBOARD_CLEAR_HISTORY,
+                    KeyCode.UNDO,
+                    KeyCode.REDO -> true;
+            default -> false;
+        };
     }
 
     public void onStartBatchInput(final SettingsValues settingsValues,
@@ -810,6 +851,9 @@ public final class InputLogic {
                 break;
             case KeyCode.SECURE_COMPOSER:
                 mLatinIME.launchSecureComposer();
+                break;
+            case KeyCode.SECURE_DECRYPT:
+                mLatinIME.launchDecryptSelected();
                 break;
             case KeyCode.SEND_INTENT_ONE, KeyCode.SEND_INTENT_TWO, KeyCode.SEND_INTENT_THREE:
                 IntentUtils.handleSendIntentKey(mLatinIME, event.getKeyCode());
@@ -1439,6 +1483,7 @@ public final class InputLogic {
     }
 
     void unlearnWord(String word, SettingsValues settingsValues, DictionaryFacilitator.UnlearnEvent event) {
+        if (settingsValues.mIncognitoModeEnabled) return;
         NgramContext ngramContext = mConnection.getNgramContextFromNthPreviousWord(settingsValues.mSpacingAndPunctuations, 2);
         long timeStampInSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
         mDictionaryFacilitator.unlearnFromUserHistory(word, ngramContext, timeStampInSeconds, event);
@@ -1629,6 +1674,7 @@ public final class InputLogic {
 
     private void performAdditionToUserHistoryDictionary(final SettingsValues settingsValues,
             final String suggestion, @NonNull final NgramContext ngramContext) {
+        if (settingsValues.mIncognitoModeEnabled) return;
         // For addition to user history we want suggestions (even if just for autocorrect) or a gestured word.
         // That's to avoid unintended additions in some sensitive fields, or fields that
         // expect to receive non-words.
@@ -1636,12 +1682,6 @@ public final class InputLogic {
             return;
         boolean wasAutoCapitalized = mWordComposer.wasAutoCapitalized() && !mWordComposer.isMostlyCaps();
         String word = StringUtilsKt.stripTrailingSeparatorsAndConnectors(suggestion, settingsValues.mSpacingAndPunctuations);
-        if (settingsValues.mIncognitoModeEnabled) {
-            // don't add to history, but still adjust confidences
-            // otherwise incognito input fields can be very annoying when the wrong language is active
-            mDictionaryFacilitator.adjustConfidences(word, wasAutoCapitalized);
-            return;
-        }
         if (mConnection.hasSlowInputConnection()) {
             // Since we don't unlearn when the user backspaces on a slow InputConnection,
             // turn off learning to guard against adding typos that the user later deletes.

@@ -115,7 +115,7 @@ internal class WrappedDekFileStore(context: Context) {
         private const val DIRECTORY = "cipherboard_vault"
         private const val FILE_NAME = "wrapped_dek.bin"
         private const val MAGIC = 0x4342564b // CBVK
-        private const val FORMAT_VERSION = 1
+        private const val FORMAT_VERSION = 2
         private const val MAX_ALIAS_CHARS = 128
         private const val MIN_NONCE_BYTES = 12
         private const val MAX_NONCE_BYTES = 32

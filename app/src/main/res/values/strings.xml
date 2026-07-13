@@ -373,10 +373,82 @@
     <string name="close_history" tools:keep="@string/close_history">Close clipboard history</string>
     <string name="emoji" tools:keep="@string/emoji">Emoji</string>
     <string name="secure_composer" tools:keep="@string/secure_composer">Secure compose</string>
+    <string name="secure_decrypt" tools:keep="@string/secure_decrypt">Decrypt selected</string>
     <string name="floating" tools:keep="@string/floating">Floating Keyboard</string>
     <string name="secure_composer_title">Secure Composer</string>
-    <string name="secure_composer_placeholder">Secure composer is currently available as a placeholder screen. It will host the encrypted message editor and contact actions.</string>
     <string name="close_secure_composer">Close</string>
+    <string name="secure_composer_privacy_note">Text stays in this protected editor. Only encrypted CB1 text is inserted into the other app.</string>
+    <string name="secure_cipherboard_ime_required">CipherBoard must be the current keyboard before protected text entry is enabled.</string>
+    <string name="secure_vault_locked">Vault locked</string>
+    <string name="secure_vault_unlocked_level">Vault unlocked · Keystore: %1$s</string>
+    <string name="secure_unlock_vault">Unlock Vault</string>
+    <string name="secure_unlock_vault_description">Use a strong biometric or your device credential</string>
+    <string name="secure_vault_unlock_cancelled">Vault unlock cancelled</string>
+    <string name="secure_vault_unlock_failed">Authentication was not accepted</string>
+    <string name="secure_vault_key_invalidated">The Android Keystore key is no longer valid. Local secure data cannot be opened.</string>
+    <string name="secure_password_host_warning">The current app field is a password field. CipherBoard will never insert anything until you press Encrypt, but the resulting ciphertext will become visible to that app.</string>
+    <string name="secure_password_host_continue">Continue with secure compose</string>
+    <string name="secure_create_identity_required">Create a local cryptographic identity before pairing contacts. Clearing app data will replace this identity.</string>
+    <string name="secure_local_owner_name">Local device name</string>
+    <string name="secure_create_identity">Create identity</string>
+    <string name="secure_local_name_required">Enter a local name</string>
+    <string name="secure_recipient">Recipient</string>
+    <string name="secure_no_contacts">No paired contacts</string>
+    <string name="secure_pair_contact_first">Pair and verify a contact in CipherBoard settings first.</string>
+    <string name="secure_message_hint">Message</string>
+    <string name="secure_transport_universal">Universal</string>
+    <string name="secure_transport_sms">SMS compact</string>
+    <string name="secure_size_estimate">%1$d characters · about %2$d encrypted characters · about %3$d SMS segments</string>
+    <string name="secure_encrypt_and_insert">Encrypt and insert</string>
+    <string name="secure_encrypt_save_for_reply">Encrypt reply</string>
+    <string name="secure_clear">Clear</string>
+    <string name="secure_contact_verified">Verified</string>
+    <string name="secure_contact_unverified">Unverified — compare the Safety Number before relying on this contact.</string>
+    <string name="secure_contact_key_changed">Key changed — pairing is required.</string>
+    <string name="secure_contact_session_error">Session error — pair again.</string>
+    <string name="secure_contact_pairing_required">Pairing required</string>
+    <string name="secure_contact_not_ready">This contact cannot receive secure messages until pairing is repaired.</string>
+    <string name="secure_ciphertext_pending">Encrypted text was saved, but the host field did not accept it. Reopen CipherBoard to retry.</string>
+    <string name="secure_no_pending_for_contact">No pending ciphertext exists for the selected contact.</string>
+    <string name="secure_retry_pending_before_new_message">Retry the pending encrypted message for this contact before creating another one.</string>
+    <plurals name="secure_retry_pending_ciphertext">
+        <item quantity="one">Retry 1 pending encrypted message</item>
+        <item quantity="other">Retry %d pending encrypted messages</item>
+    </plurals>
+    <string name="secure_invalid_unicode">The message contains invalid Unicode and cannot be encoded.</string>
+    <string name="secure_message_too_large">The message is too large for the selected transport.</string>
+    <string name="secure_message_replay">This encrypted message was already processed.</string>
+    <string name="secure_vault_corrupt">Encrypted local storage could not be read safely.</string>
+    <string name="secure_operation_failed">The secure operation could not be completed.</string>
+    <string name="secure_select_ciphertext_hint">Select the complete CB1 ciphertext. If this app cannot expose a selection, copy ciphertext only and use “Decrypt in CipherBoard”.</string>
+    <string name="secure_clipboard_decrypt_title">Decrypt copied ciphertext</string>
+    <string name="secure_clipboard_decrypt_description">Copy only the complete CB1 encrypted text in the source app. CipherBoard reads the clipboard only after the button below is pressed and never places decrypted text there.</string>
+    <string name="secure_clipboard_decrypt_action">Use ciphertext from clipboard</string>
+    <string name="secure_clipboard_decrypt_invalid">The clipboard does not contain one complete, valid-looking CB1 ciphertext selection.</string>
+    <string name="cipherboard_process_text_label">Decrypt in CipherBoard</string>
+    <string name="secure_viewer_title">Protected message</string>
+    <string name="secure_viewer_contact">From: %1$s</string>
+    <string name="secure_viewer_verified">Verified contact</string>
+    <string name="secure_viewer_unverified">Safety Number has not been verified</string>
+    <string name="secure_viewer_reply">Reply securely</string>
+    <string name="secure_viewer_hide_now">Hide now</string>
+    <string name="secure_decrypt_checking">Checking encrypted message…</string>
+    <string name="secure_decrypt_confirmation_required">Confirm before CipherBoard consumes this encrypted message.</string>
+    <string name="secure_decrypt_confirm">Decrypt</string>
+    <string name="secure_decrypt_unlocking">Unlock the Vault to decrypt this message.</string>
+    <string name="secure_decrypt_invalid_selection">The selected text is not a complete CipherBoard message.</string>
+    <string name="secure_decrypt_unsupported_version">This message uses an unsupported CipherBoard version.</string>
+    <string name="secure_decrypt_missing_part">One or more encrypted message parts are missing.</string>
+    <string name="secure_decrypt_too_many_parts">This encrypted message has too many parts.</string>
+    <string name="secure_decrypt_wrong_contact">No matching paired contact was found.</string>
+    <string name="secure_decrypt_vault_locked">The Vault is locked. Unlock it and try again.</string>
+    <string name="secure_decrypt_auth_cancelled">Vault unlock was cancelled.</string>
+    <string name="secure_decrypt_replay">This encrypted message was already processed.</string>
+    <string name="secure_decrypt_key_changed">The contact key changed. Pair with this contact again before decrypting.</string>
+    <string name="secure_decrypt_session_error">The secure session cannot decrypt this message. Pair with the contact again.</string>
+    <string name="secure_decrypt_invalid_ciphertext">The encrypted message is damaged or could not be authenticated.</string>
+    <string name="secure_decrypt_unavailable">Secure decryption is not available right now.</string>
+    <string name="secure_reply_unavailable">Secure Composer could not be opened.</string>
     <!-- Title of the setting to set clipboard toolbar keys -->
     <string name="clipboard_toolbar_keys">Select clipboard toolbar keys</string>
     <!-- Title of the setting to set pinned toolbar keys -->
@@ -792,15 +864,16 @@ New dictionary:
     <!-- version for about screen -->
     <string name="version">Version</string>
     <!-- github repo link for about screen -->
-    <string name="about_github_link">View on GitHub</string>
+    <string name="app_slogan">Offline keyboard with secure one-to-one messaging</string>
+    <string name="about_github_link">HeliBoard upstream source</string>
     <!-- link to the wiki for about screen -->
-    <string name="about_wiki_link">Go to Wiki</string>
+    <string name="about_wiki_link">HeliBoard upstream Wiki</string>
     <!-- description for wiki link -->
-    <string name="about_wiki_link_description">The Wiki can be improved by any GitHub user!</string>
+    <string name="about_wiki_link_description">Reference documentation for the keyboard base</string>
     <!-- links to community stuff -->
-    <string name="about_community_links">Community links</string>
+    <string name="about_community_links">HeliBoard upstream community</string>
     <!-- description for about_community_links -->
-    <string name="about_community_links_description">Themes, layout editor, discussions, …</string>
+    <string name="about_community_links_description">Themes, layout editor and discussions for the upstream keyboard</string>
     <!-- preference title for saving the log to a file -->
     <string name="save_log">Save log</string>
     <!-- license for about screen-->

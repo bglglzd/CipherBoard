@@ -48,25 +48,29 @@ class ContactVaultRepository(
     ): Boolean {
         require(expectedOwnerRevision > 0)
         require(pending.oneShotStatus == OneShotStatus.ACTIVE)
+        if (!ensurePendingPairingCapacity(pending.createdAtEpochMillis)) return false
         val owner = OwnerAccountCodec.encode(updatedOwnerAccount)
-        val pairing = PendingPairingCodec.encode(pending)
         return try {
-            records.applyDomainMutations(
-                listOf(
-                    ownerMutation(expectedOwnerRevision, owner),
-                    DomainMutation.Put(
-                        RecordKind.PENDING_PAIRING,
-                        pairingKey(pending.pairingId),
-                        OWNER_ACCOUNT_KEY,
-                        PAIRING_SCHEMA_VERSION,
-                        expectedRevision = 0,
-                        plaintext = pairing,
-                    ),
-                ),
-            )
+            val pairing = PendingPairingCodec.encode(pending)
+            try {
+                records.applyDomainMutations(
+                    listOf(
+                        ownerMutation(expectedOwnerRevision, owner),
+                        DomainMutation.Put(
+                            RecordKind.PENDING_PAIRING,
+                            pairingKey(pending.pairingId),
+                            OWNER_ACCOUNT_KEY,
+                            PAIRING_SCHEMA_VERSION,
+                            expectedRevision = 0,
+                            plaintext = pairing,
+                        ),
+                    )
+                )
+            } finally {
+                pairing.wipe()
+            }
         } finally {
             owner.wipe()
-            pairing.wipe()
         }
     }
 
@@ -86,15 +90,20 @@ class ContactVaultRepository(
         expiresNotBeforeEpochMillis: Long? = null,
         expiresNotAfterEpochMillis: Long? = null,
         limit: Int = MAX_PENDING_RESULTS,
+        newestFirst: Boolean = true,
     ): List<VersionedDomainRecord<PendingPairingState>> {
-        require(limit in 1..MAX_PENDING_RESULTS)
+        require(limit in 1..MAX_PENDING_SCAN_RESULTS)
         require(expiresNotBeforeEpochMillis == null || expiresNotBeforeEpochMillis >= 0)
         require(expiresNotAfterEpochMillis == null || expiresNotAfterEpochMillis >= 0)
         require(
             expiresNotBeforeEpochMillis == null || expiresNotAfterEpochMillis == null ||
                 expiresNotBeforeEpochMillis <= expiresNotAfterEpochMillis,
         )
-        val stored = records.listDomainRecords(RecordKind.PENDING_PAIRING, MAX_PENDING_SCAN_RESULTS)
+        val stored = records.listDomainRecords(
+            RecordKind.PENDING_PAIRING,
+            MAX_PENDING_SCAN_RESULTS,
+            newestFirst,
+        )
         val decoded = ArrayList<VersionedDomainRecord<PendingPairingState>>(limit)
         try {
             for (record in stored) {
@@ -144,6 +153,7 @@ class ContactVaultRepository(
      * A stale revision, expired offer or already-consumed offer leaves all four records unchanged.
      * The ratchet is never copied into [ContactVaultEntry].
      */
+    @Synchronized
     fun completePairing(
         pairingId: ByteArray,
         expectedPairingRevision: Long,
@@ -161,14 +171,22 @@ class ContactVaultRepository(
         require(expectedContactRevision >= 0 && expectedRatchetRevision >= 0 && nowEpochMillis >= 0)
         require(ratchetSchemaVersion > 0)
         require(expectedContactRevision > 0 || expectedRatchetRevision == 0L)
+        if (hasConflictingRemoteIdentity(contact)) return false
         if (expectedContactRevision > 0) {
             val existing = readContact(contact.internalId) ?: return false
             existing.use {
                 if (it.revision != expectedContactRevision) return false
+                if (!it.value.requiresRepairing) return false
                 val identityChanged = !it.value.remoteIdentityFingerprint.contentEquals(
                     contact.remoteIdentityFingerprint,
                 )
-                if (identityChanged && !allowIdentityReplacement) return false
+                if (identityChanged &&
+                    (!allowIdentityReplacement ||
+                        contact.verificationStatus != ContactVerificationStatus.KEY_CHANGED ||
+                        !contact.keyChanged || contact.requiresRepairing || contact.sessionError)
+                ) {
+                    return false
+                }
             }
         }
         val pendingRecord = readPendingPairing(pairingId) ?: return false
@@ -277,6 +295,89 @@ class ContactVaultRepository(
         )
     }
 
+    fun commitOutbound(
+        contactId: ByteArray,
+        expectedContactRevision: Long,
+        lastActiveAtEpochMillis: Long,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        newRatchetState: OwnedSecret,
+        operationId: ByteArray,
+        pendingCiphertext: ByteArray,
+    ) {
+        try {
+            require(expectedContactRevision > 0 && lastActiveAtEpochMillis >= 0)
+            val current = readContact(contactId) ?: throw RatchetRevisionConflictException()
+            current.use {
+                if (it.revision != expectedContactRevision) throw RatchetRevisionConflictException()
+                val changed = it.value.copyWith(
+                    lastActiveAtEpochMillis = maxOf(lastActiveAtEpochMillis, it.value.lastActiveAtEpochMillis),
+                )
+                changed.use { value ->
+                    val encoded = ContactEntryCodec.encode(value)
+                    try {
+                        records.commitOutboundWithDomainMutation(
+                            contactId,
+                            expectedRatchetRevision,
+                            ratchetSchemaVersion,
+                            newRatchetState,
+                            operationId,
+                            pendingCiphertext,
+                            contactMutation(contactId, expectedContactRevision, encoded),
+                        )
+                    } finally {
+                        encoded.wipe()
+                    }
+                }
+            }
+        } finally {
+            newRatchetState.close()
+        }
+    }
+
+    fun commitInbound(
+        contactId: ByteArray,
+        expectedContactRevision: Long,
+        lastActiveAtEpochMillis: Long,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        newRatchetState: OwnedSecret,
+        messageId: ByteArray,
+        ciphertextDigest: ByteArray,
+        pendingPlaintext: OwnedSecret,
+    ): AtomicInboundResult {
+        try {
+            require(expectedContactRevision > 0 && lastActiveAtEpochMillis >= 0)
+            val current = readContact(contactId) ?: return AtomicInboundResult.REVISION_CONFLICT
+            current.use {
+                if (it.revision != expectedContactRevision) return AtomicInboundResult.REVISION_CONFLICT
+                val changed = it.value.copyWith(
+                    lastActiveAtEpochMillis = maxOf(lastActiveAtEpochMillis, it.value.lastActiveAtEpochMillis),
+                )
+                changed.use { value ->
+                    val encoded = ContactEntryCodec.encode(value)
+                    return try {
+                        records.commitInboundWithDomainMutation(
+                            contactId,
+                            expectedRatchetRevision,
+                            ratchetSchemaVersion,
+                            newRatchetState,
+                            messageId,
+                            ciphertextDigest,
+                            pendingPlaintext,
+                            contactMutation(contactId, expectedContactRevision, encoded),
+                        )
+                    } finally {
+                        encoded.wipe()
+                    }
+                }
+            }
+        } finally {
+            newRatchetState.close()
+            pendingPlaintext.close()
+        }
+    }
+
     fun destroyContactSession(
         contactId: ByteArray,
         expectedRevision: Long,
@@ -335,35 +436,61 @@ class ContactVaultRepository(
         initialRatchetState: ByteArray,
     ): Boolean {
         val owner = OwnerAccountCodec.encode(updatedOwnerAccount)
-        val pairing = PendingPairingCodec.encode(consumedPairing)
-        val encodedContact = ContactEntryCodec.encode(contact)
         return try {
-            records.applyDomainMutations(
-                listOf(
-                    ownerMutation(expectedOwnerRevision, owner),
-                    DomainMutation.Put(
-                        RecordKind.PENDING_PAIRING,
-                        pairingKey(consumedPairing.pairingId),
-                        OWNER_ACCOUNT_KEY,
-                        PAIRING_SCHEMA_VERSION,
-                        expectedPairingRevision,
-                        pairing,
-                    ),
-                    contactMutation(contact.internalId, expectedContactRevision, encodedContact),
-                ),
-                RatchetMutation.Put(
-                    contactId = contact.internalId,
-                    expectedRevision = expectedRatchetRevision,
-                    schemaVersion = ratchetSchemaVersion,
-                    plaintext = initialRatchetState,
-                    purgePreviousSessionArtifacts = expectedContactRevision > 0,
-                ),
-            )
+            val pairing = PendingPairingCodec.encode(consumedPairing)
+            try {
+                val encodedContact = ContactEntryCodec.encode(contact)
+                try {
+                    records.applyDomainMutations(
+                        listOf(
+                            ownerMutation(expectedOwnerRevision, owner),
+                            DomainMutation.Put(
+                                RecordKind.PENDING_PAIRING,
+                                pairingKey(consumedPairing.pairingId),
+                                OWNER_ACCOUNT_KEY,
+                                PAIRING_SCHEMA_VERSION,
+                                expectedPairingRevision,
+                                pairing,
+                            ),
+                            contactMutation(contact.internalId, expectedContactRevision, encodedContact),
+                        ),
+                        RatchetMutation.Put(
+                            contactId = contact.internalId,
+                            expectedRevision = expectedRatchetRevision,
+                            schemaVersion = ratchetSchemaVersion,
+                            plaintext = initialRatchetState,
+                            purgePreviousSessionArtifacts = expectedContactRevision > 0,
+                        ),
+                    )
+                } finally {
+                    encodedContact.wipe()
+                }
+            } finally {
+                pairing.wipe()
+            }
         } finally {
             owner.wipe()
-            pairing.wipe()
-            encodedContact.wipe()
         }
+    }
+
+    private fun ensurePendingPairingCapacity(nowEpochMillis: Long): Boolean {
+        val cutoff = (nowEpochMillis - PAIRING_TOMBSTONE_RETENTION_MILLIS).coerceAtLeast(0)
+        val oldest = listPendingPairings(
+            limit = MAX_PENDING_SCAN_RESULTS,
+            newestFirst = false,
+        )
+        try {
+            oldest.forEach { record ->
+                if (record.value.oneShotStatus != OneShotStatus.ACTIVE &&
+                    record.value.createdAtEpochMillis <= cutoff
+                ) {
+                    deletePendingPairing(record.value.pairingId, record.revision)
+                }
+            }
+        } finally {
+            oldest.forEach(VersionedDomainRecord<PendingPairingState>::close)
+        }
+        return records.countDomainRecords(RecordKind.PENDING_PAIRING) < MAX_STORED_PAIRING_RECORDS
     }
 
     private fun transitionPendingPairing(
@@ -450,6 +577,19 @@ class ContactVaultRepository(
     private fun contactKey(contactId: ByteArray) = IdentifierCodec.domainKey("vault-contact", contactId)
     private fun pairingKey(pairingId: ByteArray) = IdentifierCodec.domainKey("pending-pairing", pairingId)
 
+    private fun hasConflictingRemoteIdentity(candidate: ContactVaultEntry): Boolean {
+        val existing = listContacts()
+        return try {
+            existing.any { record ->
+                !record.value.internalId.contentEquals(candidate.internalId) &&
+                    (record.value.remoteIdentityFingerprint.contentEquals(candidate.remoteIdentityFingerprint) ||
+                        record.value.remoteSessionTag.contentEquals(candidate.remoteSessionTag))
+            }
+        } finally {
+            existing.forEach(VersionedDomainRecord<ContactVaultEntry>::close)
+        }
+    }
+
     private object RecordKind {
         const val OWNER_ACCOUNT = 10
         const val CONTACT = 11
@@ -463,6 +603,8 @@ class ContactVaultRepository(
         private const val MAX_CONTACT_RESULTS = 1_024
         private const val MAX_PENDING_RESULTS = 256
         private const val MAX_PENDING_SCAN_RESULTS = 1_024
+        private const val MAX_STORED_PAIRING_RECORDS = 512
+        private const val PAIRING_TOMBSTONE_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1_000
         private val OWNER_ACCOUNT_KEY = IdentifierCodec.singletonKey("owner-account")
     }
 }

@@ -6,6 +6,8 @@
 
 package helium314.keyboard.latin;
 
+import android.text.SpannableStringBuilder;
+
 import androidx.annotation.NonNull;
 
 import helium314.keyboard.event.CombinerChain;
@@ -118,6 +120,29 @@ public final class WordComposer {
     public void reset() {
         mCombinerChain.reset();
         mEvents.clear();
+        mAutoCorrection = null;
+        mCapsCount = 0;
+        mDigitsCount = 0;
+        mIsOnlyFirstCharCapitalized = false;
+        mIsResumed = false;
+        mIsBatchMode = false;
+        mRejectedBatchModeSuggestion = null;
+        refreshTypedWordCache();
+        mCursorPositionWithinWord = 0;
+    }
+
+    public void resetSecurely() {
+        if (mTypedWordCache instanceof SpannableStringBuilder text) {
+            final int length = text.length();
+            if (length > 0) {
+                text.replace(0, length, new String(new char[length]));
+            }
+            text.clear();
+            text.clearSpans();
+        }
+        mCombinerChain.resetSecurely();
+        mEvents.clear();
+        mInputPointers.reset();
         mAutoCorrection = null;
         mCapsCount = 0;
         mDigitsCount = 0;

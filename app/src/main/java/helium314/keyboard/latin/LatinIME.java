@@ -22,11 +22,13 @@ import android.os.Bundle;
 import android.os.Debug;
 import android.os.Message;
 import android.os.Process;
+import android.text.InputType;
 import android.util.PrintWriterPrinter;
 import android.util.Printer;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InlineSuggestion;
@@ -46,6 +48,10 @@ import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
 import helium314.keyboard.keyboard.emoji.EmojiSearchActivity;
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet;
 import helium314.keyboard.secure.SecureComposerActivity;
+import helium314.keyboard.secure.SecureImeBridge;
+import helium314.keyboard.secure.decrypt.CiphertextClipboardActivity;
+import helium314.keyboard.secure.decrypt.CiphertextSelection;
+import helium314.keyboard.secure.decrypt.SecureMessageViewerActivity;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
 import helium314.keyboard.latin.common.InsetsOutlineProvider;
 import helium314.keyboard.dictionarypack.DictionaryPackConstants;
@@ -84,6 +90,7 @@ import helium314.keyboard.latin.utils.StatsUtils;
 import helium314.keyboard.latin.utils.StatsUtilsManager;
 import helium314.keyboard.latin.utils.SubtypeLocaleUtils;
 import helium314.keyboard.latin.utils.SubtypeSettings;
+import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime;
 import helium314.keyboard.latin.utils.SubtypeState;
 import helium314.keyboard.latin.utils.ToolbarMode;
 import helium314.keyboard.settings.SettingsActivity2;
@@ -113,6 +120,7 @@ public class LatinIME extends InputMethodService implements
     private static final int EXTENDED_TOUCHABLE_REGION_HEIGHT = 100;
     private static final int PERIOD_FOR_AUDIO_AND_HAPTIC_FEEDBACK_IN_KEY_REPEAT = 2;
     private static final int PENDING_IMS_CALLBACK_DURATION_MILLIS = 800;
+    private static final int MAX_SELECTED_CIPHERTEXT_CHARS = CiphertextSelection.MAX_SELECTION_CHARS;
     static final long DELAY_WAIT_FOR_DICTIONARY_LOAD_MILLIS = TimeUnit.SECONDS.toMillis(2);
     static final long DELAY_DEALLOCATE_MEMORY_MILLIS = TimeUnit.SECONDS.toMillis(10);
 
@@ -565,8 +573,8 @@ public class LatinIME extends InputMethodService implements
 
         final IntentFilter newDictFilter = new IntentFilter();
         newDictFilter.addAction(DictionaryPackConstants.NEW_DICTIONARY_INTENT_ACTION);
-        // RECEIVER_EXPORTED is necessary because apparently Android 15 (and others?) don't recognize if the sender and receiver are the same app, see https://github.com/HeliBorg/HeliBoard/pull/1756
-        ContextCompat.registerReceiver(this, mDictionaryPackInstallReceiver, newDictFilter, ContextCompat.RECEIVER_EXPORTED);
+        ContextCompat.registerReceiver(this, mDictionaryPackInstallReceiver, newDictFilter,
+                ContextCompat.RECEIVER_NOT_EXPORTED);
 
         final IntentFilter dictDumpFilter = new IntentFilter();
         dictDumpFilter.addAction(DictionaryDumpBroadcastReceiver.DICTIONARY_DUMP_INTENT_ACTION);
@@ -688,6 +696,7 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onDestroy() {
+        SecureImeBridge.clear();
         mClipboardHistoryManager.onDestroy();
         mDictionaryFacilitator.closeDictionaries();
         mSettings.onDestroy();
@@ -832,6 +841,7 @@ public class LatinIME extends InputMethodService implements
 
     private void onStartInputInternal(final EditorInfo editorInfo, final boolean restarting) {
         super.onStartInput(editorInfo, restarting);
+        setCipherBoardImeWindowSecure(InputAttributes.isCipherBoardSecureEditor(editorInfo));
 
         final RichInputMethodSubtype subtypeForApp = editorInfo == null
             ? null :
@@ -842,10 +852,15 @@ public class LatinIME extends InputMethodService implements
             // found a better subtype using hint locales and saved-per-app subtype, that we should switch to.
             mHandler.postSwitchLanguage(subtypeForLocales);
         }
+        deliverPendingCiphertext(editorInfo);
     }
 
     void onStartInputViewInternal(final EditorInfo editorInfo, final boolean restarting) {
         super.onStartInputView(editorInfo, restarting);
+
+        // onStartInput can run before the restored host connection is ready; this is a safe retry
+        // through the same one-shot editor-scoped gate.
+        deliverPendingCiphertext(editorInfo);
 
         mDictionaryFacilitator.onStartInput();
         // Switch to the null consumer to handle cases leading to early exit below, for which we
@@ -870,6 +885,8 @@ public class LatinIME extends InputMethodService implements
         switcher.updateKeyboardTheme(mDisplayContext);
         MainKeyboardView mainKeyboardView = switcher.getMainKeyboardView();
         currentSettingsValues = mSettings.getCurrent(); // settingsValues may have been reloaded
+        setCipherBoardImeWindowSecure(
+                currentSettingsValues.mInputAttributes.mIsCipherBoardSecureEditor);
 
         if (editorInfo == null) {
             Log.e(TAG, "Null EditorInfo in onStartInputView()");
@@ -1007,6 +1024,11 @@ public class LatinIME extends InputMethodService implements
     public void onWindowHidden() {
         super.onWindowHidden();
         Log.i(TAG, "onWindowHidden");
+        if (isCipherBoardSecureEditor()) {
+            mInputLogic.finishInput(true);
+            setNeutralSuggestionStrip();
+            setCipherBoardImeWindowSecure(false);
+        }
         final MainKeyboardView mainKeyboardView = mKeyboardSwitcher.getMainKeyboardView();
         if (mainKeyboardView != null) {
             mainKeyboardView.closing();
@@ -1015,7 +1037,12 @@ public class LatinIME extends InputMethodService implements
     }
 
     void onFinishInputInternal() {
+        if (isCipherBoardSecureEditor()) {
+            mInputLogic.finishInput(true);
+            setNeutralSuggestionStrip();
+        }
         super.onFinishInput();
+        setCipherBoardImeWindowSecure(false);
         Log.i(TAG, "onFinishInput");
 
         mDictionaryFacilitator.onFinishInput();
@@ -1035,7 +1062,11 @@ public class LatinIME extends InputMethodService implements
         // Remove pending messages related to update suggestions
         mHandler.cancelUpdateSuggestionStrip();
         // Should do the following in onFinishInputInternal but until JB MR2 it's not called :(
-        mInputLogic.finishInput();
+        final boolean secureEditor = isCipherBoardSecureEditor();
+        mInputLogic.finishInput(secureEditor);
+        if (secureEditor) {
+            setNeutralSuggestionStrip();
+        }
         mKeyboardActionListener.resetMetaState();
     }
 
@@ -1291,7 +1322,8 @@ public class LatinIME extends InputMethodService implements
     @RequiresApi(api = Build.VERSION_CODES.R)
     public InlineSuggestionsRequest onCreateInlineSuggestionsRequest(@NonNull Bundle uiExtras) {
         Log.d(TAG,"onCreateInlineSuggestionsRequest called");
-        if (Settings.getValues().mSuggestionStripHiddenPerUserSettings) {
+        if (isCipherBoardSecureEditor()
+                || Settings.getValues().mSuggestionStripHiddenPerUserSettings) {
             return null;
         }
 
@@ -1302,7 +1334,8 @@ public class LatinIME extends InputMethodService implements
     @RequiresApi(api = Build.VERSION_CODES.R)
     public boolean onInlineSuggestionsResponse(InlineSuggestionsResponse response) {
         Log.d(TAG,"onInlineSuggestionsResponse called");
-        if (Settings.getValues().mSuggestionStripHiddenPerUserSettings) {
+        if (isCipherBoardSecureEditor()
+                || Settings.getValues().mSuggestionStripHiddenPerUserSettings) {
             return false;
         }
 
@@ -1348,6 +1381,7 @@ public class LatinIME extends InputMethodService implements
     }
 
     public boolean showInputPickerDialog() {
+        if (isCipherBoardSecureEditor()) return false;
         if (isShowingOptionDialog()) return false;
         if (mRichImm.hasMultipleEnabledIMEsOrSubtypes(true)) {
             mOptionsDialog = InputMethodPickerKt.createInputMethodPickerDialog(this, mRichImm, mKeyboardSwitcher.getMainKeyboardView().getWindowToken());
@@ -1363,6 +1397,12 @@ public class LatinIME extends InputMethodService implements
 
     // called when language switch key is pressed (either the keyboard key, or long-press comma)
     public void switchToNextSubtype() {
+        if (isCipherBoardSecureEditor()) {
+            if (mRichImm.hasMultipleEnabledSubtypesInThisIme(true)) {
+                mSubtypeState.switchSubtype(mRichImm);
+            }
+            return;
+        }
         final boolean switchSubtype = mSettings.getCurrent().mLanguageSwitchKeyToOtherSubtypes;
         final boolean switchIme = mSettings.getCurrent().mLanguageSwitchKeyToOtherImes;
 
@@ -1403,6 +1443,9 @@ public class LatinIME extends InputMethodService implements
     // This method is public for testability of LatinIME, but also in the future it should
     // completely replace #onCodeInput.
     public void onEvent(@NonNull final Event event) {
+        if (blocksExternalInputAction(isCipherBoardSecureEditor(), event.getKeyCode())) {
+            return;
+        }
         if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
             mRichImm.switchToShortcutIme(this);
         }
@@ -1412,6 +1455,27 @@ public class LatinIME extends InputMethodService implements
                         mKeyboardSwitcher.getCurrentKeyboardScript(), mHandler);
         updateStateAfterInputTransaction(completeInputTransaction);
         mKeyboardSwitcher.onEvent(event, getCurrentAutoCapsState(), getCurrentRecapitalizeState());
+    }
+
+    private boolean isCipherBoardSecureEditor() {
+        final SettingsValues current = mSettings.getCurrent();
+        return current != null && current.mInputAttributes.mIsCipherBoardSecureEditor;
+    }
+
+    static boolean blocksExternalInputAction(final boolean secureEditor, final int keyCode) {
+        return secureEditor && (KeyCode.VOICE_INPUT == keyCode
+                || KeyCode.SYSTEM_INPUT_METHOD_PICKER == keyCode
+                || InputLogic.isCipherBoardSecureEditorBlockedKey(keyCode));
+    }
+
+    void setCipherBoardImeWindowSecure(final boolean secure) {
+        final Window window = getWindow() == null ? null : getWindow().getWindow();
+        if (window == null) return;
+        if (secure) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
     }
 
     public void onTextInput(@Nullable String rawText) {
@@ -1730,9 +1794,104 @@ public class LatinIME extends InputMethodService implements
     }
 
     public void launchSecureComposer() {
-        final Intent intent = new Intent().setClass(this, SecureComposerActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(intent);
+        final EditorInfo editorInfo = getCurrentInputEditorInfo();
+        final int inputType = editorInfo == null ? InputType.TYPE_NULL : editorInfo.inputType;
+        final android.view.inputmethod.InputBinding binding = getCurrentInputBinding();
+        final String handoffToken = editorInfo == null ? null : SecureImeBridge.beginSession(
+                editorInfo.packageName,
+                binding == null ? -1 : binding.getUid(),
+                binding == null ? null : binding.getConnectionToken(),
+                editorInfo.fieldId,
+                editorInfo.fieldName,
+                editorInfo.inputType,
+                editorInfo.imeOptions,
+                editorInfo.privateImeOptions,
+                editorInfo.initialSelStart,
+                editorInfo.initialSelEnd,
+                getPackageName());
+        final Intent intent = new Intent().setClass(this, SecureComposerActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(SecureComposerActivity.EXTRA_HOST_IS_PASSWORD_FIELD, isPasswordInputType(inputType));
+        if (handoffToken != null) {
+            intent.putExtra(SecureComposerActivity.EXTRA_IME_HANDOFF_TOKEN, handoffToken);
+        }
+        try {
+            startActivity(intent);
+        } catch (RuntimeException error) {
+            if (handoffToken != null) SecureImeBridge.cancelSession(handoffToken);
+            throw error;
+        }
+    }
+
+    private static boolean isPasswordInputType(final int inputType) {
+        final int inputClass = inputType & InputType.TYPE_MASK_CLASS;
+        final int variation = inputType & InputType.TYPE_MASK_VARIATION;
+        if (inputClass == InputType.TYPE_CLASS_NUMBER) {
+            return variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD;
+        }
+        if (inputClass != InputType.TYPE_CLASS_TEXT) return false;
+        return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD
+                || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD;
+    }
+
+    private void deliverPendingCiphertext(final EditorInfo editorInfo) {
+        if (editorInfo == null) return;
+        final android.view.inputmethod.InputBinding binding = getCurrentInputBinding();
+        final android.view.inputmethod.InputConnection connection = getCurrentInputConnection();
+        if (binding == null || connection == null) return;
+        SecureImeBridge.deliver(
+                editorInfo.packageName,
+                binding.getUid(),
+                binding.getConnectionToken(),
+                editorInfo.fieldId,
+                editorInfo.fieldName,
+                editorInfo.inputType,
+                editorInfo.imeOptions,
+                editorInfo.privateImeOptions,
+                editorInfo.initialSelStart,
+                editorInfo.initialSelEnd,
+                ciphertext -> connection.commitText(ciphertext, 1),
+                operationId -> SecureKeyboardRuntime.Companion.get().completeOutbound(operationId));
+    }
+
+    public void launchDecryptSelected() {
+        final android.view.inputmethod.InputConnection connection = getCurrentInputConnection();
+        final CharSequence selected = connection == null ? null : connection.getSelectedText(0);
+        if (!isCiphertextSelection(selected)) {
+            startActivity(new Intent().setClass(this, CiphertextClipboardActivity.class)
+                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+            return;
+        }
+        final Intent intent = SecureMessageViewerActivity.Companion.createCiphertextIntent(this, selected)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try {
+            startActivity(intent);
+        } catch (RuntimeException ignored) {
+            startActivity(new Intent().setClass(this, CiphertextClipboardActivity.class)
+                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+        }
+    }
+
+    private static boolean isCiphertextSelection(final CharSequence selected) {
+        if (selected == null || selected.length() == 0 || selected.length() > MAX_SELECTED_CIPHERTEXT_CHARS)
+            return false;
+        int first = 0;
+        while (first < selected.length() && Character.isWhitespace(selected.charAt(first))) first++;
+        if (first + 4 > selected.length()
+                || selected.charAt(first) != 'C'
+                || selected.charAt(first + 1) != 'B'
+                || selected.charAt(first + 2) != '1'
+                || selected.charAt(first + 3) != ':') return false;
+        for (int index = first; index < selected.length(); index++) {
+            final char value = selected.charAt(index);
+            if (!(value >= 'A' && value <= 'Z')
+                    && !(value >= 'a' && value <= 'z')
+                    && !(value >= '0' && value <= '9')
+                    && value != '-' && value != '_' && value != ':'
+                    && !Character.isWhitespace(value)) return false;
+        }
+        return true;
     }
 
     @Override

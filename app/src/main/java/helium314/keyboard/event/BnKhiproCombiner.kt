@@ -71,6 +71,11 @@ class BnKhiproCombiner(
         engine.resetState()
     }
 
+    override fun resetSecurely() {
+        composingText.overwriteAndClear()
+        engine.resetState()
+    }
+
     private fun commitAndReset(event: Event): Event {
         val converted = combiningStateFeedback
         reset()

@@ -114,11 +114,17 @@ class ContactVaultEntry(
         validateSafetyCode(safetyCode)
         require(keyChanged == (verificationStatus == ContactVerificationStatus.KEY_CHANGED))
         require(sessionError == (verificationStatus == ContactVerificationStatus.SESSION_ERROR))
-        require(
-            requiresRepairing == (verificationStatus == ContactVerificationStatus.KEY_CHANGED ||
-                verificationStatus == ContactVerificationStatus.PAIRING_REQUIRED ||
-                verificationStatus == ContactVerificationStatus.SESSION_ERROR),
-        )
+        when (verificationStatus) {
+            ContactVerificationStatus.PAIRING_REQUIRED,
+            ContactVerificationStatus.SESSION_ERROR,
+            -> require(requiresRepairing)
+            ContactVerificationStatus.UNVERIFIED,
+            ContactVerificationStatus.VERIFIED,
+            -> require(!requiresRepairing)
+            // A changed key may either await re-pairing or await explicit trust of a freshly
+            // committed replacement session. [keyChanged] blocks use in both cases.
+            ContactVerificationStatus.KEY_CHANGED -> Unit
+        }
     }
 
     val internalId = internalId.copyOf()
