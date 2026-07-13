@@ -73,6 +73,12 @@ physical-device or GrapheneOS evidence.
   analytics, crash-reporting, advertising, WebView, or dynamic-code-loader use.
   An inherited JVM test uses `HttpURLConnection`; it is not packaged production
   code.
+- New Vaults on API 23--29 fail closed to a biometric authentication-per-use
+  Keystore key with validity `-1`. The legacy API cannot express the requested
+  biometric-or-device-credential policy without a time-based authorization
+  window, so device-credential fallback is available only on API 30 and newer.
+  Existing pre-release credential-window envelopes remain readable but no new
+  positive-duration legacy key is generated.
 
 ## Implemented Controls
 

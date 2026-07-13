@@ -45,8 +45,11 @@ class AndroidVaultKeyManager(
         ensureCredentialStorageAvailable()
         val envelope = envelopeStore.read()
         val operation = if (envelope == null) VaultOperation.CREATE else VaultOperation.OPEN
+        val mode = envelope?.authenticationMode ?: authenticationModeForNewVault(
+            requestedMode,
+            Build.VERSION.SDK_INT,
+        )
         return try {
-            val mode = envelope?.authenticationMode ?: requestedMode
             val alias = envelope?.alias ?: aliasFor(mode)
             val generatedInfo = if (envelope == null) ensureKey(alias, mode) else null
             val protectionInfo = generatedInfo ?: keyProtectionInfo(
@@ -73,7 +76,7 @@ class AndroidVaultKeyManager(
                 }
             }
         } catch (_: UserNotAuthenticatedException) {
-            promptRequest(operation, envelope?.authenticationMode ?: requestedMode)
+            promptRequest(operation, mode)
         } catch (_: KeyPermanentlyInvalidatedException) {
             VaultUnlockRequest.KeyInvalidated(operation)
         } catch (e: GeneralSecurityException) {
@@ -317,13 +320,11 @@ class AndroidVaultKeyManager(
             }
             builder.setUserAuthenticationParameters(duration, authType)
         } else {
-            val duration = if (mode == VaultAuthenticationMode.BIOMETRIC_STRONG_CRYPTO_OBJECT) {
-                -1
-            } else {
-                AUTHORIZATION_WINDOW_SECONDS
+            check(mode == VaultAuthenticationMode.BIOMETRIC_STRONG_CRYPTO_OBJECT) {
+                "Device-credential Vault keys require Android 11 or newer"
             }
             @Suppress("DEPRECATION")
-            builder.setUserAuthenticationValidityDurationSeconds(duration)
+            builder.setUserAuthenticationValidityDurationSeconds(-1)
         }
         if (Build.VERSION.SDK_INT >= 24 &&
             mode == VaultAuthenticationMode.BIOMETRIC_STRONG_CRYPTO_OBJECT
@@ -417,6 +418,17 @@ class AndroidVaultKeyManager(
         private const val WRAP_AAD_DOMAIN = "CipherBoard/WrappedDek/v2"
         private const val TAG_BITS = 128
         private const val AUTHORIZATION_WINDOW_SECONDS = 15
+
+        internal fun authenticationModeForNewVault(
+            requestedMode: VaultAuthenticationMode,
+            sdkInt: Int,
+        ): VaultAuthenticationMode = if (
+            sdkInt < 30 && requestedMode == VaultAuthenticationMode.BIOMETRIC_OR_DEVICE_CREDENTIAL
+        ) {
+            VaultAuthenticationMode.BIOMETRIC_STRONG_CRYPTO_OBJECT
+        } else {
+            requestedMode
+        }
 
         internal fun buildWrapAad(
             alias: String,
