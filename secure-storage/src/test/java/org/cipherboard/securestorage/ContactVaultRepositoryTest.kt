@@ -85,6 +85,32 @@ class ContactVaultRepositoryTest {
     }
 
     @Test
+    fun oldTerminalPairingIsPrunedAndNewestActiveRecordRemainsDiscoverable() {
+        owner(1).use { assertTrue(repository.createOwnerAccount(it)) }
+        val oldId = ByteArray(16) { 0x2a }
+        val oldCreated = NOW - 8L * 24 * 60 * 60 * 1_000
+        owner(2).use { updated ->
+            pending(oldId, oldCreated).use {
+                assertTrue(repository.stagePendingPairing(1, updated, it))
+            }
+        }
+        assertTrue(repository.cancelPendingPairing(oldId, 1))
+
+        val newId = ByteArray(16) { 0x2b }
+        owner(3).use { updated ->
+            pending(newId, NOW).use {
+                assertTrue(repository.stagePendingPairing(2, updated, it))
+            }
+        }
+
+        assertNull(repository.readPendingPairing(oldId))
+        repository.listActivePendingPairings(NOW).useAll { active ->
+            assertEquals(1, active.size)
+            assertArrayEquals(newId, active.single().value.pairingId)
+        }
+    }
+
+    @Test
     fun conflictOnFinalPairingStepRollsBackAccountAndOneShotConsumption() {
         stagePairing()
 
@@ -285,6 +311,7 @@ class ContactVaultRepositoryTest {
                 1,
                 secret("state-3"),
                 inboundId,
+                ByteArray(32) { 0x43 },
                 secret("temporary display"),
             ),
         )
@@ -297,8 +324,254 @@ class ContactVaultRepositoryTest {
         }
         assertNull(store.readRatchet(contactId))
         assertTrue(store.listPendingOutbound().isEmpty())
-        assertNull(store.readPendingDisplay(inboundId))
+        assertNull(store.readPendingDisplay(contactId, inboundId))
         assertFalse(store.isReplay(contactId, inboundId))
+    }
+
+    @Test
+    fun messageCommitsAdvanceContactActivityWithRatchetAndPendingRecords() {
+        stagePairing()
+        owner(3).use { updated ->
+            contact().use { contact ->
+                assertTrue(
+                    repository.completePairing(
+                        pairingId, 1, 2, 0, NOW, updated, contact, 0, 1, secret("state-1"),
+                    ),
+                )
+            }
+        }
+
+        val outboundId = ByteArray(16) { 0x51 }
+        secret("state-2").use { nextState ->
+            repository.commitOutbound(
+                contactId,
+                expectedContactRevision = 1,
+                lastActiveAtEpochMillis = NOW + 100,
+                expectedRatchetRevision = 1,
+                ratchetSchemaVersion = 1,
+                newRatchetState = nextState,
+                operationId = outboundId,
+                pendingCiphertext = "CB1:atomic-outbound".encodeToByteArray(),
+            )
+        }
+        repository.readContact(contactId)!!.use {
+            assertEquals(2, it.revision)
+            assertEquals(NOW + 100, it.value.lastActiveAtEpochMillis)
+        }
+        store.readRatchet(contactId)!!.use { assertEquals(2, it.revision) }
+        assertEquals(1, store.listPendingOutbound().size)
+
+        val inboundId = ByteArray(16) { 0x52 }
+        val inboundResult = secret("state-3").use { nextState ->
+            secret("temporary plaintext").use { plaintext ->
+                repository.commitInbound(
+                    contactId,
+                    expectedContactRevision = 2,
+                    lastActiveAtEpochMillis = NOW + 200,
+                    expectedRatchetRevision = 2,
+                    ratchetSchemaVersion = 1,
+                    newRatchetState = nextState,
+                    messageId = inboundId,
+                    ciphertextDigest = ByteArray(32) { 0x53 },
+                    pendingPlaintext = plaintext,
+                )
+            }
+        }
+        assertEquals(AtomicInboundResult.COMMITTED, inboundResult)
+        repository.readContact(contactId)!!.use {
+            assertEquals(3, it.revision)
+            assertEquals(NOW + 200, it.value.lastActiveAtEpochMillis)
+        }
+        store.readRatchet(contactId)!!.use { assertEquals(3, it.revision) }
+        assertTrue(store.isReplay(contactId, inboundId))
+        store.readPendingDisplay(contactId, inboundId)!!.close()
+    }
+
+    @Test
+    fun missingContactFailureStillWipesTransferredMessageSecrets() {
+        val missingId = ByteArray(16) { 0x54 }
+        val outboundState = ByteArray(64) { 0x55 }
+        org.junit.Assert.assertThrows(RatchetRevisionConflictException::class.java) {
+            repository.commitOutbound(
+                missingId,
+                1,
+                NOW,
+                1,
+                1,
+                OwnedSecret.takeOwnership(outboundState),
+                ByteArray(16) { 0x56 },
+                "CB1:missing".encodeToByteArray(),
+            )
+        }
+        assertTrue(outboundState.all { it == 0.toByte() })
+
+        val inboundState = ByteArray(64) { 0x57 }
+        val inboundPlaintext = "missing-contact-plaintext".encodeToByteArray()
+        assertEquals(
+            AtomicInboundResult.REVISION_CONFLICT,
+            repository.commitInbound(
+                missingId,
+                1,
+                NOW,
+                1,
+                1,
+                OwnedSecret.takeOwnership(inboundState),
+                ByteArray(16) { 0x58 },
+                ByteArray(32) { 0x59 },
+                OwnedSecret.takeOwnership(inboundPlaintext),
+            ),
+        )
+        assertTrue(inboundState.all { it == 0.toByte() })
+        assertTrue(inboundPlaintext.all { it == 0.toByte() })
+    }
+
+    @Test
+    fun corruptSessionCanBeMarkedAsRepairRequired() {
+        stagePairing()
+        owner(3).use { updated ->
+            contact().use { value ->
+                assertTrue(
+                    repository.completePairing(
+                        pairingId, 1, 2, 0, NOW, updated, value, 0, 1, secret("state"),
+                    ),
+                )
+            }
+        }
+
+        assertTrue(
+            repository.updateContactStatus(
+                contactId = contactId,
+                expectedRevision = 1,
+                verificationStatus = ContactVerificationStatus.SESSION_ERROR,
+                requiresRepairing = true,
+                sessionError = true,
+                keyChanged = false,
+                lastActiveAtEpochMillis = NOW + 1,
+            ),
+        )
+        repository.readContact(contactId)!!.use {
+            assertEquals(ContactVerificationStatus.SESSION_ERROR, it.value.verificationStatus)
+            assertTrue(it.value.requiresRepairing)
+            assertTrue(it.value.sessionError)
+        }
+    }
+
+    @Test
+    fun identityReplacementCannotAtomicallyBecomeVerified() {
+        stagePairing()
+        owner(3).use { updated ->
+            contact().use { current ->
+                assertTrue(
+                    repository.completePairing(
+                        pairingId,
+                        1,
+                        2,
+                        0,
+                        NOW,
+                        updated,
+                        current,
+                        0,
+                        1,
+                        secret("old-session"),
+                    ),
+                )
+            }
+        }
+        assertTrue(repository.destroyContactSession(contactId, 1, 1, NOW))
+
+        val replacementPairingId = ByteArray(16) { (it + 70).toByte() }
+        owner(4).use { updated ->
+            pending(replacementPairingId).use {
+                assertTrue(repository.stagePendingPairing(3, updated, it))
+            }
+        }
+        owner(5).use { updated ->
+            replacementContact(ContactVerificationStatus.VERIFIED).use { unsafeReplacement ->
+                assertFalse(
+                    repository.completePairing(
+                        replacementPairingId,
+                        1,
+                        4,
+                        2,
+                        NOW,
+                        updated,
+                        unsafeReplacement,
+                        0,
+                        1,
+                        secret("must-not-commit"),
+                        allowIdentityReplacement = true,
+                    ),
+                )
+            }
+        }
+        assertNull(store.readRatchet(contactId))
+
+        owner(5).use { updated ->
+            replacementContact(ContactVerificationStatus.KEY_CHANGED).use { blockedReplacement ->
+                assertTrue(
+                    repository.completePairing(
+                        replacementPairingId,
+                        1,
+                        4,
+                        2,
+                        NOW,
+                        updated,
+                        blockedReplacement,
+                        0,
+                        1,
+                        secret("fresh-session"),
+                        allowIdentityReplacement = true,
+                    ),
+                )
+            }
+        }
+        repository.readContact(contactId)!!.use {
+            assertEquals(ContactVerificationStatus.KEY_CHANGED, it.value.verificationStatus)
+            assertTrue(it.value.keyChanged)
+            assertFalse(it.value.requiresRepairing)
+        }
+        store.readRatchet(contactId)!!.use {
+            it.secret.consume { state -> assertArrayEquals("fresh-session".encodeToByteArray(), state) }
+        }
+        replacementPairingId.wipe()
+    }
+
+    @Test
+    fun completionRejectsIdentityOrRoutingTagOwnedByAnotherContact() {
+        stagePairing()
+        val firstFingerprint = ByteArray(32) { (it + 4).toByte() }
+        owner(3).use { updated ->
+            contact().use { first ->
+                assertTrue(repository.completePairing(pairingId, 1, 2, 0, NOW, updated, first, 0, 1, secret("first")))
+            }
+        }
+
+        val secondPairingId = ByteArray(16) { (it + 80).toByte() }
+        val secondContactId = ByteArray(16) { (it + 100).toByte() }
+        owner(4).use { updated ->
+            pending(secondPairingId).use { assertTrue(repository.stagePendingPairing(3, updated, it)) }
+        }
+        owner(5).use { updated ->
+            contact(
+                localName = "Duplicate identity",
+                internalId = secondContactId,
+                remoteFingerprint = firstFingerprint,
+                remoteTag = ByteArray(16) { (it + 33).toByte() },
+            ).use { duplicate ->
+                assertFalse(
+                    repository.completePairing(
+                        secondPairingId, 1, 4, 0, NOW, updated, duplicate, 0, 1, secret("duplicate"),
+                    ),
+                )
+            }
+        }
+        assertNull(repository.readContact(secondContactId))
+        repository.readPendingPairing(secondPairingId)!!.use {
+            assertEquals(OneShotStatus.ACTIVE, it.value.oneShotStatus)
+        }
+        firstFingerprint.wipe()
+        secondPairingId.wipe()
+        secondContactId.wipe()
     }
 
     @Test
@@ -344,11 +617,14 @@ class ContactVaultRepositoryTest {
         createdAtEpochMillis = NOW,
     )
 
-    private fun pending() = PendingPairingState(
+    private fun pending(
+        id: ByteArray = pairingId,
+        createdAtEpochMillis: Long = NOW,
+    ) = PendingPairingState(
         type = PendingPairingType.OFFER,
-        pairingId = pairingId,
-        createdAtEpochMillis = NOW,
-        expiresAtEpochMillis = NOW + 300_000,
+        pairingId = id,
+        createdAtEpochMillis = createdAtEpochMillis,
+        expiresAtEpochMillis = createdAtEpochMillis + 300_000,
         nonce = ByteArray(32) { (it + 1).toByte() },
         transcriptHash = ByteArray(32) { (it + 2).toByte() },
         oneShotStatus = OneShotStatus.ACTIVE,
@@ -356,11 +632,16 @@ class ContactVaultRepositoryTest {
         payload = ByteArray(96) { (it + 3).toByte() },
     )
 
-    private fun contact(localName: String = "Боб 🔐") = ContactVaultEntry(
-        internalId = contactId,
+    private fun contact(
+        localName: String = "Боб 🔐",
+        internalId: ByteArray = contactId,
+        remoteFingerprint: ByteArray = ByteArray(32) { (it + 4).toByte() },
+        remoteTag: ByteArray = ByteArray(16) { (it + 5).toByte() },
+    ) = ContactVaultEntry(
+        internalId = internalId,
         localName = localName,
-        remoteIdentityFingerprint = ByteArray(32) { (it + 4).toByte() },
-        remoteSessionTag = ByteArray(16) { (it + 5).toByte() },
+        remoteIdentityFingerprint = remoteFingerprint,
+        remoteSessionTag = remoteTag,
         verificationStatus = ContactVerificationStatus.VERIFIED,
         pairedAtEpochMillis = NOW,
         lastActiveAtEpochMillis = NOW,
@@ -370,6 +651,22 @@ class ContactVaultRepositoryTest {
         requiresRepairing = false,
         sessionError = false,
         keyChanged = false,
+    )
+
+    private fun replacementContact(status: ContactVerificationStatus) = ContactVaultEntry(
+        internalId = contactId,
+        localName = "Боб 🔐",
+        remoteIdentityFingerprint = ByteArray(32) { (it + 90).toByte() },
+        remoteSessionTag = ByteArray(16) { (it + 91).toByte() },
+        verificationStatus = status,
+        pairedAtEpochMillis = NOW,
+        lastActiveAtEpochMillis = NOW,
+        protocolVersion = 1,
+        safetyNumber = "98765 43210 98765 43210",
+        safetyCode = "delta cedar beacon amber",
+        requiresRepairing = false,
+        sessionError = false,
+        keyChanged = status == ContactVerificationStatus.KEY_CHANGED,
     )
 
     private fun secret(value: String) = OwnedSecret(value.encodeToByteArray())

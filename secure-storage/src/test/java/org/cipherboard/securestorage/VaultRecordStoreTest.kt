@@ -61,6 +61,7 @@ class VaultRecordStoreTest {
         }
         val pending = store.listPendingOutbound()
         assertEquals(1, pending.size)
+        assertArrayEquals(contactId, pending.single().contactId)
         assertArrayEquals(operationId, pending.single().operationId)
         assertArrayEquals(ciphertext, pending.single().ciphertext)
         assertTrue(store.completeOutbound(operationId))
@@ -90,24 +91,31 @@ class VaultRecordStoreTest {
     fun inboundReplayAndRevisionConflictsDoNotPartiallyAdvanceState() {
         assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
         val messageId = ByteArray(16) { 7 }
+        val ciphertextDigest = ByteArray(32) { 6 }
 
         assertEquals(
             AtomicInboundResult.COMMITTED,
             store.commitInbound(
-                contactId, 1, 1, secret("state-2"), messageId, secret("display plaintext"),
+                contactId, 1, 1, secret("state-2"), messageId, ciphertextDigest,
+                secret("display plaintext"),
             ),
         )
         assertTrue(store.isReplay(contactId, messageId))
-        store.readPendingDisplay(messageId)!!.use { display ->
+        store.readPendingDisplay(contactId, messageId)!!.use { display ->
+            assertArrayEquals(ciphertextDigest, display.ciphertextDigest)
             display.plaintext.consume {
                 assertArrayEquals("display plaintext".encodeToByteArray(), it)
             }
+        }
+        assertThrows(VaultCorruptException::class.java) {
+            store.readPendingDisplay(ByteArray(contactId.size) { 99 }, messageId)
         }
 
         assertEquals(
             AtomicInboundResult.REPLAY,
             store.commitInbound(
-                contactId, 2, 1, secret("must-not-commit"), messageId, secret("duplicate"),
+                contactId, 2, 1, secret("must-not-commit"), messageId, ciphertextDigest,
+                secret("duplicate"),
             ),
         )
         assertEquals(2, store.readRatchet(contactId)!!.use { it.revision })
@@ -116,11 +124,31 @@ class VaultRecordStoreTest {
         assertEquals(
             AtomicInboundResult.REVISION_CONFLICT,
             store.commitInbound(
-                contactId, 1, 1, secret("must-not-commit"), differentMessage, secret("not shown"),
+                contactId, 1, 1, secret("must-not-commit"), differentMessage, ciphertextDigest,
+                secret("not shown"),
             ),
         )
         assertFalse(store.isReplay(contactId, differentMessage))
         assertEquals(2, store.readRatchet(contactId)!!.use { it.revision })
+    }
+
+    @Test
+    fun replayMarkersAreBoundedPerContactAndRetainNewestMessage() {
+        val ids = (0 until 20).map { value ->
+            ByteArray(16).also { bytes ->
+                bytes[12] = (value ushr 24).toByte()
+                bytes[13] = (value ushr 16).toByte()
+                bytes[14] = (value ushr 8).toByte()
+                bytes[15] = value.toByte()
+            }
+        }
+        ids.forEach { assertTrue(store.insertReplayMarkerForTesting(contactId, it, 16)) }
+
+        assertEquals(16, store.replayMarkerCountForTesting(contactId))
+        assertFalse(store.isReplay(contactId, ids.first()))
+        assertTrue(store.isReplay(contactId, ids.last()))
+        assertFalse(store.insertReplayMarkerForTesting(contactId, ids.last(), 16))
+        assertEquals(16, store.replayMarkerCountForTesting(contactId))
     }
 
     @Test
@@ -133,6 +161,169 @@ class VaultRecordStoreTest {
                 contactId, 1, 1, secret("state-2"), ByteArray(16) { 2 }, ByteArray(1),
             )
         }
+    }
+
+    @Test
+    fun lockedVaultCanDeleteEncryptedPendingDisplayWithoutDecryptingIt() {
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
+        val messageId = ByteArray(16) { 12 }
+        assertEquals(
+            AtomicInboundResult.COMMITTED,
+            store.commitInbound(
+                contactId,
+                1,
+                1,
+                secret("state-2"),
+                messageId,
+                ByteArray(32) { 13 },
+                secret("temporary plaintext"),
+            ),
+        )
+
+        lock.lock()
+
+        assertTrue(store.deletePendingDisplay(messageId))
+        assertThrows(VaultLockedException::class.java) {
+            store.readPendingDisplay(contactId, messageId)
+        }
+    }
+
+    @Test
+    fun expiredPendingDisplayCanBePurgedWithoutUnlockingVault() {
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
+        val messageId = ByteArray(16) { 0x21 }
+        assertEquals(
+            AtomicInboundResult.COMMITTED,
+            store.commitInbound(
+                contactId,
+                1,
+                1,
+                secret("state-2"),
+                messageId,
+                ByteArray(32) { 0x22 },
+                secret("short crash recovery plaintext"),
+            ),
+        )
+        lock.lock()
+
+        assertEquals(1, store.purgePendingDisplaysCreatedAtOrBefore(Long.MAX_VALUE))
+        assertEquals(0, store.purgePendingDisplaysCreatedAtOrBefore(Long.MAX_VALUE))
+    }
+
+    @Test
+    fun rejectedOversizedPendingRecordsStillWipeTransferredSecrets() {
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
+        val outboundRatchet = ByteArray(64) { 0x61 }
+        assertThrows(IllegalArgumentException::class.java) {
+            store.commitOutbound(
+                contactId,
+                1,
+                1,
+                OwnedSecret.takeOwnership(outboundRatchet),
+                ByteArray(16) { 0x62 },
+                ByteArray(RecordCrypto.MAX_RECORD_BYTES),
+            )
+        }
+        assertTrue(outboundRatchet.all { it == 0.toByte() })
+
+        val inboundRatchet = ByteArray(64) { 0x63 }
+        val inboundPlaintext = ByteArray(RecordCrypto.MAX_RECORD_BYTES) { 0x64 }
+        assertThrows(IllegalArgumentException::class.java) {
+            store.commitInbound(
+                contactId,
+                1,
+                1,
+                OwnedSecret.takeOwnership(inboundRatchet),
+                ByteArray(16) { 0x65 },
+                ByteArray(32) { 0x66 },
+                OwnedSecret.takeOwnership(inboundPlaintext),
+            )
+        }
+        assertTrue(inboundRatchet.all { it == 0.toByte() })
+        assertTrue(inboundPlaintext.all { it == 0.toByte() })
+        assertEquals(1, store.readRatchet(contactId)!!.use { it.revision })
+        assertTrue(store.listPendingOutbound().isEmpty())
+    }
+
+    @Test
+    fun staleContactMutationRollsBackRatchetPendingAndReplayAtomically() {
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
+        val contactKey = IdentifierCodec.domainKey("vault-contact", contactId)
+        val ownerKey = IdentifierCodec.contactKey(contactId)
+        val initialContact = "contact-revision-1".encodeToByteArray()
+        assertTrue(
+            store.applyDomainMutations(
+                listOf(DomainMutation.Put(11, contactKey, ownerKey, 2, 0, initialContact)),
+            ),
+        )
+        initialContact.wipe()
+        val staleContact = "stale-contact-update".encodeToByteArray()
+        val staleMutation = DomainMutation.Put(11, contactKey, ownerKey, 2, 2, staleContact)
+
+        assertThrows(RatchetRevisionConflictException::class.java) {
+            store.commitOutboundWithDomainMutation(
+                contactId,
+                1,
+                1,
+                secret("state-2"),
+                ByteArray(16) { 0x71 },
+                "CB1:must-rollback".encodeToByteArray(),
+                staleMutation,
+            )
+        }
+        assertEquals(1, store.readRatchet(contactId)!!.use { it.revision })
+        assertEquals(1, store.readDomainRecord(11, contactKey)!!.use { it.revision })
+        assertTrue(store.listPendingOutbound().isEmpty())
+
+        val messageId = ByteArray(16) { 0x72 }
+        assertEquals(
+            AtomicInboundResult.REVISION_CONFLICT,
+            store.commitInboundWithDomainMutation(
+                contactId,
+                1,
+                1,
+                secret("state-2"),
+                messageId,
+                ByteArray(32) { 0x73 },
+                secret("must-not-display"),
+                staleMutation,
+            ),
+        )
+        assertEquals(1, store.readRatchet(contactId)!!.use { it.revision })
+        assertEquals(1, store.readDomainRecord(11, contactKey)!!.use { it.revision })
+        assertFalse(store.isReplay(contactId, messageId))
+        assertTrue(store.readPendingDisplay(contactId, messageId) == null)
+        staleContact.wipe()
+    }
+
+    @Test
+    fun domainMutationCannotCrossContactOwnershipBoundary() {
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
+        val otherContact = ByteArray(16) { 0x7a }
+        val nextState = ByteArray(32) { 0x7b }
+        val mutation = DomainMutation.Put(
+            11,
+            IdentifierCodec.domainKey("vault-contact", otherContact),
+            IdentifierCodec.contactKey(otherContact),
+            2,
+            1,
+            ByteArray(16),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            store.commitOutboundWithDomainMutation(
+                contactId,
+                1,
+                1,
+                OwnedSecret.takeOwnership(nextState),
+                ByteArray(16) { 0x7c },
+                "CB1:cross-owner".encodeToByteArray(),
+                mutation,
+            )
+        }
+        assertTrue(nextState.all { it == 0.toByte() })
+        assertEquals(1, store.readRatchet(contactId)!!.use { it.revision })
+        assertTrue(store.listPendingOutbound().isEmpty())
     }
 
     private fun secret(value: String) = OwnedSecret(value.encodeToByteArray())

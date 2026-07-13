@@ -110,6 +110,10 @@ fn authenticated_pairing_metadata_exposes_only_public_ui_fields() {
     assert_eq!(offer_metadata.capabilities(), CAPS);
     assert_eq!(offer_metadata.expires_at(), Some(NOW + 600));
     assert!(!offer_metadata.is_expired());
+    let rollback_too_far = parse_pairing_payload(&offer_qr, NOW - 301)
+        .err()
+        .expect("offer lifetime beyond the signed maximum must fail closed");
+    assert_eq!(rollback_too_far.code(), ErrorCode::InvalidInput);
     assert_eq!(
         offer_metadata.offer_hash(),
         &offer.transcript_hash().expect("hash")
@@ -375,6 +379,7 @@ fn very_long_message_and_sms_multipart_reassemble() {
         TransportMode::SmsCompact,
     );
     assert!(sms.len() > 1);
+    assert!(sms.iter().all(|part| part.len() <= 153));
     assert_eq!(decrypt(&mut paired.alice_state, &sms), sms_text.as_bytes());
 }
 
@@ -382,7 +387,7 @@ fn very_long_message_and_sms_multipart_reassemble() {
 fn max_parts_and_excess_are_enforced() {
     let tag = [7_u8; 16];
     let id = [9_u8; 16];
-    let max_payload = vec![42_u8; usize::from(MAX_PARTS) * 72];
+    let max_payload = vec![42_u8; usize::from(MAX_PARTS) * 48];
     let parts = encode_transport_parts(tag, id, 1, &max_payload, 0, TransportMode::SmsCompact)
         .expect("maximum parts");
     assert_eq!(parts.len(), usize::from(MAX_PARTS));
@@ -390,7 +395,9 @@ fn max_parts_and_excess_are_enforced() {
         reassemble_transport_parts(parts.iter().map(String::as_str), &tag).expect("reassemble max");
     assert_eq!(reassembled.payload(), max_payload);
 
-    let too_large = vec![42_u8; usize::from(MAX_PARTS) * 72 + 1];
+    assert!(parts.iter().all(|part| part.len() <= 153));
+
+    let too_large = vec![42_u8; usize::from(MAX_PARTS) * 48 + 1];
     let error = encode_transport_parts(tag, id, 1, &too_large, 0, TransportMode::SmsCompact)
         .expect_err("too many parts");
     assert_eq!(error.code(), ErrorCode::TooManyParts);

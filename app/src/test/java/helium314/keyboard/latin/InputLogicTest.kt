@@ -2,11 +2,15 @@
 package helium314.keyboard.latin
 
 import android.inputmethodservice.InputMethodService
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Message
 import android.text.InputType
 import android.view.KeyEvent
+import android.view.WindowManager
 import android.view.inputmethod.*
 import androidx.core.content.edit
 import helium314.keyboard.ShadowInputMethodManager2
@@ -20,14 +24,17 @@ import helium314.keyboard.latin.SuggestedWords.SuggestedWordInfo
 import helium314.keyboard.latin.common.Constants
 import helium314.keyboard.latin.common.LocaleUtils.constructLocale
 import helium314.keyboard.latin.common.StringUtils
+import helium314.keyboard.latin.database.ClipboardDao
 import helium314.keyboard.latin.inputlogic.InputLogic
 import helium314.keyboard.latin.inputlogic.SpaceState
 import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.settings.SettingsValues
 import helium314.keyboard.latin.utils.ScriptUtils
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.getTimestampFormatter
 import helium314.keyboard.latin.utils.prefs
 import org.junit.runner.RunWith
+import org.junit.Ignore
 import org.mockito.Mockito
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -41,6 +48,7 @@ import kotlin.streams.asSequence
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 @Config(shadows = [
@@ -64,6 +72,10 @@ class InputLogicTest {
     private val connectionTextBeforeComposingText get() = (beforeComposingReader.get(connection) as CharSequence).toString()
     private val composingReader = RichInputConnection::class.java.getDeclaredField("mComposingText").apply { isAccessible = true }
     private val connectionComposingText get() = (composingReader.get(connection) as CharSequence).toString()
+    private val commitTempReader = RichInputConnection::class.java
+        .getDeclaredField("mTempObjectForCommitText")
+        .apply { isAccessible = true }
+    private val connectionCommitTemp get() = (commitTempReader.get(connection) as CharSequence).toString()
 
     init {
         ShadowLog.setupLogging()
@@ -101,6 +113,144 @@ class InputLogicTest {
         functionalKeyPress(KeyCode.SECURE_COMPOSER)
         assertEquals(beforeText, text)
         assertEquals(beforeComposing, composingText)
+    }
+
+    @Test fun secureComposerEditorNeverLearnsUnlearnsOrAdjustsLanguageConfidence() {
+        currentEditorPackageName = BuildConfig.APPLICATION_ID
+        currentPrivateImeOptions = InputAttributes.CIPHERBOARD_SECURE_EDITOR_OPTION
+        currentImeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        setText("")
+        assertTrue(settingsValues.mIncognitoModeEnabled)
+
+        InputLogic::class.java.getDeclaredMethod(
+            "unlearnWord",
+            String::class.java,
+            SettingsValues::class.java,
+            DictionaryFacilitator.UnlearnEvent::class.java,
+        ).apply { isAccessible = true }.invoke(
+            inputLogic,
+            "secret-unlearn-sentinel",
+            settingsValues,
+            DictionaryFacilitator.UnlearnEvent.BACKSPACE,
+        )
+        InputLogic::class.java.getDeclaredMethod(
+            "performAdditionToUserHistoryDictionary",
+            SettingsValues::class.java,
+            String::class.java,
+            NgramContext::class.java,
+        ).apply { isAccessible = true }.invoke(
+            inputLogic,
+            settingsValues,
+            "secret-learn-sentinel",
+            NgramContext.EMPTY_PREV_WORDS_INFO,
+        )
+
+        assertEquals(0, ShadowFacilitator2.addCalls)
+        assertEquals(0, ShadowFacilitator2.unlearnCalls)
+        assertEquals(0, ShadowFacilitator2.adjustConfidenceCalls)
+    }
+
+    @Test fun secureComposerEditorForcesPrivateImeSettingsAndSecureWindow() {
+        latinIME.prefs().edit {
+            putBoolean(Settings.PREF_ENABLE_CLIPBOARD_HISTORY, true)
+            putBoolean(Settings.PREF_SUGGEST_CLIPBOARD_CONTENT, true)
+            putBoolean(Settings.PREF_SHOW_SUGGESTIONS, true)
+            putBoolean(Settings.PREF_ALWAYS_SHOW_SUGGESTIONS, true)
+            putBoolean(Settings.PREF_AUTO_CORRECTION, true)
+            putBoolean(Settings.PREF_POPUP_ON, true)
+            putBoolean(Settings.PREF_GESTURE_FLOATING_PREVIEW_TEXT, true)
+        }
+        currentEditorPackageName = BuildConfig.APPLICATION_ID
+        currentPrivateImeOptions = InputAttributes.CIPHERBOARD_SECURE_EDITOR_OPTION
+        currentImeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        setText("")
+
+        assertTrue(!settingsValues.mClipboardHistoryEnabled)
+        assertTrue(!settingsValues.mSuggestClipboardContent)
+        assertTrue(!settingsValues.mSuggestionsEnabled)
+        assertTrue(!settingsValues.mAutoCorrectEnabled)
+        assertTrue(!settingsValues.mKeyPreviewPopupOn)
+        assertTrue(!settingsValues.mGestureFloatingPreviewTextEnabled)
+        assertTrue(!settingsValues.mSlidingKeyInputPreviewEnabled)
+        assertTrue(
+            latinIME.window.window!!.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0,
+        )
+
+        currentEditorPackageName = "org.example.normal"
+        currentPrivateImeOptions = null
+        currentImeOptions = 0
+        setText("")
+        assertEquals(
+            0,
+            latinIME.window.window!!.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE,
+        )
+    }
+
+    @Test fun secureComposerClipboardCommandsCannotExportPlaintext() {
+        currentEditorPackageName = BuildConfig.APPLICATION_ID
+        currentPrivateImeOptions = InputAttributes.CIPHERBOARD_SECURE_EDITOR_OPTION
+        currentImeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        val clipboard = latinIME.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val history = ClipboardDao.getInstance(latinIME)
+        val plaintextSentinel = "secure-editor-clipboard-sentinel"
+        val existingClipboard = "preexisting-clipboard"
+        val blocked = intArrayOf(
+            KeyCode.CLIPBOARD,
+            KeyCode.CLIPBOARD_PASTE,
+            KeyCode.CLIPBOARD_SELECT_ALL,
+            KeyCode.CLIPBOARD_SELECT_WORD,
+            KeyCode.CLIPBOARD_COPY,
+            KeyCode.CLIPBOARD_COPY_ALL,
+            KeyCode.CLIPBOARD_CUT,
+            KeyCode.CLIPBOARD_CLEAR_HISTORY,
+            KeyCode.UNDO,
+            KeyCode.REDO,
+        )
+
+        blocked.forEach { keyCode ->
+            setText(plaintextSentinel)
+            if (keyCode == KeyCode.CLIPBOARD_COPY || keyCode == KeyCode.CLIPBOARD_CUT) {
+                setCursorPosition(0, plaintextSentinel.length)
+            }
+            clipboard.setPrimaryClip(ClipData.newPlainText("test", existingClipboard))
+            functionalKeyPress(keyCode)
+            assertEquals(plaintextSentinel, text)
+            assertEquals(
+                existingClipboard,
+                clipboard.primaryClip!!.getItemAt(0).coerceToText(latinIME).toString(),
+            )
+            assertTrue(history?.getAll().orEmpty().none { it.text.toString().contains(plaintextSentinel) })
+        }
+    }
+
+    @Test fun finishingSecureComposerOverwritesAndDisconnectsImeTextCaches() {
+        currentEditorPackageName = BuildConfig.APPLICATION_ID
+        currentPrivateImeOptions = InputAttributes.CIPHERBOARD_SECURE_EDITOR_OPTION
+        currentImeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        setText("secure-cache-prefix ")
+        input('x')
+        assertTrue(connectionTextBeforeComposingText.isNotEmpty())
+        assertTrue(connection.isConnected)
+
+        latinIME.mHandler.onFinishInputView(true)
+        handleMessages()
+
+        assertEquals("", connectionTextBeforeComposingText)
+        assertEquals("", connectionComposingText)
+        assertEquals("", connectionCommitTemp)
+        assertTrue(!connection.isConnected)
+        assertTrue(!composer.isComposingWord)
+        assertEquals(
+            null,
+            InputLogic::class.java.getDeclaredField("mEnteredText").apply { isAccessible = true }
+                .get(inputLogic),
+        )
+
+        currentEditorPackageName = "org.example.normal"
+        currentPrivateImeOptions = null
+        currentImeOptions = 0
+        setText("")
+        assertTrue(connection.isConnected)
     }
 
     @Test fun deleteCombinedText() {
@@ -169,8 +319,8 @@ class InputLogicTest {
 
     // todo: make it work, but it might not be that simple because adding is done in combiner
     //  https://github.com/HeliBorg/HeliBoard/issues/214
+    @Ignore("Known upstream HeliBoard issue #214: inserting into an existing Hangul composition")
     @Test fun insertLetterIntoWordHangulFails() {
-        if (BuildConfig.BUILD_TYPE == "runTests") return
         latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
         chainInput("ㅛㅎㄹㅎㅕㅛ")
         setCursorPosition(3)
@@ -728,7 +878,13 @@ class InputLogicTest {
         text = ""
         batchEdit = 0
         currentInputType = InputType.TYPE_CLASS_TEXT
+        currentEditorPackageName = null
+        currentPrivateImeOptions = null
+        currentImeOptions = 0
         lastAddedWord = ""
+        ShadowFacilitator2.addCalls = 0
+        ShadowFacilitator2.unlearnCalls = 0
+        ShadowFacilitator2.adjustConfidenceCalls = 0
 
         // reset settings
         latinIME.prefs().edit { clear() }
@@ -798,6 +954,9 @@ class InputLogicTest {
     private fun setCursorPosition(start: Int, end: Int = start, weirdTextField: Boolean = false) {
         val ei = EditorInfo()
         ei.inputType = currentInputType
+        ei.packageName = currentEditorPackageName
+        ei.privateImeOptions = currentPrivateImeOptions
+        ei.imeOptions = currentImeOptions
         ei.initialSelStart = start
         ei.initialSelEnd = end
         // imeOptions should not matter
@@ -848,6 +1007,9 @@ class InputLogicTest {
         // restarting is false, so this is seen as a new text field
         val ei = EditorInfo()
         ei.inputType = currentInputType
+        ei.packageName = currentEditorPackageName
+        ei.privateImeOptions = currentPrivateImeOptions
+        ei.imeOptions = currentImeOptions
         latinIME.mHandler.onStartInput(ei, false)
         latinIME.mHandler.onStartInputView(ei, false)
         handleMessages() // this is important so the composing span is set correctly
@@ -929,6 +1091,9 @@ class InputLogicTest {
 }
 
 private var currentInputType = InputType.TYPE_CLASS_TEXT
+private var currentEditorPackageName: String? = null
+private var currentPrivateImeOptions: String? = null
+private var currentImeOptions = 0
 private var currentScript = ScriptUtils.SCRIPT_LATIN
 private val messages = mutableListOf<Message>() // for latinIME / ShadowInputMethodService
 private val delayedMessages = mutableListOf<Message>() // for latinIME / ShadowInputMethodService
@@ -1123,7 +1288,9 @@ class ShadowInputMethodService {
     @Implementation
     fun getCurrentInputEditorInfo() = EditorInfo().apply {
         inputType = currentInputType
-        // anything else?
+        packageName = currentEditorPackageName
+        privateImeOptions = currentPrivateImeOptions
+        imeOptions = currentImeOptions
     }
     @Implementation
     fun getCurrentInputConnection() = ic
@@ -1165,8 +1332,25 @@ class ShadowFacilitator2 {
                          ngramContext: NgramContext, timeStampInSeconds: Long,
                          blockPotentiallyOffensive: Boolean) {
         lastAddedWord = suggestion
+        addCalls += 1
+    }
+    @Implementation
+    fun unlearnFromUserHistory(
+        word: String,
+        ngramContext: NgramContext,
+        timeStampInSeconds: Long,
+        event: DictionaryFacilitator.UnlearnEvent,
+    ) {
+        unlearnCalls += 1
+    }
+    @Implementation
+    fun adjustConfidences(word: String, wasAutoCapitalized: Boolean) {
+        adjustConfidenceCalls += 1
     }
     companion object {
         var lastAddedWord = ""
+        var addCalls = 0
+        var unlearnCalls = 0
+        var adjustConfidenceCalls = 0
     }
 }

@@ -45,6 +45,11 @@ class PrivacyLeakSurfaceTest {
             "READ_CONTACTS",
             "PREF_USE_CONTACTS",
             "use_contacts_dict",
+            "System.load(",
+            "LoadGestureLibPreference",
+            "JNI_LIB_IMPORT_FILE_NAME",
+            "BackupRestorePreference",
+            "ContextCompat.RECEIVER_EXPORTED",
         )
         val violations = Files.walk(mainSourceRoot()).use { paths ->
             paths.filter {
@@ -59,6 +64,15 @@ class PrivacyLeakSurfaceTest {
         }
 
         assertFalse(violations.isNotEmpty(), violations.joinToString())
+    }
+
+    @Test
+    fun launcherBroadcastReceiverDoesNotKillOnLocaleOrBootBroadcast() {
+        val receiver = mainSourceRoot().resolve("helium314/keyboard/latin/SystemBroadcastReceiver.java")
+        val source = String(Files.readAllBytes(receiver), StandardCharsets.UTF_8)
+
+        assertFalse(source.contains("killProcess"))
+        assertFalse(source.contains("System.exit"))
     }
 
     private fun mainSourceRoot(): Path {

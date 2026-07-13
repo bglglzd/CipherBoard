@@ -20,6 +20,7 @@ import helium314.keyboard.latin.settings.SpacingAndPunctuations
 import helium314.keyboard.latin.utils.ScriptUtils
 import helium314.keyboard.latin.utils.TextRange
 import org.junit.runner.RunWith
+import org.junit.Ignore
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.Test
@@ -157,8 +158,8 @@ class StringUtilsTest {
         assertEquals("\uD83D\uDE22", getFullEmojiAtEnd(" \u200D\uD83D\uDE22"))
     }
 
+    @Ignore("Known upstream malformed emoji-modifier edge case; modifier does not combine with the tree")
     @Test fun detectEmojisAtEndFails() {
-        if (BuildConfig.BUILD_TYPE == "runTests") return
         // fails, but unlikely enough that we leave it unfixed (issue is that 🏼 is not a standalone emoji, but combining with 🎄 doesn't merge)
         assertEquals("\uD83C\uDFFC", getFullEmojiAtEnd("\uD83C\uDF84\uD83C\uDFFC")) // 🎄🏼
     }

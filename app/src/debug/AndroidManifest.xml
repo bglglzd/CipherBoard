@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="org.cipherboard.securekeyboard.testfixture.VaultFaultBoundaryActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:process=":fault"
+            android:taskAffinity="${applicationId}.fault"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <activity
+            android:name="helium314.keyboard.secure.testfixture.ProcessTextHostActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:theme="@style/platformActivityTheme" />
+    </application>
+</manifest>

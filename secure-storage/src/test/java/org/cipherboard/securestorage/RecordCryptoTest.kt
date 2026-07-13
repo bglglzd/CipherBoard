@@ -3,6 +3,7 @@ package org.cipherboard.securestorage
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.SecureRandom
 
@@ -47,5 +48,23 @@ class RecordCryptoTest {
             dek.wipe()
             plaintext.wipe()
         }
+    }
+
+    @Test
+    fun encryptionFailureWipesNonceAllocatedBeforeMetadataValidation() {
+        class TrackingRandom : SecureRandom() {
+            var latest: ByteArray? = null
+            override fun nextBytes(bytes: ByteArray) {
+                latest = bytes
+                bytes.fill(0x55)
+            }
+        }
+        val tracking = TrackingRandom()
+        val failingCrypto = RecordCrypto(tracking)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            failingCrypto.encrypt(ByteArray(32), 1, "x".repeat(300), 1, 1, ByteArray(1))
+        }
+        assertTrue(checkNotNull(tracking.latest).all { it == 0.toByte() })
     }
 }
