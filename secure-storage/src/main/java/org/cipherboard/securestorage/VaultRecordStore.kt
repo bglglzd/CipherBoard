@@ -37,6 +37,34 @@ data class PendingDisplay(
     }
 }
 
+internal data class DomainStoredSecret(
+    val recordKey: String,
+    val ownerKey: String,
+    val schemaVersion: Int,
+    val revision: Long,
+    val secret: OwnedSecret,
+) : Closeable {
+    override fun close() = secret.close()
+}
+
+internal sealed interface DomainMutation {
+    data class Put(
+        val kind: Int,
+        val recordKey: String,
+        val ownerKey: String,
+        val schemaVersion: Int,
+        val expectedRevision: Long,
+        val plaintext: ByteArray,
+    ) : DomainMutation
+
+    data class Delete(
+        val kind: Int,
+        val recordKey: String,
+        val expectedRevision: Long,
+        val cascadeOwnerKey: String? = null,
+    ) : DomainMutation
+}
+
 /**
  * All values in encrypted_records are AES-256-GCM records. The only plaintext indices are hashes
  * of caller-provided random IDs and timestamps. Contact names and cryptographic state are never
@@ -279,6 +307,136 @@ class VaultRecordStore(
         db.execSQL("VACUUM")
     }
 
+    internal fun readDomainRecord(kind: Int, recordKey: String): DomainStoredSecret? {
+        validateDomainCoordinates(kind, recordKey)
+        return vault.withDek { dek ->
+            val row = queryRecord(kind, recordKey) ?: return@withDek null
+            try {
+                val plaintext = recordCrypto.decrypt(dek, kind, recordKey, row.encrypted)
+                DomainStoredSecret(
+                    row.recordKey,
+                    row.ownerKey,
+                    row.encrypted.schemaVersion,
+                    row.encrypted.revision,
+                    OwnedSecret(plaintext),
+                )
+            } finally {
+                row.encrypted.wipe()
+            }
+        }
+    }
+
+    internal fun listDomainRecords(kind: Int, limit: Int): List<DomainStoredSecret> {
+        require(kind > 0)
+        require(limit in 1..MAX_DOMAIN_RESULTS)
+        return vault.withDek { dek ->
+            val rows = queryRecords(kind, limit)
+            val result = ArrayList<DomainStoredSecret>(rows.size)
+            try {
+                rows.forEach { row ->
+                    val plaintext = recordCrypto.decrypt(dek, kind, row.recordKey, row.encrypted)
+                    result += DomainStoredSecret(
+                        row.recordKey,
+                        row.ownerKey,
+                        row.encrypted.schemaVersion,
+                        row.encrypted.revision,
+                        OwnedSecret(plaintext),
+                    )
+                }
+                result
+            } catch (error: Exception) {
+                result.forEach { it.close() }
+                throw error
+            } finally {
+                rows.forEach { it.encrypted.wipe() }
+            }
+        }
+    }
+
+    /** Applies all optimistic mutations in one SQLite transaction or rolls all of them back. */
+    internal fun applyDomainMutations(mutations: List<DomainMutation>): Boolean {
+        require(mutations.isNotEmpty() && mutations.size <= MAX_DOMAIN_MUTATIONS)
+        mutations.forEach {
+            when (it) {
+                is DomainMutation.Put -> {
+                    validateDomainCoordinates(it.kind, it.recordKey)
+                    validateDomainCoordinates(it.kind, it.ownerKey)
+                    require(it.schemaVersion > 0 && it.expectedRevision >= 0)
+                }
+                is DomainMutation.Delete -> {
+                    validateDomainCoordinates(it.kind, it.recordKey)
+                    require(it.expectedRevision > 0)
+                    it.cascadeOwnerKey?.let { owner -> validateDomainCoordinates(it.kind, owner) }
+                }
+            }
+        }
+        return vault.withDek { dek ->
+            val encrypted = ArrayList<Pair<DomainMutation, EncryptedRecord?>>(mutations.size)
+            try {
+                mutations.forEach { mutation ->
+                    val record = if (mutation is DomainMutation.Put) {
+                        val nextRevision = Math.addExact(mutation.expectedRevision, 1)
+                        recordCrypto.encrypt(
+                            dek,
+                            mutation.kind,
+                            mutation.recordKey,
+                            mutation.schemaVersion,
+                            nextRevision,
+                            mutation.plaintext,
+                        )
+                    } else {
+                        null
+                    }
+                    encrypted += mutation to record
+                }
+                try {
+                    inTransaction(helper.writableDatabase) { db ->
+                        encrypted.forEach { (mutation, record) ->
+                            when (mutation) {
+                                is DomainMutation.Put -> {
+                                    val encryptedRecord = checkNotNull(record)
+                                    val applied = if (mutation.expectedRevision == 0L) {
+                                        insertRecord(
+                                            db,
+                                            mutation.kind,
+                                            mutation.recordKey,
+                                            mutation.ownerKey,
+                                            encryptedRecord,
+                                        )
+                                    } else {
+                                        updateDomainRecord(db, mutation, encryptedRecord)
+                                    }
+                                    if (!applied) throw AbortDomainMutation()
+                                }
+                                is DomainMutation.Delete -> {
+                                    val deleted = db.delete(
+                                        TABLE_RECORDS,
+                                        "kind=? AND record_key=? AND revision=?",
+                                        arrayOf(
+                                            mutation.kind.toString(),
+                                            mutation.recordKey,
+                                            mutation.expectedRevision.toString(),
+                                        ),
+                                    ) == 1
+                                    if (!deleted) throw AbortDomainMutation()
+                                    mutation.cascadeOwnerKey?.let { ownerKey ->
+                                        db.delete(TABLE_RECORDS, "owner_key=?", arrayOf(ownerKey))
+                                        db.delete(TABLE_REPLAY, "owner_key=?", arrayOf(ownerKey))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    true
+                } catch (_: AbortDomainMutation) {
+                    false
+                }
+            } finally {
+                encrypted.forEach { it.second?.wipe() }
+            }
+        }
+    }
+
     override fun close() {
         helper.close()
     }
@@ -320,21 +478,29 @@ class VaultRecordStore(
             limit.toString(),
         ).use { cursor ->
             val result = ArrayList<StoredRow>(cursor.count.coerceAtMost(limit))
-            while (cursor.moveToNext()) result += cursor.toStoredRow()
-            return result
+            return try {
+                while (cursor.moveToNext()) result += cursor.toStoredRow()
+                result
+            } catch (error: Exception) {
+                result.forEach { it.encrypted.wipe() }
+                throw error
+            }
         }
     }
 
     private fun Cursor.toStoredRow(): StoredRow {
         val key = getString(getColumnIndexOrThrow("record_key"))
+        val ownerKey = getString(getColumnIndexOrThrow("owner_key"))
         val schemaVersion = getInt(getColumnIndexOrThrow("schema_version"))
         val revision = getLong(getColumnIndexOrThrow("revision"))
         val nonce = getBlob(getColumnIndexOrThrow("nonce"))
         val ciphertext = getBlob(getColumnIndexOrThrow("ciphertext"))
-        if (key.length !in 1..MAX_STORED_KEY_CHARS || schemaVersion <= 0 || revision <= 0) {
+        if (key.length !in 1..MAX_STORED_KEY_CHARS || ownerKey.length !in 1..MAX_STORED_KEY_CHARS ||
+            schemaVersion <= 0 || revision <= 0
+        ) {
             throw VaultCorruptException("Encrypted record metadata is invalid")
         }
-        return StoredRow(key, EncryptedRecord(schemaVersion, revision, nonce, ciphertext))
+        return StoredRow(key, ownerKey, EncryptedRecord(schemaVersion, revision, nonce, ciphertext))
     }
 
     private fun insertRecord(
@@ -370,6 +536,23 @@ class VaultRecordStore(
         ) == 1
     }
 
+    private fun updateDomainRecord(
+        db: SQLiteDatabase,
+        mutation: DomainMutation.Put,
+        record: EncryptedRecord,
+    ): Boolean {
+        val values = recordValues(record).apply {
+            put("owner_key", mutation.ownerKey)
+            put("updated_at", System.currentTimeMillis())
+        }
+        return db.update(
+            TABLE_RECORDS,
+            values,
+            "kind=? AND record_key=? AND revision=?",
+            arrayOf(mutation.kind.toString(), mutation.recordKey, mutation.expectedRevision.toString()),
+        ) == 1
+    }
+
     private fun recordValues(record: EncryptedRecord) = ContentValues().apply {
         put("schema_version", record.schemaVersion)
         put("revision", record.revision)
@@ -397,8 +580,20 @@ class VaultRecordStore(
         }
     }
 
-    private data class StoredRow(val recordKey: String, val encrypted: EncryptedRecord)
+    private fun validateDomainCoordinates(kind: Int, key: String) {
+        require(kind > 0)
+        require(key.length in 1..MAX_STORED_KEY_CHARS && key.all { it in '0'..'9' || it in 'a'..'f' })
+    }
+
+    private data class StoredRow(
+        val recordKey: String,
+        val ownerKey: String,
+        val encrypted: EncryptedRecord,
+    )
     private class AbortInbound(val result: AtomicInboundResult) : RuntimeException() {
+        override fun fillInStackTrace(): Throwable = this
+    }
+    private class AbortDomainMutation : RuntimeException() {
         override fun fillInStackTrace(): Throwable = this
     }
 
@@ -413,9 +608,11 @@ class VaultRecordStore(
         private const val TABLE_REPLAY = "replay_ids"
         private const val PENDING_SCHEMA_VERSION = 1
         private const val MAX_PENDING_RESULTS = 256
+        private const val MAX_DOMAIN_RESULTS = 1_024
+        private const val MAX_DOMAIN_MUTATIONS = 8
         private const val MAX_STORED_KEY_CHARS = 128
         private val RECORD_COLUMNS = arrayOf(
-            "record_key", "schema_version", "revision", "nonce", "ciphertext",
+            "record_key", "owner_key", "schema_version", "revision", "nonce", "ciphertext",
         )
     }
 }

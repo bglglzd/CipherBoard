@@ -10,6 +10,15 @@ internal object IdentifierCodec {
     fun displayKey(messageId: ByteArray): String = digest("display", messageId)
     fun replayKey(contactId: ByteArray, messageId: ByteArray): String =
         digest("replay", contactId, messageId)
+    fun domainKey(domain: String, id: ByteArray): String {
+        require(domain.matches(Regex("[a-z][a-z0-9_-]{0,31}"))) { "Invalid identifier domain" }
+        return digest("domain-$domain", id)
+    }
+
+    fun singletonKey(domain: String): String {
+        require(domain.matches(Regex("[a-z][a-z0-9_-]{0,31}"))) { "Invalid identifier domain" }
+        return digest("singleton-$domain", SINGLETON_ID)
+    }
 
     private fun digest(domain: String, vararg parts: ByteArray): String {
         parts.forEach { require(it.size in MIN_ID_BYTES..MAX_ID_BYTES) { "Identifier has invalid length" } }
@@ -36,4 +45,5 @@ internal object IdentifierCodec {
     private const val MIN_ID_BYTES = 8
     private const val MAX_ID_BYTES = 128
     private const val HEX = "0123456789abcdef"
+    private val SINGLETON_ID = "CipherBoard".toByteArray(StandardCharsets.US_ASCII)
 }
