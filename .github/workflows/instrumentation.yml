@@ -69,7 +69,10 @@ jobs:
           cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
 
       - name: Install pinned NDK
-        run: sdkmanager --install "ndk;${ANDROID_NDK}"
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" --install "ndk;${ANDROID_NDK}"
 
       - name: Run connected tests
         uses: ReactiveCircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
