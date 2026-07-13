@@ -274,6 +274,15 @@ def apk_abis(apk: pathlib.Path) -> list[str]:
     return sorted(abis)
 
 
+def signing_certificate_sha256(apksigner_output: str) -> str:
+    return require_match(
+        r"^(?:Signer #1|V[0-9]+ Signer):? certificate SHA-256 digest: ([0-9a-fA-F:]+)$",
+        apksigner_output,
+        "certificate fingerprint",
+        re.MULTILINE,
+    ).replace(":", "").lower()
+
+
 def generate_build_info(
     root: pathlib.Path,
     apk: pathlib.Path,
@@ -291,11 +300,7 @@ def generate_build_info(
 
     version = require_property(gradle_properties, "cipherboard.versionName")
     cert_output = run([apksigner, "verify", "--verbose", "--print-certs", str(apk)], root)
-    certificate = require_match(
-        r"(?:Signer #1|V[0-9]+ Signer): certificate SHA-256 digest: ([0-9a-fA-F]+)",
-        cert_output,
-        "certificate fingerprint",
-    )
+    certificate = signing_certificate_sha256(cert_output)
     permissions_output = run([apkanalyzer, "manifest", "permissions", str(apk)], root)
     permissions = sorted(
         {

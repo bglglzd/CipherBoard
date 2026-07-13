@@ -117,4 +117,4 @@ fi
 
 printf 'APK verification passed: %s\n' "$apk"
 sha256_file "$apk"
-grep -E '(Signer #1|V[0-9]+ Signer): certificate (SHA-256 digest|DN):' "$temp_dir/signature.txt" || true
+grep -E '(Signer #1|V[0-9]+ Signer):? certificate (SHA-256 digest|DN):' "$temp_dir/signature.txt" || true

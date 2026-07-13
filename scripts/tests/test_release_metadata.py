@@ -33,6 +33,24 @@ class ReleaseMetadataTest(unittest.TestCase):
                 archive.writestr("assets/lib/not-an-abi.so", b"x")
             self.assertEqual(["arm64-v8a", "x86_64"], release_metadata.apk_abis(apk))
 
+    def test_signing_fingerprint_accepts_current_and_legacy_apksigner_formats(self) -> None:
+        digest = "ab" * 32
+        for line in (
+            f"Signer #1 certificate SHA-256 digest: {digest}",
+            f"Signer #1: certificate SHA-256 digest: {digest}",
+            f"V3 Signer: certificate SHA-256 digest: {digest}",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(digest, release_metadata.signing_certificate_sha256(line))
+
+        colon_digest = ":".join("ab" for _ in range(32))
+        self.assertEqual(
+            digest,
+            release_metadata.signing_certificate_sha256(
+                f"Signer #1 certificate SHA-256 digest: {colon_digest}"
+            ),
+        )
+
     def test_sbom_uses_central_identity_and_signed_apk_hash(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "SBOM.json"

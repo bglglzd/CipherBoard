@@ -91,7 +91,7 @@ try {
         if ($ExpectedSigner -notmatch '^[0-9a-f]{64}$') { Fail "invalid pinned signing certificate fingerprint" }
         $SignerMatch = [Regex]::Match(
             $SignatureText,
-            '(?im)(?:Signer #1|V[0-9]+ Signer): certificate SHA-256 digest: ([0-9a-f:]+)'
+            '(?im)(?:Signer #1|V[0-9]+ Signer):? certificate SHA-256 digest: ([0-9a-f:]+)'
         )
         if (-not $SignerMatch.Success) { Fail "release signer SHA-256 fingerprint is missing" }
         $ActualSigner = $SignerMatch.Groups[1].Value.Replace(":", "").ToLowerInvariant()
@@ -101,7 +101,7 @@ try {
     $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Apk).Hash.ToLowerInvariant()
     Write-Output "APK verification passed: $Apk"
     Write-Output "$Hash  $Apk"
-    Get-Content -LiteralPath $Signature | Where-Object { $_ -match '(Signer #1|V[0-9]+ Signer): certificate (SHA-256 digest|DN):' }
+    Get-Content -LiteralPath $Signature | Where-Object { $_ -match '(Signer #1|V[0-9]+ Signer):? certificate (SHA-256 digest|DN):' }
 } finally {
     Remove-Item -LiteralPath $Temp -Recurse -Force -ErrorAction SilentlyContinue
 }
