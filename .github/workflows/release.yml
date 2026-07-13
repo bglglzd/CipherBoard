@@ -223,7 +223,9 @@ jobs:
             android.permission.READ_CONTACTS android.permission.WRITE_CONTACTS \
             android.permission.READ_SMS android.permission.RECEIVE_SMS android.permission.SEND_SMS \
             android.permission.QUERY_ALL_PACKAGES android.permission.SYSTEM_ALERT_WINDOW \
-            android.permission.BIND_ACCESSIBILITY_SERVICE; do
+            android.permission.BIND_ACCESSIBILITY_SERVICE \
+            android.permission.REQUEST_INSTALL_PACKAGES \
+            android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION; do
             if grep -F "$permission" "$evidence/aapt-permissions.txt" >/dev/null; then
               echo "Forbidden permission in aapt output: $permission" >&2
               exit 1

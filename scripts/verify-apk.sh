@@ -65,7 +65,9 @@ for permission in \
     android.permission.SEND_SMS \
     android.permission.QUERY_ALL_PACKAGES \
     android.permission.SYSTEM_ALERT_WINDOW \
-    android.permission.BIND_ACCESSIBILITY_SERVICE; do
+    android.permission.BIND_ACCESSIBILITY_SERVICE \
+    android.permission.REQUEST_INSTALL_PACKAGES \
+    android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION; do
     if grep -F "$permission" "$temp_dir/aapt-permissions.txt" >/dev/null 2>&1 || \
        grep -F "$permission" "$temp_dir/apkanalyzer-permissions.txt" >/dev/null 2>&1; then
         die "forbidden permission found: $permission"

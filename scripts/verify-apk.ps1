@@ -46,7 +46,9 @@ try {
         "android.permission.READ_CONTACTS", "android.permission.WRITE_CONTACTS",
         "android.permission.READ_SMS", "android.permission.RECEIVE_SMS", "android.permission.SEND_SMS",
         "android.permission.QUERY_ALL_PACKAGES", "android.permission.SYSTEM_ALERT_WINDOW",
-        "android.permission.BIND_ACCESSIBILITY_SERVICE"
+        "android.permission.BIND_ACCESSIBILITY_SERVICE",
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION"
     )
     $PermissionText = (Get-Content -Raw -LiteralPath $AaptPermissions) + (Get-Content -Raw -LiteralPath $AnalyzerPermissions)
     foreach ($Permission in $Forbidden) {
