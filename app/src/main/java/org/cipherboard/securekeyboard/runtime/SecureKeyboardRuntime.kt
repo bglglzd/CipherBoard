@@ -2,6 +2,7 @@
 package org.cipherboard.securekeyboard.runtime
 
 import android.app.Application
+import androidx.biometric.BiometricPrompt
 import org.cipherboard.cryptocore.CipherBoardCrypto
 import org.cipherboard.cryptocore.CryptoCoreException
 import org.cipherboard.cryptocore.CryptoErrorCode
@@ -94,9 +95,12 @@ class SecureKeyboardRuntime private constructor(
     /** Call only after BiometricPrompt authenticates [VaultUnlockAction.cryptoObject]. */
     fun completeCryptoObjectAuthentication(
         action: VaultUnlockAction.CryptoObjectAuthenticationRequired,
+        authenticatedCryptoObject: Any,
     ): VaultUnlockAction = operationLock.withLock {
         val request = action.consumeDelegate()
-        mapUnlockRequest(keyManager.completeCryptoObjectAuthentication(request, request.cryptoObject))
+        val result = authenticatedCryptoObject as? BiometricPrompt.CryptoObject
+            ?: throw IllegalArgumentException("Authentication returned an invalid CryptoObject")
+        mapUnlockRequest(keyManager.completeCryptoObjectAuthentication(request, result))
     }
 
     fun lockVault() = lockController.lock()

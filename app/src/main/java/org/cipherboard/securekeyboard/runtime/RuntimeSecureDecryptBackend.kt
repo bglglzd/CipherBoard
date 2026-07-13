@@ -126,7 +126,7 @@ class RuntimeSecureDecryptBackend(
                     if (!launched) operation.fail(DecryptFailureReason.VAULT_LOCKED)
                     return
                 }
-                val prompt = biometricPrompt(host, operation) {
+                val prompt = biometricPrompt(host, operation) { _ ->
                     runCatching { runtime.completePromptAuthentication(action) }
                         .onSuccess { completed -> handleCompletedUnlock(operation, parsed, completed) }
                         .onFailure { operation.fail(DecryptFailureReason.VAULT_LOCKED) }
@@ -140,8 +140,15 @@ class RuntimeSecureDecryptBackend(
                     operation.fail(DecryptFailureReason.INTERNAL_ERROR)
                     return
                 }
-                val prompt = biometricPrompt(host, operation) {
-                    runCatching { runtime.completeCryptoObjectAuthentication(action) }
+                val prompt = biometricPrompt(host, operation) { result ->
+                    val authenticatedCryptoObject = result.cryptoObject
+                    if (authenticatedCryptoObject == null) {
+                        operation.fail(DecryptFailureReason.VAULT_LOCKED)
+                        return@biometricPrompt
+                    }
+                    runCatching {
+                        runtime.completeCryptoObjectAuthentication(action, authenticatedCryptoObject)
+                    }
                         .onSuccess { completed -> handleCompletedUnlock(operation, parsed, completed) }
                         .onFailure { operation.fail(DecryptFailureReason.VAULT_LOCKED) }
                 }
@@ -166,13 +173,13 @@ class RuntimeSecureDecryptBackend(
     private fun biometricPrompt(
         host: FragmentActivity,
         operation: RuntimeDecryptOperation,
-        onSuccess: () -> Unit,
+        onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
     ) = BiometricPrompt(
         host,
         ContextCompat.getMainExecutor(host),
         object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                if (!operation.isCancelled) onSuccess()
+                if (!operation.isCancelled) onSuccess(result)
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {

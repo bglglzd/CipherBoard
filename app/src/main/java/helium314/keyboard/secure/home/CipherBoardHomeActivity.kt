@@ -168,7 +168,7 @@ class CipherBoardHomeActivity : FragmentActivity() {
             return
         }
 
-        val prompt = newBiometricPrompt {
+        val prompt = newBiometricPrompt { _ ->
             runCatching { runtime.completePromptAuthentication(action) }
                 .onSuccess(::handleUnlockAction)
                 .onFailure { showError(R.string.cipherboard_home_unlock_failed) }
@@ -183,8 +183,15 @@ class CipherBoardHomeActivity : FragmentActivity() {
             showError(R.string.cipherboard_home_unlock_failed)
             return
         }
-        val prompt = newBiometricPrompt {
-            runCatching { runtime.completeCryptoObjectAuthentication(action) }
+        val prompt = newBiometricPrompt { result ->
+            val authenticatedCryptoObject = result.cryptoObject
+            if (authenticatedCryptoObject == null) {
+                showError(R.string.cipherboard_home_unlock_failed)
+                return@newBiometricPrompt
+            }
+            runCatching {
+                runtime.completeCryptoObjectAuthentication(action, authenticatedCryptoObject)
+            }
                 .onSuccess(::handleUnlockAction)
                 .onFailure { showError(R.string.cipherboard_home_unlock_failed) }
         }
@@ -192,12 +199,14 @@ class CipherBoardHomeActivity : FragmentActivity() {
         prompt.authenticate(promptInfo(action.allowedAuthenticators), cryptoObject)
     }
 
-    private fun newBiometricPrompt(onSuccess: () -> Unit): BiometricPrompt = BiometricPrompt(
+    private fun newBiometricPrompt(
+        onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
+    ): BiometricPrompt = BiometricPrompt(
         this,
         ContextCompat.getMainExecutor(this),
         object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                onSuccess()
+                onSuccess(result)
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {

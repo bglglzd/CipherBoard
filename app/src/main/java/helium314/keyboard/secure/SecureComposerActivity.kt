@@ -353,7 +353,7 @@ class SecureComposerActivity : FragmentActivity() {
             return
         }
         val prompt = newBiometricPrompt(
-            onSuccess = {
+            onSuccess = { _ ->
                 runCatching { runtime.completePromptAuthentication(action) }
                     .onSuccess(::handleUnlockAction)
                     .onFailure(::showFailure)
@@ -367,8 +367,14 @@ class SecureComposerActivity : FragmentActivity() {
         val cryptoObject = action.cryptoObject as? BiometricPrompt.CryptoObject
             ?: return showFailure(IllegalStateException("Invalid authentication object"))
         val prompt = newBiometricPrompt(
-            onSuccess = {
-                runCatching { runtime.completeCryptoObjectAuthentication(action) }
+            onSuccess = { result ->
+                val authenticatedCryptoObject = result.cryptoObject
+                    ?: return@newBiometricPrompt showFailure(
+                        IllegalStateException("Authentication returned no cryptographic object"),
+                    )
+                runCatching {
+                    runtime.completeCryptoObjectAuthentication(action, authenticatedCryptoObject)
+                }
                     .onSuccess(::handleUnlockAction)
                     .onFailure(::showFailure)
             },
@@ -377,11 +383,13 @@ class SecureComposerActivity : FragmentActivity() {
         prompt.authenticate(promptInfo(action.allowedAuthenticators), cryptoObject)
     }
 
-    private fun newBiometricPrompt(onSuccess: () -> Unit): BiometricPrompt = BiometricPrompt(
+    private fun newBiometricPrompt(
+        onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
+    ): BiometricPrompt = BiometricPrompt(
         this,
         ContextCompat.getMainExecutor(this),
         object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess()
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess(result)
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 vaultStatus.setText(R.string.secure_vault_unlock_cancelled)
