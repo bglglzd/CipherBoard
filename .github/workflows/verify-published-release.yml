@@ -240,7 +240,8 @@ jobs:
           apk="$assets/$ARTIFACT_NAME-$VERSION_NAME-release.apk"
           expected_source="$RUNNER_TEMP/$ARTIFACT_NAME-$VERSION_NAME-source.tar"
           released_source="$assets/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz"
-          git -c tar.umask=0002 archive --format=tar \
+          # Reproduce the Windows release host's checkout transform and archive modes.
+          git -c core.autocrlf=false -c core.eol=crlf -c tar.umask=0002 archive --format=tar \
             --prefix="$ARTIFACT_NAME-$VERSION_NAME-source/" \
             --output="$expected_source" \
             "$SOURCE_COMMIT"
