@@ -209,6 +209,8 @@ androidComponents {
                     "android.permission.QUERY_ALL_PACKAGES",
                     "android.permission.SYSTEM_ALERT_WINDOW",
                     "android.permission.BIND_ACCESSIBILITY_SERVICE",
+                    "android.permission.REQUEST_INSTALL_PACKAGES",
+                    "android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION",
                 )
                 val violations = requestedPermissions.intersect(forbiddenPermissions)
                 check(violations.isEmpty()) {

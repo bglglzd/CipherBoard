@@ -26,6 +26,8 @@ RUNTIME_ROOTS = (
 RUNTIME_PATTERNS = {
     r"android\.permission\.(?:INTERNET|ACCESS_NETWORK_STATE|CHANGE_NETWORK_STATE|ACCESS_WIFI_STATE)":
         "network permission",
+    r"android\.permission\.(?:REQUEST_INSTALL_PACKAGES|UPDATE_PACKAGES_WITHOUT_USER_ACTION)":
+        "package installer permission",
     r"\b(?:HttpURLConnection|URLConnection|ServerSocket|DatagramSocket)\b": "network API",
     r"\bjava\.net\.Socket\b": "network socket API",
     r"\b(?:okhttp3|retrofit2|io\.ktor\.client|com\.android\.volley)\b": "network client",
