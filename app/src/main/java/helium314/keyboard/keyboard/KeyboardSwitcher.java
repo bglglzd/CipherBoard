@@ -70,6 +70,7 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     private HorizontalScrollView mClipboardStripScrollView;
     private SuggestionStripView mSuggestionStripView;
     private FrameLayout mStripContainer;
+    private FrameLayout mStandardStripContainer;
     private ClipboardHistoryView mClipboardHistoryView;
     private TextView mFakeToastView;
     private LatinIME mLatinIME;
@@ -324,8 +325,10 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
             @NonNull final SettingsValues settingsValues,
             @NonNull final KeyboardSwitchState toggleState) {
         final int visibility = isImeSuppressedByHardwareKeyboard(settingsValues, toggleState) ? View.GONE : View.VISIBLE;
-        final int stripVisibility = mLatinIME.hasSuggestionStripView()? View.VISIBLE : View.GONE;
-        mStripContainer.setVisibility(stripVisibility);
+        final int standardStripVisibility = mLatinIME.hasSuggestionStripView()
+                ? View.VISIBLE : View.GONE;
+        mStandardStripContainer.setVisibility(standardStripVisibility);
+        mStripContainer.setVisibility(getStripVisibility(standardStripVisibility));
         PointerTracker.switchTo(mKeyboardView);
         mKeyboardView.setVisibility(visibility);
         // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
@@ -337,7 +340,7 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         mEmojiPalettesView.stopEmojiPalettes();
         mEmojiTabStripView.setVisibility(View.GONE);
         mClipboardStripScrollView.setVisibility(View.GONE);
-        mSuggestionStripView.setVisibility(stripVisibility);
+        mSuggestionStripView.setVisibility(standardStripVisibility);
         mClipboardHistoryView.setVisibility(View.GONE);
         mClipboardHistoryView.stopClipboardHistory();
     }
@@ -354,12 +357,14 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         // @see LatinIME#onComputeInset(android.inputmethodservice.InputMethodService.Insets)
         mKeyboardView.setVisibility(View.GONE);
         mSuggestionStripView.setVisibility(View.GONE);
-        mStripContainer.setVisibility(getSecondaryStripVisibility());
+        final int secondaryStripVisibility = getSecondaryStripVisibility();
+        mStandardStripContainer.setVisibility(secondaryStripVisibility);
+        mStripContainer.setVisibility(getStripVisibility(secondaryStripVisibility));
         mClipboardStripScrollView.setVisibility(View.GONE);
         mEmojiTabStripView.setVisibility(View.VISIBLE);
         mClipboardHistoryView.setVisibility(View.GONE);
         mEmojiPalettesView.startEmojiPalettes(mKeyboardView.getKeyVisualAttribute(),
-                mLatinIME.getCurrentInputEditorInfo(), mLatinIME.mKeyboardActionListener);
+                mLatinIME.getEffectiveEditorInfo(), mLatinIME.mKeyboardActionListener);
         mEmojiPalettesView.setVisibility(View.VISIBLE);
     }
 
@@ -376,12 +381,14 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         mKeyboardView.setVisibility(View.GONE);
         mEmojiTabStripView.setVisibility(View.GONE);
         mSuggestionStripView.setVisibility(View.GONE);
-        mStripContainer.setVisibility(getSecondaryStripVisibility());
+        final int secondaryStripVisibility = getSecondaryStripVisibility();
+        mStandardStripContainer.setVisibility(secondaryStripVisibility);
+        mStripContainer.setVisibility(getStripVisibility(secondaryStripVisibility));
         mClipboardStripScrollView.post(() -> mClipboardStripScrollView.fullScroll(HorizontalScrollView.FOCUS_RIGHT));
         mClipboardStripScrollView.setVisibility(View.VISIBLE);
         mEmojiPalettesView.setVisibility(View.GONE);
         mClipboardHistoryView.startClipboardHistory(mLatinIME.getClipboardHistoryManager(), mKeyboardView.getKeyVisualAttribute(),
-                mLatinIME.getCurrentInputEditorInfo(), mLatinIME.mKeyboardActionListener);
+                mLatinIME.getEffectiveEditorInfo(), mLatinIME.mKeyboardActionListener);
         mClipboardHistoryView.setVisibility(View.VISIBLE);
     }
 
@@ -553,7 +560,7 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         // Reload the entire keyboard, and switch to the previous layout
         final boolean wasEmoji = isShowingEmojiPalettes();
         final boolean wasClipboard = isShowingClipboardHistory();
-        loadKeyboard(mLatinIME.getCurrentInputEditorInfo(), Settings.getValues(),
+        loadKeyboard(mLatinIME.getEffectiveEditorInfo(), Settings.getValues(),
                 mLatinIME.getCurrentAutoCapsState(), mLatinIME.getCurrentRecapitalizeState(), null);
         if (wasEmoji) {
             setEmojiKeyboard();
@@ -583,6 +590,11 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
 
     private static int getSecondaryStripVisibility() {
         return Settings.getValues().mSecondaryStripVisible? View.VISIBLE : View.GONE;
+    }
+
+    private int getStripVisibility(final int standardStripVisibility) {
+        return standardStripVisibility == View.VISIBLE
+                || mLatinIME.isEmbeddedSecureComposerActive() ? View.VISIBLE : View.GONE;
     }
 
     // Displays a toast-like message with the provided text for a specified duration.
@@ -745,6 +757,7 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         mClipboardStripScrollView = mCurrentInputView.findViewById(R.id.clipboard_strip_scroll_view);
         mSuggestionStripView = mCurrentInputView.findViewById(R.id.suggestion_strip_view);
         mStripContainer = mCurrentInputView.findViewById(R.id.strip_container);
+        mStandardStripContainer = mCurrentInputView.findViewById(R.id.standard_strip_container);
         prefs.registerOnSharedPreferenceChangeListener(mSuggestionStripView);
         prefs.registerOnSharedPreferenceChangeListener(mClipboardHistoryView);
         PointerTracker.switchTo(mKeyboardView);

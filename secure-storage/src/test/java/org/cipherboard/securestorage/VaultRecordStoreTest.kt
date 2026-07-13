@@ -17,13 +17,14 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class VaultRecordStoreTest {
+    private lateinit var context: Context
     private lateinit var lock: VaultLockController
     private lateinit var store: VaultRecordStore
     private val contactId = ByteArray(16) { (it + 1).toByte() }
 
     @Before
     fun setUp() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        context = ApplicationProvider.getApplicationContext()
         lock = VaultLockController(clock = MonotonicClock { 0 })
         lock.unlock(
             UnlockedVaultMaterial(
@@ -64,8 +65,34 @@ class VaultRecordStoreTest {
         assertArrayEquals(contactId, pending.single().contactId)
         assertArrayEquals(operationId, pending.single().operationId)
         assertArrayEquals(ciphertext, pending.single().ciphertext)
+        assertEquals(PendingOutboundState.READY, pending.single().state)
         assertTrue(store.completeOutbound(operationId))
         assertTrue(store.listPendingOutbound().isEmpty())
+    }
+
+    @Test
+    fun outboundCommitBoundaryPersistsAndCannotBeCrossedTwice() {
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("state-1")))
+        val operationId = ByteArray(16) { 5 }
+        store.commitOutbound(
+            contactId,
+            1,
+            1,
+            secret("state-2"),
+            operationId,
+            "CB1:uncertain".encodeToByteArray(),
+        )
+
+        assertTrue(store.markOutboundCommitUncertain(operationId))
+        assertFalse(store.markOutboundCommitUncertain(operationId))
+        assertEquals(PendingOutboundState.COMMIT_UNCERTAIN, store.listPendingOutbound().single().state)
+
+        store.close()
+        store = VaultRecordStore(context, lock)
+        val recovered = store.listPendingOutbound().single()
+        assertEquals(PendingOutboundState.COMMIT_UNCERTAIN, recovered.state)
+        assertFalse(store.markOutboundCommitUncertain(operationId))
+        operationId.fill(0)
     }
 
     @Test

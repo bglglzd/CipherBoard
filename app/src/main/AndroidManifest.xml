@@ -136,6 +136,14 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
             android:finishOnTaskLaunch="true"/>
 
         <activity
+            android:name="helium314.keyboard.secure.SecureVaultUnlockActivity"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:finishOnTaskLaunch="true" />
+
+        <activity
             android:name="helium314.keyboard.secure.decrypt.SecureMessageViewerActivity"
             android:theme="@style/platformActivityTheme"
             android:exported="false"

@@ -3,6 +3,7 @@ package helium314.keyboard.secure
 
 import android.os.IBinder
 import org.cipherboard.securekeyboard.runtime.PreparedOutbound
+import org.cipherboard.securestorage.PendingOutboundState
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -25,7 +26,11 @@ class SecureImeBridgeTest {
     @Test
     fun `delivery is scoped to original host and completes after exact commit`() {
         val operationId = ByteArray(16) { (it + 1).toByte() }
-        val outbound = PreparedOutbound(ByteArray(16) { 3 }, operationId, listOf("CB1:first", "CB1:second"))
+        val events = mutableListOf<String>()
+        val outbound = outbound(operationId, listOf("CB1:first", "CB1:second")) {
+            events += "mark"
+            true
+        }
         val token = requireNotNull(begin())
         assertTrue(SecureImeBridge.activateComposer(token))
         assertTrue(SecureImeBridge.arm(token, outbound))
@@ -39,7 +44,6 @@ class SecureImeBridgeTest {
             }, completion = { true }),
         )
         assertFalse(wrongScopeCalled)
-        val events = mutableListOf<String>()
         var committed: String? = null
         var completedId: ByteArray? = null
         val result = deliver(
@@ -59,7 +63,7 @@ class SecureImeBridgeTest {
         assertEquals(CiphertextDeliveryResult.COMMITTED_AND_COMPLETED, result)
         assertEquals("CB1:first\nCB1:second", committed)
         assertArrayEquals(operationId, completedId)
-        assertEquals(listOf("commit", "complete"), events)
+        assertEquals(listOf("mark", "commit", "complete"), events)
         assertFalse(SecureImeBridge.hasSessionForTest())
         completedId?.fill(0)
         operationId.fill(0)
@@ -73,7 +77,7 @@ class SecureImeBridgeTest {
         assertTrue(
             SecureImeBridge.arm(
                 token,
-                PreparedOutbound(ByteArray(16) { 3 }, operationId, listOf("CB1:rotated-binder")),
+                outbound(operationId, listOf("CB1:rotated-binder")),
             ),
         )
         var attempts = 0
@@ -100,22 +104,30 @@ class SecureImeBridgeTest {
     fun `each host commit attempt is one shot and durable pending remains explicit`() {
         val operationId = ByteArray(16) { 7 }
         val token = requireNotNull(begin())
+        val events = mutableListOf<String>()
         assertTrue(SecureImeBridge.activateComposer(token))
         assertTrue(
             SecureImeBridge.arm(
                 token,
-                PreparedOutbound(ByteArray(16) { 3 }, operationId, listOf("CB1:pending")),
+                outbound(operationId, listOf("CB1:pending")) {
+                    events += "mark"
+                    true
+                },
             ),
         )
 
         var completionCalls = 0
         assertEquals(
-            CiphertextDeliveryResult.HOST_REJECTED,
-            deliver(committer = { false }, completion = {
+            CiphertextDeliveryResult.HOST_COMMIT_UNCERTAIN,
+            deliver(committer = {
+                events += "commit"
+                false
+            }, completion = {
                 completionCalls++
                 true
             }),
         )
+        assertEquals(listOf("mark", "commit"), events)
         assertEquals(0, completionCalls)
         assertFalse(SecureImeBridge.hasSessionForTest())
 
@@ -144,7 +156,7 @@ class SecureImeBridgeTest {
     @Test
     fun `composer token gates arming and cancellation`() {
         val operationId = ByteArray(16) { 3 }
-        val outbound = PreparedOutbound(ByteArray(16) { 3 }, operationId, listOf("CB1:exact"))
+        val outbound = outbound(operationId, listOf("CB1:exact"))
         val token = requireNotNull(begin())
 
         assertFalse(SecureImeBridge.arm(token, outbound))
@@ -172,7 +184,7 @@ class SecureImeBridgeTest {
         assertTrue(
             SecureImeBridge.arm(
                 token,
-                PreparedOutbound(ByteArray(16) { 3 }, operationId, listOf("CB1:rotated")),
+                outbound(operationId, listOf("CB1:rotated")),
             ),
         )
         assertEquals(
@@ -200,6 +212,58 @@ class SecureImeBridgeTest {
             ),
         )
     }
+
+    @Test
+    fun `failed durable boundary prevents host commit and consumes handoff`() {
+        val operationId = ByteArray(16) { 0x44 }
+        val token = requireNotNull(begin())
+        assertTrue(SecureImeBridge.activateComposer(token))
+        assertTrue(SecureImeBridge.arm(token, outbound(operationId, listOf("CB1:blocked")) { false }))
+
+        var commitCalled = false
+        assertEquals(
+            CiphertextDeliveryResult.NO_HANDOFF,
+            deliver(committer = {
+                commitCalled = true
+                true
+            }, completion = { true }),
+        )
+
+        assertFalse(commitCalled)
+        assertFalse(SecureImeBridge.hasSessionForTest())
+        operationId.fill(0)
+    }
+
+    @Test
+    fun `uncertain outbound cannot arm automatic retry`() {
+        val operationId = ByteArray(16) { 0x45 }
+        val token = requireNotNull(begin())
+        assertTrue(SecureImeBridge.activateComposer(token))
+        assertFalse(
+            SecureImeBridge.arm(
+                token,
+                outbound(
+                    operationId,
+                    listOf("CB1:uncertain"),
+                    PendingOutboundState.COMMIT_UNCERTAIN,
+                ),
+            ),
+        )
+        operationId.fill(0)
+    }
+
+    private fun outbound(
+        operationId: ByteArray,
+        parts: List<String>,
+        state: PendingOutboundState = PendingOutboundState.READY,
+        marker: (ByteArray) -> Boolean = { true },
+    ): PreparedOutbound = PreparedOutbound(
+        ByteArray(16) { 3 },
+        operationId,
+        parts,
+        state,
+        marker,
+    )
 
     private fun begin(): String? = SecureImeBridge.beginSession(
         packageName = HOST_PACKAGE,

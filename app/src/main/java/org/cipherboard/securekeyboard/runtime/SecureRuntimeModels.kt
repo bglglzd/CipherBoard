@@ -4,6 +4,7 @@ package org.cipherboard.securekeyboard.runtime
 import org.cipherboard.securestorage.ContactVerificationStatus
 import org.cipherboard.securestorage.KeyProtectionInfo
 import org.cipherboard.securestorage.PendingDisplay
+import org.cipherboard.securestorage.PendingOutboundState
 import org.cipherboard.securestorage.VaultOperation
 import org.cipherboard.securestorage.VaultUnlockRequest
 import java.io.Closeable
@@ -53,7 +54,11 @@ class PreparedOutbound internal constructor(
     contactId: ByteArray,
     operationId: ByteArray,
     parts: List<String>,
+    val deliveryState: PendingOutboundState = PendingOutboundState.READY,
+    private val markCommitUncertain: ((ByteArray) -> Boolean)? = null,
 ) : Closeable {
+    private val closed = AtomicBoolean(false)
+    private val boundaryClaimed = AtomicBoolean(false)
     private val contact = contactId.copyOf()
     private val id = operationId.copyOf()
     private var ciphertextParts = parts.toList()
@@ -63,14 +68,50 @@ class PreparedOutbound internal constructor(
 
     fun contactId(): ByteArray = contact.copyOf()
     fun operationId(): ByteArray = id.copyOf()
+    val canAutomaticallyRetry: Boolean
+        get() = deliveryState == PendingOutboundState.READY && markCommitUncertain != null && !closed.get()
+
+    internal fun claimCommitBoundary(): OutboundCommitBoundary? {
+        if (!canAutomaticallyRetry || markCommitUncertain == null) return null
+        if (!boundaryClaimed.compareAndSet(false, true)) return null
+        return OutboundCommitBoundary(id, markCommitUncertain)
+    }
 
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         contact.fill(0)
         id.fill(0)
         ciphertextParts = emptyList()
     }
 
     override fun toString(): String = "PreparedOutbound(parts=${ciphertextParts.size})"
+}
+
+internal class OutboundCommitBoundary(
+    operationId: ByteArray,
+    transition: (ByteArray) -> Boolean,
+) : Closeable {
+    private val attempted = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
+    private var id = operationId.copyOf()
+    private var transition: ((ByteArray) -> Boolean)? = transition
+
+    fun markUncertain(): Boolean {
+        if (closed.get() || !attempted.compareAndSet(false, true)) return false
+        val operationId = id.copyOf()
+        return try {
+            transition?.invoke(operationId) == true
+        } finally {
+            operationId.fill(0)
+        }
+    }
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        id.fill(0)
+        id = ByteArray(0)
+        transition = null
+    }
 }
 
 /** Opaque validated ciphertext parts. It contains ciphertext and public routing metadata only. */

@@ -25,6 +25,7 @@ data class PendingOutbound(
     val operationId: ByteArray,
     val ciphertext: ByteArray,
     val revision: Long,
+    val state: PendingOutboundState,
 )
 
 data class PendingDisplay(
@@ -133,8 +134,9 @@ class VaultRecordStore(
     }
 
     /**
-     * Atomically advances the ratchet and records ciphertext that may safely be retried after a
-     * process crash. Nothing is committed if [expectedRatchetRevision] is stale.
+     * Atomically advances the ratchet and records READY ciphertext. It may be retried after a
+     * process crash only until [markOutboundCommitUncertain] crosses the external-editor boundary.
+     * Nothing is committed if [expectedRatchetRevision] is stale.
      */
     @Throws(RatchetRevisionConflictException::class, VaultStorageException::class)
     fun commitOutbound(
@@ -194,80 +196,144 @@ class VaultRecordStore(
             }
             val operationKey = IdentifierCodec.operationKey(operationId)
             val nextRevision = Math.addExact(expectedRatchetRevision, 1)
-            val contactBoundSize = PendingRecordCodec.encodedSize(contactId, pendingCiphertext.size)
-            PendingRecordCodec.encodedSize(operationId, contactBoundSize)
             val ratchetPlaintext = newRatchetState.take()
             try {
-                val contactBoundCiphertext = PendingRecordCodec.encode(contactId, pendingCiphertext)
+                val pendingPlaintext = PendingOutboundRecordCodec.encodeV2(
+                    contactId,
+                    operationId,
+                    pendingCiphertext,
+                    PendingOutboundState.READY,
+                )
                 try {
-                    val pendingPlaintext = PendingRecordCodec.encode(operationId, contactBoundCiphertext)
-                    try {
-                        vault.withDek { dek ->
-                            val ratchet = recordCrypto.encrypt(
-                                dek, RecordKind.RATCHET, ownerKey, ratchetSchemaVersion, nextRevision, ratchetPlaintext,
+                    vault.withDek { dek ->
+                        val ratchet = recordCrypto.encrypt(
+                            dek, RecordKind.RATCHET, ownerKey, ratchetSchemaVersion, nextRevision, ratchetPlaintext,
+                        )
+                        try {
+                            val pending = recordCrypto.encrypt(
+                                dek,
+                                RecordKind.PENDING_OUTBOUND,
+                                operationKey,
+                                PendingOutboundRecordCodec.CURRENT_SCHEMA_VERSION,
+                                nextRevision,
+                                pendingPlaintext,
                             )
                             try {
-                                val pending = recordCrypto.encrypt(
-                                    dek,
-                                    RecordKind.PENDING_OUTBOUND,
-                                    operationKey,
-                                    PENDING_SCHEMA_VERSION,
-                                    nextRevision,
-                                    pendingPlaintext,
-                                )
+                                val domain = domainMutation?.let { mutation ->
+                                    recordCrypto.encrypt(
+                                        dek,
+                                        mutation.kind,
+                                        mutation.recordKey,
+                                        mutation.schemaVersion,
+                                        Math.addExact(mutation.expectedRevision, 1),
+                                        mutation.plaintext,
+                                    )
+                                }
                                 try {
-                                    val domain = domainMutation?.let { mutation ->
-                                        recordCrypto.encrypt(
-                                            dek,
-                                            mutation.kind,
-                                            mutation.recordKey,
-                                            mutation.schemaVersion,
-                                            Math.addExact(mutation.expectedRevision, 1),
-                                            mutation.plaintext,
-                                        )
-                                    }
-                                    try {
-                                        inTransaction(helper.writableDatabase) { db ->
-                                            if (!updateRatchet(db, ownerKey, expectedRatchetRevision, ratchet)) {
-                                                throw RatchetRevisionConflictException()
-                                            }
-                                            if (domainMutation != null &&
-                                                !updateDomainRecord(db, domainMutation, checkNotNull(domain))
-                                            ) {
-                                                throw RatchetRevisionConflictException()
-                                            }
-                                            if (!insertRecord(
-                                                    db,
-                                                    RecordKind.PENDING_OUTBOUND,
-                                                    operationKey,
-                                                    ownerKey,
-                                                    pending,
-                                                )
-                                            ) {
-                                                throw VaultStorageException("Pending outbound operation already exists")
-                                            }
+                                    inTransaction(helper.writableDatabase) { db ->
+                                        if (!updateRatchet(db, ownerKey, expectedRatchetRevision, ratchet)) {
+                                            throw RatchetRevisionConflictException()
                                         }
-                                    } finally {
-                                        domain?.wipe()
+                                        if (domainMutation != null &&
+                                            !updateDomainRecord(db, domainMutation, checkNotNull(domain))
+                                        ) {
+                                            throw RatchetRevisionConflictException()
+                                        }
+                                        if (!insertRecord(
+                                                db,
+                                                RecordKind.PENDING_OUTBOUND,
+                                                operationKey,
+                                                ownerKey,
+                                                pending,
+                                            )
+                                        ) {
+                                            throw VaultStorageException("Pending outbound operation already exists")
+                                        }
                                     }
                                 } finally {
-                                    pending.wipe()
+                                    domain?.wipe()
                                 }
                             } finally {
-                                ratchet.wipe()
+                                pending.wipe()
                             }
+                        } finally {
+                            ratchet.wipe()
                         }
-                    } finally {
-                        pendingPlaintext.wipe()
                     }
                 } finally {
-                    contactBoundCiphertext.wipe()
+                    pendingPlaintext.wipe()
                 }
             } finally {
                 ratchetPlaintext.wipe()
             }
         } finally {
             newRatchetState.close()
+        }
+    }
+
+    /**
+     * Atomically crosses the external-editor crash boundary.
+     *
+     * A true result is returned only by the transaction that changed READY to COMMIT_UNCERTAIN.
+     * Missing, already uncertain, or concurrently changed records return false so no second
+     * InputConnection commit can begin.
+     */
+    fun markOutboundCommitUncertain(operationId: ByteArray): Boolean {
+        val operationKey = IdentifierCodec.operationKey(operationId)
+        return vault.withDek { dek ->
+            val row = queryRecord(RecordKind.PENDING_OUTBOUND, operationKey) ?: return@withDek false
+            try {
+                val plaintext = recordCrypto.decrypt(
+                    dek,
+                    RecordKind.PENDING_OUTBOUND,
+                    operationKey,
+                    row.encrypted,
+                )
+                try {
+                    val pending = PendingOutboundRecordCodec.decode(row.encrypted.schemaVersion, plaintext)
+                    try {
+                        validatePendingOutboundBinding(row, pending)
+                        if (pending.state != PendingOutboundState.READY) return@withDek false
+                        val nextRevision = Math.addExact(row.encrypted.revision, 1)
+                        val changedPlaintext = PendingOutboundRecordCodec.encodeV2(
+                            pending.contactId,
+                            pending.operationId,
+                            pending.ciphertext,
+                            PendingOutboundState.COMMIT_UNCERTAIN,
+                        )
+                        try {
+                            val changed = recordCrypto.encrypt(
+                                dek,
+                                RecordKind.PENDING_OUTBOUND,
+                                operationKey,
+                                PendingOutboundRecordCodec.CURRENT_SCHEMA_VERSION,
+                                nextRevision,
+                                changedPlaintext,
+                            )
+                            try {
+                                updatePendingOutbound(
+                                    helper.writableDatabase,
+                                    operationKey,
+                                    row.encrypted.revision,
+                                    changed,
+                                )
+                            } finally {
+                                changed.wipe()
+                            }
+                        } finally {
+                            changedPlaintext.wipe()
+                        }
+                    } finally {
+                        pending.contactId.wipe()
+                        pending.operationId.wipe()
+                        pending.ciphertext.wipe()
+                    }
+                } finally {
+                    plaintext.wipe()
+                }
+            } finally {
+                row.encrypted.wipe()
+            }
         }
     }
 
@@ -287,12 +353,20 @@ class VaultRecordStore(
                 try {
                     val decrypted = recordCrypto.decrypt(dek, RecordKind.PENDING_OUTBOUND, row.recordKey, row.encrypted)
                     try {
-                        val (id, contactBoundCiphertext) = PendingRecordCodec.decode(decrypted)
+                        val pending = PendingOutboundRecordCodec.decode(row.encrypted.schemaVersion, decrypted)
                         try {
-                            val (contactId, ciphertext) = PendingRecordCodec.decode(contactBoundCiphertext)
-                            PendingOutbound(contactId, id, ciphertext, row.encrypted.revision)
+                            validatePendingOutboundBinding(row, pending)
+                            PendingOutbound(
+                                pending.contactId.copyOf(),
+                                pending.operationId.copyOf(),
+                                pending.ciphertext.copyOf(),
+                                row.encrypted.revision,
+                                pending.state,
+                            )
                         } finally {
-                            contactBoundCiphertext.wipe()
+                            pending.contactId.wipe()
+                            pending.operationId.wipe()
+                            pending.ciphertext.wipe()
                         }
                     } finally {
                         decrypted.wipe()
@@ -899,6 +973,29 @@ class VaultRecordStore(
             "kind=? AND record_key=? AND revision=?",
             arrayOf(RecordKind.RATCHET.toString(), key, expectedRevision.toString()),
         ) == 1
+    }
+
+    private fun updatePendingOutbound(
+        db: SQLiteDatabase,
+        key: String,
+        expectedRevision: Long,
+        record: EncryptedRecord,
+    ): Boolean {
+        val values = recordValues(record).apply { put("updated_at", System.currentTimeMillis()) }
+        return db.update(
+            TABLE_RECORDS,
+            values,
+            "kind=? AND record_key=? AND revision=?",
+            arrayOf(RecordKind.PENDING_OUTBOUND.toString(), key, expectedRevision.toString()),
+        ) == 1
+    }
+
+    private fun validatePendingOutboundBinding(row: StoredRow, pending: DecodedPendingOutbound) {
+        if (IdentifierCodec.operationKey(pending.operationId) != row.recordKey ||
+            IdentifierCodec.contactKey(pending.contactId) != row.ownerKey
+        ) {
+            throw VaultCorruptException("Pending outbound binding is invalid")
+        }
     }
 
     private fun updateDomainRecord(

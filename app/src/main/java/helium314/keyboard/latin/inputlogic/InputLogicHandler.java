@@ -23,6 +23,7 @@ class InputLogicHandler implements Handler.Callback {
     final InputLogic mInputLogic;
     private final Object mLock = new Object();
     private boolean mInBatchInput; // synchronized using {@link #mLock}.
+    private int mGeneration; // synchronized using {@link #mLock}.
 
     private static final int MSG_GET_SUGGESTED_WORDS = 1;
 
@@ -36,7 +37,12 @@ class InputLogicHandler implements Handler.Callback {
     }
 
     public void reset() {
+        synchronized (mLock) {
+            mInBatchInput = false;
+            mGeneration++;
+        }
         mNonUIThreadHandler.removeCallbacksAndMessages(null);
+        mLatinIMEHandler.cancelGestureMessages();
     }
 
     /**
@@ -59,7 +65,15 @@ class InputLogicHandler implements Handler.Callback {
     }
 
     public boolean isInBatchInput() {
-        return mInBatchInput;
+        synchronized (mLock) {
+            return mInBatchInput;
+        }
+    }
+
+    public boolean isGenerationCurrent(final int generation) {
+        synchronized (mLock) {
+            return generation == mGeneration;
+        }
     }
 
     /**
@@ -81,34 +95,37 @@ class InputLogicHandler implements Handler.Callback {
                 // Batch input has ended or canceled while the message was being delivered.
                 return;
             }
+            final int generation = mGeneration;
             mInputLogic.mWordComposer.setBatchInputPointers(batchPointers);
             getSuggestedWords(() -> mInputLogic.getSuggestedWords(
                 isTailBatchInput ? SuggestedWords.INPUT_STYLE_TAIL_BATCH : SuggestedWords.INPUT_STYLE_UPDATE_BATCH, sequenceNumber,
-                suggestedWords -> showGestureSuggestionsWithPreviewVisuals(suggestedWords, isTailBatchInput))
+                suggestedWords -> showGestureSuggestionsWithPreviewVisuals(
+                        suggestedWords, isTailBatchInput, generation))
             );
         }
     }
 
     private void showGestureSuggestionsWithPreviewVisuals(final SuggestedWords suggestedWordsForBatchInput,
-            final boolean isTailBatchInput) {
+            final boolean isTailBatchInput, final int generation) {
         final SuggestedWords suggestedWordsToShowSuggestions;
         // We're now inside the callback. This always runs on the Non-UI thread,
         // no matter what thread updateBatchInput was originally called on.
-        if (suggestedWordsForBatchInput.isEmpty()) {
-            // Use old suggestions if we don't have any new ones.
-            // Previous suggestions are found in InputLogic#mSuggestedWords.
-            // Since these are the most recent ones and we just recomputed
-            // new ones to update them, then the previous ones are there.
-            suggestedWordsToShowSuggestions = mInputLogic.mSuggestedWords;
-        } else {
-            suggestedWordsToShowSuggestions = suggestedWordsForBatchInput;
-        }
-        mLatinIMEHandler.showGesturePreviewAndSetSuggestions(suggestedWordsToShowSuggestions, isTailBatchInput);
-        if (isTailBatchInput) {
-            mInBatchInput = false;
-            // The following call schedules onEndBatchInputInternal
-            // to be called on the UI thread.
-            mLatinIMEHandler.showTailBatchInputResult(suggestedWordsToShowSuggestions);
+        synchronized (mLock) {
+            if (generation != mGeneration || !mInBatchInput) return;
+            if (suggestedWordsForBatchInput.isEmpty()) {
+                // Use old suggestions if we don't have any new ones.
+                suggestedWordsToShowSuggestions = mInputLogic.mSuggestedWords;
+            } else {
+                suggestedWordsToShowSuggestions = suggestedWordsForBatchInput;
+            }
+            mLatinIMEHandler.showGesturePreviewAndSetSuggestions(
+                    suggestedWordsToShowSuggestions, isTailBatchInput, generation);
+            if (isTailBatchInput) {
+                mInBatchInput = false;
+                // The UI handler validates the generation again before committing the result.
+                mLatinIMEHandler.showTailBatchInputResult(
+                        suggestedWordsToShowSuggestions, generation);
+            }
         }
     }
 
@@ -137,7 +154,10 @@ class InputLogicHandler implements Handler.Callback {
     public void onCancelBatchInput() {
         synchronized (mLock) {
             mInBatchInput = false;
+            mGeneration++;
         }
+        mNonUIThreadHandler.removeCallbacksAndMessages(null);
+        mLatinIMEHandler.cancelGestureMessages();
     }
 
     /**

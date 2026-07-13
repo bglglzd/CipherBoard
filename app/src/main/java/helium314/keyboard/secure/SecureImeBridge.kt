@@ -2,6 +2,7 @@
 package helium314.keyboard.secure
 
 import android.os.IBinder
+import org.cipherboard.securekeyboard.runtime.OutboundCommitBoundary
 import org.cipherboard.securekeyboard.runtime.PreparedOutbound
 import java.util.UUID
 
@@ -15,7 +16,7 @@ fun interface OutboundCompletion {
 
 enum class CiphertextDeliveryResult {
     NO_HANDOFF,
-    HOST_REJECTED,
+    HOST_COMMIT_UNCERTAIN,
     COMMITTED_AND_COMPLETED,
     COMMITTED_PENDING_CLEANUP,
 }
@@ -40,6 +41,7 @@ private class HandoffSession(
     var composerActivated = false
     var operationId: ByteArray? = null
     var ciphertext: String? = null
+    var commitBoundary: OutboundCommitBoundary? = null
     var activeClaim: CiphertextClaim? = null
 
     fun wipe() {
@@ -48,6 +50,8 @@ private class HandoffSession(
         ciphertext = null
         activeClaim?.close()
         activeClaim = null
+        commitBoundary?.close()
+        commitBoundary = null
     }
 }
 
@@ -115,8 +119,10 @@ object SecureImeBridge {
         val current = liveSessionLocked() ?: return false
         if (current.token != token || !current.composerActivated || current.operationId != null) return false
         if (outbound.parts.isEmpty() || outbound.parts.any { !it.startsWith(ENVELOPE_PREFIX) }) return false
+        val boundary = outbound.claimCommitBoundary() ?: return false
         current.operationId = outbound.operationId()
         current.ciphertext = outbound.parts.joinToString(separator = "\n")
+        current.commitBoundary = boundary
         return true
     }
 
@@ -134,7 +140,8 @@ object SecureImeBridge {
 
     /**
      * Commits only the ciphertext bound to this returning host editor. The durable pending record
-     * is completed strictly after InputConnection.commitText reports success.
+     * is first moved to COMMIT_UNCERTAIN, then completed strictly after
+     * InputConnection.commitText reports success.
      */
     @JvmStatic
     fun deliver(
@@ -167,6 +174,17 @@ object SecureImeBridge {
         val claim = synchronized(this) { claimLocked(host) }
             ?: return CiphertextDeliveryResult.NO_HANDOFF
 
+        val boundaryCrossed = try {
+            claim.markCommitUncertain()
+        } catch (_: RuntimeException) {
+            false
+        }
+        if (!boundaryCrossed) {
+            synchronized(this) { consumeLocked(claim) }
+            claim.close()
+            return CiphertextDeliveryResult.NO_HANDOFF
+        }
+
         val accepted = try {
             committer.commit(claim.ciphertext)
         } catch (_: RuntimeException) {
@@ -174,11 +192,11 @@ object SecureImeBridge {
         }
         if (!accepted) {
             // A false result is ambiguous across Binder: the host may have applied the text before
-            // the response was lost. Consume the one-shot capability and leave durable pending
-            // storage intact for a new, explicit user retry.
+            // the response was lost. Consume the one-shot capability and retain the durable
+            // COMMIT_UNCERTAIN record for diagnosis; it must never be retried automatically.
             synchronized(this) { consumeLocked(claim) }
             claim.close()
-            return CiphertextDeliveryResult.HOST_REJECTED
+            return CiphertextDeliveryResult.HOST_COMMIT_UNCERTAIN
         }
 
         val operationId = claim.operationId()
@@ -208,7 +226,8 @@ object SecureImeBridge {
         if (current.host != host || current.activeClaim != null) return null
         val operationId = current.operationId ?: return null
         val ciphertext = current.ciphertext ?: return null
-        return CiphertextClaim(operationId, ciphertext).also { current.activeClaim = it }
+        val boundary = current.commitBoundary ?: return null
+        return CiphertextClaim(operationId, ciphertext, boundary).also { current.activeClaim = it }
     }
 
     private fun consumeLocked(claim: CiphertextClaim) {
@@ -266,13 +285,19 @@ object SecureImeBridge {
 private class CiphertextClaim(
     operationId: ByteArray,
     val ciphertext: String,
+    private val boundary: OutboundCommitBoundary,
 ) : AutoCloseable {
+    private var closed = false
     private var id = operationId.copyOf()
 
     fun operationId(): ByteArray = id.copyOf()
+    fun markCommitUncertain(): Boolean = if (closed) false else boundary.markUncertain()
 
     override fun close() {
+        if (closed) return
+        closed = true
         id.fill(0)
         id = ByteArray(0)
+        boundary.close()
     }
 }
