@@ -1,0 +1,123 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "43 2 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_LINUX_X64_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          fail-on-scopes: runtime, development
+          vulnerability-check: true
+          license-check: false
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 120
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install hash-pinned Gitleaks CLI
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          install_dir="$RUNNER_TEMP/gitleaks-bin"
+          mkdir -p "$install_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$install_dir" gitleaks
+          chmod 500 "$install_dir/gitleaks"
+          printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
+
+      - name: Select trusted scan configuration and commit range
+        id: scan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/gitleaks.toml"
+          range=
+          if [ "$EVENT_NAME" = pull_request ]; then
+            if git cat-file -e "$PR_BASE_SHA:.gitleaks.toml" 2>/dev/null; then
+              git show "$PR_BASE_SHA:.gitleaks.toml" >"$config"
+            else
+              cp -- .gitleaks.toml "$config"
+            fi
+            range="$PR_BASE_SHA..$PR_HEAD_SHA"
+          else
+            cp -- .gitleaks.toml "$config"
+            if [ "$EVENT_NAME" = push ] && [[ "$PUSH_BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] && \
+              [ "$PUSH_BEFORE_SHA" != 0000000000000000000000000000000000000000 ] && \
+              git cat-file -e "$PUSH_BEFORE_SHA^{commit}" 2>/dev/null; then
+              range="$PUSH_BEFORE_SHA..$PUSH_HEAD_SHA"
+            fi
+          fi
+          printf 'config=%s\nrange=%s\n' "$config" "$range" >>"$GITHUB_OUTPUT"
+
+      - name: Scan Git history for secrets
+        env:
+          SCAN_CONFIG: ${{ steps.scan.outputs.config }}
+          SCAN_RANGE: ${{ steps.scan.outputs.range }}
+        run: |
+          set -euo pipefail
+          args=(git --no-banner --redact=100 --config "$SCAN_CONFIG")
+          if [ -n "$SCAN_RANGE" ]; then
+            args+=(--log-opts="$SCAN_RANGE")
+          fi
+          gitleaks "${args[@]}" .
+
+  required:
+    name: Security required
+    if: ${{ always() }}
+    needs: [dependency-review, secret-scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require applicable security gates
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEPENDENCY_RESULT: ${{ needs.dependency-review.result }}
+          SECRET_RESULT: ${{ needs.secret-scan.result }}
+        run: |
+          test "$SECRET_RESULT" = success
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$DEPENDENCY_RESULT" = success
+          else
+            test "$DEPENDENCY_RESULT" = skipped
+          fi

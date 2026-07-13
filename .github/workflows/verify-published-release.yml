@@ -1,0 +1,334 @@
+name: Verify published release
+run-name: Verify published ${{ github.event.release.tag_name || inputs.tag }}
+
+# Signing remains local. This workflow consumes only public release assets and
+# the public signing-certificate pin committed with the tagged source.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published annotated release tag to verify"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-published-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: "17"
+  PYTHON_VERSION: "3.12"
+  ANDROID_PLATFORM: "36"
+  ANDROID_BUILD_TOOLS: "36.1.0"
+  OSV_SCANNER_VERSION: "2.4.0"
+  OSV_SCANNER_LINUX_SHA256: "15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0"
+
+jobs:
+  verify:
+    name: Published release verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=${EVENT_TAG:-$INPUT_TAG}
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          printf 'tag=%s\n' "$tag" >>"$GITHUB_OUTPUT"
+
+      - name: Check out published tag
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate tagged source
+        id: source
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          test "$commit" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$commit" refs/remotes/origin/main
+
+          version=$(awk -F= '$1 == "cipherboard.versionName" { print substr($0, index($0, "=") + 1) }' gradle.properties)
+          artifact=$(awk -F= '$1 == "cipherboard.artifactName" { print substr($0, index($0, "=") + 1) }' gradle.properties)
+          test "$RELEASE_TAG" = "v$version"
+          [[ "$artifact" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          printf 'commit=%s\nversion=%s\nartifact=%s\n' "$commit" "$version" "$artifact" >>"$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install APK verification tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools"
+
+      - name: Download public release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/release-assets"
+          evidence="$RUNNER_TEMP/verification-evidence"
+          mkdir -p "$assets" "$evidence"
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            >"$evidence/release-api.json"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$assets"
+
+      - name: Verify artifact inventory and hashes
+        env:
+          ARTIFACT_NAME: ${{ steps.source.outputs.artifact }}
+          VERSION_NAME: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/release-assets" "$RUNNER_TEMP/verification-evidence/release-api.json" "$ARTIFACT_NAME" "$VERSION_NAME" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import re
+          import sys
+
+          assets = pathlib.Path(sys.argv[1])
+          release_api = pathlib.Path(sys.argv[2])
+          artifact = sys.argv[3]
+          version = sys.argv[4]
+          manifest_name = "RELEASE_ARTIFACTS.sha256"
+          manifest = assets / manifest_name
+          if not manifest.is_file():
+              raise SystemExit("release hash manifest is missing")
+
+          entries: dict[str, str] = {}
+          line_pattern = re.compile(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]*)")
+          for line_number, line in enumerate(manifest.read_text(encoding="ascii").splitlines(), 1):
+              match = line_pattern.fullmatch(line)
+              if not match:
+                  raise SystemExit(f"invalid release manifest line {line_number}")
+              digest, name = match.groups()
+              if name == manifest_name or name in entries:
+                  raise SystemExit(f"invalid or duplicate release asset: {name}")
+              entries[name] = digest
+
+          apk_name = f"{artifact}-{version}-release.apk"
+          required = {
+              apk_name,
+              f"{apk_name}.sha256",
+              f"{artifact}-{version}-source.tar.gz",
+              "SBOM.json",
+              "VULNERABILITY_SCAN.json",
+              "BUILD_INFO.txt",
+              "THIRD_PARTY_NOTICES.txt",
+              "LICENSE",
+              "LICENSE-Apache-2.0",
+              "LICENSE-BSD-3-Clause-NOTICES",
+              "LICENSE-BlueOak-1.0.0",
+              "LICENSE-CC-BY-SA-4.0",
+              "LICENSE-MIT",
+              "LICENSES.md",
+          }
+          missing = sorted(required - entries.keys())
+          if missing:
+              raise SystemExit("required release assets are missing: " + ", ".join(missing))
+
+          downloaded = {path.name for path in assets.iterdir() if path.is_file()}
+          expected = set(entries) | {manifest_name}
+          if downloaded != expected:
+              raise SystemExit(
+                  "release asset inventory mismatch; missing="
+                  + repr(sorted(expected - downloaded))
+                  + ", unexpected="
+                  + repr(sorted(downloaded - expected))
+              )
+
+          for name, expected_digest in entries.items():
+              path = assets / name
+              actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if actual_digest != expected_digest:
+                  raise SystemExit(f"release asset hash mismatch: {name}")
+
+          apk_digest = entries[apk_name]
+          apk_hash_line = (assets / f"{apk_name}.sha256").read_text(encoding="ascii").strip()
+          if apk_hash_line != f"{apk_digest}  {apk_name}":
+              raise SystemExit("standalone APK hash file is inconsistent")
+
+          api = json.loads(release_api.read_text(encoding="utf-8"))
+          if api.get("draft") is not False or api.get("tag_name") != f"v{version}":
+              raise SystemExit("release API metadata does not describe the expected published tag")
+          if api.get("immutable") is not True:
+              raise SystemExit("GitHub Release immutability must be enabled before publication")
+          api_assets = {item.get("name"): item for item in api.get("assets", [])}
+          if set(api_assets) != downloaded:
+              raise SystemExit("release API and downloaded asset inventories differ")
+          for name, item in api_assets.items():
+              api_digest = item.get("digest")
+              if api_digest and api_digest != "sha256:" + hashlib.sha256((assets / name).read_bytes()).hexdigest():
+                  raise SystemExit(f"GitHub asset digest mismatch: {name}")
+          PY
+
+      - name: Verify signed APK and native hardening
+        env:
+          ARTIFACT_NAME: ${{ steps.source.outputs.artifact }}
+          VERSION_NAME: ${{ steps.source.outputs.version }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          apk="$RUNNER_TEMP/release-assets/$ARTIFACT_NAME-$VERSION_NAME-release.apk"
+          scripts/verify-apk.sh "$apk"
+
+          elf_dir=$(mktemp -d "$RUNNER_TEMP/cipherboard-elf.XXXXXX")
+          trap 'rm -rf -- "$elf_dir"' EXIT HUP INT TERM
+          actual_abis=$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*\.so$#\1#p' | sort -u | paste -sd, -)
+          test "$actual_abis" = arm64-v8a
+          unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libcipherboard_crypto_jni.so' >/dev/null
+          while IFS= read -r entry; do
+            output="$elf_dir/$(printf '%s' "$entry" | tr '/' '_')"
+            unzip -p "$apk" "$entry" >"$output"
+            stack=$(readelf -W -l "$output" | grep 'GNU_STACK')
+            if grep -q 'GNU_STACK.*E' <<<"$stack"; then
+              echo "Executable GNU_STACK in $entry" >&2
+              exit 1
+            fi
+            readelf -W -l "$output" | grep 'GNU_RELRO' >/dev/null
+            readelf -W -d "$output" | grep -E 'BIND_NOW|FLAGS.*NOW' >/dev/null
+          done < <(unzip -Z1 "$apk" | grep '^lib/.*\.so$')
+
+          "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS/apksigner" \
+            verify --verbose --print-certs "$apk" \
+            >"$RUNNER_TEMP/verification-evidence/apksigner.txt"
+          sha256sum "$apk" >"$RUNNER_TEMP/verification-evidence/apk.sha256"
+
+      - name: Verify source and generated evidence
+        env:
+          ARTIFACT_NAME: ${{ steps.source.outputs.artifact }}
+          VERSION_NAME: ${{ steps.source.outputs.version }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/release-assets"
+          apk="$assets/$ARTIFACT_NAME-$VERSION_NAME-release.apk"
+          expected_source="$RUNNER_TEMP/$ARTIFACT_NAME-$VERSION_NAME-source.tar"
+          released_source="$RUNNER_TEMP/released-source.tar"
+          git archive --format=tar \
+            --prefix="$ARTIFACT_NAME-$VERSION_NAME-source/" \
+            --output="$expected_source" \
+            "$SOURCE_COMMIT"
+          gzip -dc -- "$assets/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz" >"$released_source"
+          cmp -- "$expected_source" "$released_source"
+
+          python - "$assets" "$apk" "$SOURCE_COMMIT" "$VERSION_NAME" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          assets = pathlib.Path(sys.argv[1])
+          apk = pathlib.Path(sys.argv[2])
+          commit = sys.argv[3]
+          version = sys.argv[4]
+          apk_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
+          certificate = (pathlib.Path("SIGNING_CERTIFICATE_SHA256").read_text(encoding="ascii").strip().lower())
+          if len(certificate) != 64 or any(char not in "0123456789abcdef" for char in certificate):
+              raise SystemExit("invalid committed signing-certificate pin")
+
+          info: dict[str, str] = {}
+          for line in (assets / "BUILD_INFO.txt").read_text(encoding="utf-8").splitlines():
+              key, separator, value = line.partition(": ")
+              if not separator or key in info:
+                  raise SystemExit("invalid BUILD_INFO record")
+              info[key] = value
+          expected_info = {
+              "Git commit": commit,
+              "Version": version,
+              "APK": apk.name,
+              "APK SHA-256": apk_hash,
+              "Signing certificate SHA-256": certificate,
+              "Supported ABIs": "arm64-v8a",
+          }
+          for key, expected in expected_info.items():
+              if info.get(key) != expected:
+                  raise SystemExit(f"BUILD_INFO mismatch: {key}")
+
+          sbom_path = assets / "SBOM.json"
+          sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+          components = sbom.get("components")
+          if sbom.get("bomFormat") != "CycloneDX" or sbom.get("specVersion") != "1.5":
+              raise SystemExit("unexpected SBOM format")
+          if not isinstance(components, list) or not components:
+              raise SystemExit("SBOM dependency graph is empty")
+          for component in components:
+              if not isinstance(component, dict) or not component.get("purl") or not component.get("version"):
+                  raise SystemExit("SBOM contains an incomplete component")
+
+          vulnerability = json.loads((assets / "VULNERABILITY_SCAN.json").read_text(encoding="utf-8"))
+          if vulnerability.get("result") != "pass" or vulnerability.get("networkMode") != "offline":
+              raise SystemExit("release vulnerability evidence did not pass offline")
+          if vulnerability.get("knownVulnerabilities") != 0:
+              raise SystemExit("release vulnerability evidence contains findings")
+          if vulnerability.get("packagesScanned") != len(components):
+              raise SystemExit("vulnerability evidence package count differs from SBOM")
+          if vulnerability.get("sbomSha256") != hashlib.sha256(sbom_path.read_bytes()).hexdigest():
+              raise SystemExit("vulnerability evidence refers to a different SBOM")
+          PY
+
+      - name: Independently scan the published SBOM
+        run: |
+          set -euo pipefail
+          scanner="$RUNNER_TEMP/osv-scanner"
+          cache="$RUNNER_TEMP/osv-cache"
+          input="$RUNNER_TEMP/CipherBoard.cdx.json"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          printf '%s  %s\n' "$OSV_SCANNER_LINUX_SHA256" "$scanner" | sha256sum --check --strict
+          chmod 500 "$scanner"
+          export XDG_CACHE_HOME="$cache"
+          cp -- "$RUNNER_TEMP/release-assets/SBOM.json" "$input"
+          "$scanner" scan source \
+            --offline-vulnerabilities \
+            --download-offline-databases \
+            --format json \
+            -L "$input" \
+            >"$RUNNER_TEMP/verification-evidence/osv-bootstrap.json"
+          python scripts/osv_offline_scan.py \
+            --scanner "$scanner" \
+            --database-root "$cache/osv-scanner" \
+            --sbom "$RUNNER_TEMP/release-assets/SBOM.json" \
+            --output "$RUNNER_TEMP/verification-evidence/osv-independent.json"
+
+      - name: Upload public verification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: published-release-verification-${{ steps.source.outputs.version }}
+          path: ${{ runner.temp }}/verification-evidence/*
+          if-no-files-found: error
+          retention-days: 90

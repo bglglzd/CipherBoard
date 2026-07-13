@@ -1,0 +1,112 @@
+name: Android instrumentation
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Exact commit to test"
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "crypto-core/**"
+      - "pairing/**"
+      - "secure-storage/**"
+      - "scripts/**"
+      - "gradle/**"
+      - "gradlew"
+      - "gradlew.bat"
+      - "*.gradle*"
+      - "gradle.properties"
+      - "settings.gradle*"
+      - ".github/workflows/instrumentation.yml"
+  schedule:
+    - cron: "19 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instrumentation-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.94.0"
+  CARGO_NDK_VERSION: "4.1.2"
+  ANDROID_NDK: "28.0.13004108"
+
+jobs:
+  emulator:
+    name: API 36 AOSP x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-read-only: ${{ github.event_name != 'push' }}
+
+      - name: Install Rust Android toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+
+      - name: Install pinned NDK
+        run: sdkmanager --install "ndk;${ANDROID_NDK}"
+
+      - name: Run connected tests
+        uses: ReactiveCircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 1200
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+            -camera-back none -camera-front none
+          script: >-
+            ./gradlew --no-daemon --stacktrace
+            :crypto-core:connectedDebugAndroidTest
+            :app:connectedDebugAndroidTest
+
+      - name: Upload instrumentation reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: instrumentation-reports-${{ inputs.ref || github.sha }}
+          path: |
+            **/build/reports/androidTests/**
+            **/build/outputs/androidTest-results/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  required:
+    name: Instrumentation required
+    if: ${{ always() }}
+    needs: emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require emulator tests
+        env:
+          EMULATOR_RESULT: ${{ needs.emulator.result }}
+        run: test "$EMULATOR_RESULT" = success

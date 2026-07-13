@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Literal private-key sentinels used by the APK policy and its regression test"
+condition = "AND"
+paths = ['''^scripts/(?:apk_policy\.py|tests/test_apk_policy\.py)$''']
+regexTarget = "line"
+regexes = ['''b["']-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----["']''']

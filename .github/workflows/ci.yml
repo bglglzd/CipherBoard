@@ -1,0 +1,231 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "17"
+  PYTHON_VERSION: "3.12"
+  RUST_TOOLCHAIN: "1.94.0"
+  CARGO_NDK_VERSION: "4.1.2"
+  CARGO_AUDIT_VERSION: "0.22.2"
+  ANDROID_PLATFORM: "36"
+  ANDROID_BUILD_TOOLS: "36.1.0"
+  ANDROID_NDK: "28.0.13004108"
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_LINUX_AMD64_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+
+jobs:
+  policy:
+    name: Source and workflow policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate workflows
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          install_dir="$RUNNER_TEMP/actionlint-bin"
+          mkdir -p "$install_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$install_dir" actionlint
+          chmod 500 "$install_dir/actionlint"
+          "$install_dir/actionlint"
+
+      - name: Run source security blockers
+        run: |
+          python scripts/security_source_scan.py .
+          python scripts/kotlin_style_check.py .
+          python -m unittest discover -s scripts/tests -p 'test_*.py'
+          python -m compileall -q scripts
+
+      - name: Require committed dependency locks
+        run: |
+          set -euo pipefail
+          for lock in \
+            app/gradle.lockfile \
+            crypto-core/native/Cargo.lock \
+            crypto-core/native/fuzz/Cargo.lock \
+            crypto-core/jni/Cargo.lock; do
+            test -s "$lock"
+            git ls-files --error-unmatch "$lock" >/dev/null
+          done
+          git diff --check
+
+  rust:
+    name: Rust (${{ matrix.crate }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate: native
+            manifest: crypto-core/native/Cargo.toml
+            all_features: "--all-features"
+          - crate: JNI
+            manifest: crypto-core/jni/Cargo.toml
+            all_features: "--all-features"
+          - crate: fuzz harness
+            manifest: crypto-core/native/fuzz/Cargo.toml
+            all_features: ""
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Check formatting
+        run: cargo fmt --all --manifest-path "${{ matrix.manifest }}" -- --check
+
+      - name: Run Clippy
+        run: >-
+          cargo clippy --locked --manifest-path "${{ matrix.manifest }}"
+          --all-targets ${{ matrix.all_features }} -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path "${{ matrix.manifest }}"
+
+      - name: Audit locked Rust dependencies
+        run: |
+          cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+          cargo audit --file "$(dirname '${{ matrix.manifest }}')/Cargo.lock"
+
+      - name: Ensure Cargo locks were not rewritten
+        run: git diff --exit-code -- '**/Cargo.lock'
+
+  android:
+    name: Android lint, unit tests, and debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-android-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-android-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK}" \
+            "platform-tools"
+
+      - name: Install Rust Android toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+
+      - name: Build and verify debug APK
+        run: |
+          chmod +x gradlew scripts/*.sh
+          scripts/build-debug.sh
+
+      - name: Ensure dependency locks were not rewritten
+        run: git diff --exit-code -- app/gradle.lockfile '**/Cargo.lock'
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CipherBoard-debug-${{ github.sha }}
+          path: dist/CipherBoard-*-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Android reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-reports-${{ github.sha }}
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+          if-no-files-found: warn
+          retention-days: 7
+
+  required:
+    name: CI required
+    if: ${{ always() }}
+    needs: [policy, rust, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI gate
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+        run: |
+          test "$POLICY_RESULT" = success
+          test "$RUST_RESULT" = success
+          test "$ANDROID_RESULT" = success

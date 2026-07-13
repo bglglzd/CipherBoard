@@ -1,0 +1,282 @@
+name: Release candidate
+run-name: Unsigned candidate ${{ inputs.tag }}
+
+# GitHub never receives the production keystore or its passwords. This workflow
+# validates an annotated tag and produces a deliberately unsigned comparison
+# artifact. Signing, bundle generation, and publication are performed from a
+# clean local checkout with scripts/build-release.sh (or .ps1) and `gh`.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing annotated release tag (for example v1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: "17"
+  PYTHON_VERSION: "3.12"
+  RUST_TOOLCHAIN: "1.94.0"
+  CARGO_NDK_VERSION: "4.1.2"
+  CARGO_AUDIT_VERSION: "0.22.2"
+  ANDROID_PLATFORM: "36"
+  ANDROID_BUILD_TOOLS: "36.1.0"
+  ANDROID_NDK: "28.0.13004108"
+
+jobs:
+  validate:
+    name: Validate release ref
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+      version: ${{ steps.release.outputs.version }}
+      artifact: ${{ steps.release.outputs.artifact }}
+    steps:
+      - name: Require dispatch from main
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate annotated tag and product version
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          test "$commit" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$commit" refs/remotes/origin/main
+
+          version=$(awk -F= '$1 == "cipherboard.versionName" { print substr($0, index($0, "=") + 1) }' gradle.properties)
+          artifact=$(awk -F= '$1 == "cipherboard.artifactName" { print substr($0, index($0, "=") + 1) }' gradle.properties)
+          test "$RELEASE_TAG" = "v$version"
+          [[ "$artifact" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+
+          {
+            printf 'commit=%s\n' "$commit"
+            printf 'version=%s\n' "$version"
+            printf 'artifact=%s\n' "$artifact"
+          } >>"$GITHUB_OUTPUT"
+
+  candidate:
+    name: Build and inspect unsigned APK
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
+      - name: Install Android and Rust toolchains
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK}" \
+            "platform-tools"
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+          cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+
+      - name: Run release source and dependency gates
+        run: |
+          set -euo pipefail
+          chmod +x gradlew scripts/*.sh
+          python scripts/security_source_scan.py .
+          python scripts/kotlin_style_check.py .
+          python -m unittest discover -s scripts/tests -p 'test_*.py'
+
+          for manifest in \
+            crypto-core/native/Cargo.toml \
+            crypto-core/native/fuzz/Cargo.toml \
+            crypto-core/jni/Cargo.toml; do
+            features=()
+            case "$manifest" in
+              crypto-core/native/Cargo.toml|crypto-core/jni/Cargo.toml)
+                features=(--all-features)
+                ;;
+            esac
+            cargo fmt --all --manifest-path "$manifest" -- --check
+            cargo clippy --locked --manifest-path "$manifest" --all-targets "${features[@]}" -- -D warnings
+            cargo test --locked --manifest-path "$manifest"
+            cargo audit --file "$(dirname "$manifest")/Cargo.lock"
+          done
+
+          ./gradlew --no-daemon --stacktrace \
+            :app:lintRelease :crypto-core:lintRelease :pairing:lintRelease :secure-storage:lintRelease \
+            :app:testDebugUnitTest :crypto-core:testDebugUnitTest \
+            :pairing:testDebugUnitTest :secure-storage:testDebugUnitTest \
+            :app:assembleRelease
+          git diff --exit-code -- app/gradle.lockfile '**/Cargo.lock'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Enforce unsigned APK policy
+        env:
+          ARTIFACT_NAME: ${{ needs.validate.outputs.artifact }}
+          VERSION_NAME: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print)
+          test "${#apks[@]}" -eq 1
+          apk=${apks[0]}
+          build_tools="$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS"
+          evidence="$RUNNER_TEMP/candidate-evidence"
+          mkdir -p "$evidence" "$RUNNER_TEMP/unsigned"
+
+          "$build_tools/aapt" dump permissions "$apk" >"$evidence/aapt-permissions.txt"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest permissions "$apk" >"$evidence/apkanalyzer-permissions.txt"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print "$apk" >"$evidence/manifest.xml"
+          "$build_tools/aapt" dump resources "$apk" >"$evidence/aapt-resources.txt"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex packages "$apk" >"$evidence/dex-packages.txt"
+
+          for permission in \
+            android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE \
+            android.permission.READ_CONTACTS android.permission.WRITE_CONTACTS \
+            android.permission.READ_SMS android.permission.RECEIVE_SMS android.permission.SEND_SMS \
+            android.permission.QUERY_ALL_PACKAGES android.permission.SYSTEM_ALERT_WINDOW \
+            android.permission.BIND_ACCESSIBILITY_SERVICE; do
+            if grep -F "$permission" "$evidence/aapt-permissions.txt" >/dev/null; then
+              echo "Forbidden permission in aapt output: $permission" >&2
+              exit 1
+            fi
+            if grep -F "$permission" "$evidence/apkanalyzer-permissions.txt" >/dev/null; then
+              echo "Forbidden permission in apkanalyzer output: $permission" >&2
+              exit 1
+            fi
+          done
+          if grep -F 'java.lang.System void load(java.lang.String)' "$evidence/dex-packages.txt" >/dev/null; then
+            echo 'Arbitrary-path native code loading reference found in DEX.' >&2
+            exit 1
+          fi
+
+          expected_package=$(awk -F= '$1 == "cipherboard.applicationId" { print substr($0, index($0, "=") + 1) }' gradle.properties)
+          expected_version_code=$(awk -F= '$1 == "cipherboard.versionCode" { print substr($0, index($0, "=") + 1) }' gradle.properties)
+          python scripts/apk_policy.py \
+            --mode release \
+            --manifest "$evidence/manifest.xml" \
+            --apk "$apk" \
+            --expected-package "$expected_package" \
+            --expected-version-name "$VERSION_NAME" \
+            --expected-version-code "$expected_version_code" \
+            --aapt-resources "$evidence/aapt-resources.txt" \
+            --expected-abi arm64-v8a
+
+          if "$build_tools/apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo 'Cloud candidate must remain unsigned.' >&2
+            exit 1
+          fi
+          actual_abis=$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*\.so$#\1#p' | sort -u | paste -sd, -)
+          test "$actual_abis" = arm64-v8a
+          unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libcipherboard_crypto_jni.so' >/dev/null
+
+          elf_dir=$(mktemp -d "$RUNNER_TEMP/cipherboard-elf.XXXXXX")
+          trap 'rm -rf -- "$elf_dir"' EXIT HUP INT TERM
+          while IFS= read -r entry; do
+            output="$elf_dir/$(printf '%s' "$entry" | tr '/' '_')"
+            unzip -p "$apk" "$entry" >"$output"
+            stack=$(readelf -W -l "$output" | grep 'GNU_STACK')
+            if grep -q 'GNU_STACK.*E' <<<"$stack"; then
+              echo "Executable GNU_STACK in $entry" >&2
+              exit 1
+            fi
+            readelf -W -l "$output" | grep 'GNU_RELRO' >/dev/null
+            readelf -W -d "$output" | grep -E 'BIND_NOW|FLAGS.*NOW' >/dev/null
+          done < <(unzip -Z1 "$apk" | grep '^lib/.*\.so$')
+
+          cp -- "$apk" "$RUNNER_TEMP/unsigned/$ARTIFACT_NAME-$VERSION_NAME-release-unsigned.apk"
+
+      - name: Upload unsigned comparison artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-release-candidate-${{ needs.validate.outputs.version }}
+          path: ${{ runner.temp }}/unsigned/*-unsigned.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload candidate reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-reports-${{ needs.validate.outputs.version }}
+          path: |
+            ${{ runner.temp }}/candidate-evidence/**
+            **/build/reports/**
+            **/build/test-results/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  instrumentation:
+    name: Test release commit on emulator
+    needs: validate
+    uses: ./.github/workflows/instrumentation.yml
+    with:
+      ref: ${{ needs.validate.outputs.commit }}
+
+  ready:
+    name: Release candidate required
+    if: ${{ always() }}
+    needs: [validate, candidate, instrumentation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require all release gates
+        env:
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          CANDIDATE_RESULT: ${{ needs.candidate.result }}
+          INSTRUMENTATION_RESULT: ${{ needs.instrumentation.result }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATE_RESULT" = success
+          test "$CANDIDATE_RESULT" = success
+          test "$INSTRUMENTATION_RESULT" = success
+          {
+            echo '## Unsigned release candidate passed'
+            echo
+            echo "Tag: \`$RELEASE_TAG\`"
+            echo "Commit: \`$RELEASE_COMMIT\`"
+            echo
+            echo 'GitHub did not receive or use the production keystore. From a clean checkout of this exact tag, run the local release script, review dist, enable immutable GitHub Releases, and publish only RELEASE_ARTIFACTS.sha256 plus every file named by that manifest. The Verify published release workflow will independently check the published snapshot.'
+          } >>"$GITHUB_STEP_SUMMARY"

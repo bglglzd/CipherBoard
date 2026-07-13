@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:17"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps(actions)
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:37"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps(gradle)
+    groups:
+      android-kotlin-minor:
+        patterns:
+          - "androidx.*"
+          - "com.android.*"
+          - "org.jetbrains.*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
+    directories:
+      - /crypto-core/native
+      - /crypto-core/native/fuzz
+      - /crypto-core/jni
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:57"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps(cargo)
+    groups:
+      rust-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
