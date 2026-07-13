@@ -111,8 +111,11 @@ def main() -> int:
         print(f"security source scan failed: {error.__class__.__name__}", file=sys.stderr)
         return 1
     if errors:
-        for error in sorted(set(errors)):
-            print(f"security source scan failure: {error}", file=sys.stderr)
+        finding_count = len(set(errors))
+        print(
+            f"security source scan found {finding_count} policy violation(s)",
+            file=sys.stderr,
+        )
         return 1
     print("Security source scan passed")
     return 0

@@ -86,7 +86,7 @@ class ProximityInfoState {
     AK_FORCE_INLINE bool existsCodePointInProximityAt(const int index, const int c) const {
         const int *codePoints = getProximityCodePointsAt(index);
         int i = 0;
-        while (codePoints[i] > 0 && i < MAX_PROXIMITY_CHARS_SIZE) {
+        while (i < MAX_PROXIMITY_CHARS_SIZE && codePoints[i] > 0) {
             if (codePoints[i++] == c) {
                 return true;
             }

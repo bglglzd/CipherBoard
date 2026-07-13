@@ -191,10 +191,18 @@ namespace latinime {
         const std::vector<int> *const sampledInputYs,
         std::vector<float> *sampledNormalizedSquaredLengthCache) {
     const int keyCount = proximityInfo->getKeyCount();
-    sampledNormalizedSquaredLengthCache->resize(sampledInputSize * keyCount);
+    if (sampledInputSize <= 0 || keyCount <= 0 || lastSavedInputSize < 0) {
+        sampledNormalizedSquaredLengthCache->clear();
+        return;
+    }
+    const auto cacheSize = static_cast<std::vector<float>::size_type>(sampledInputSize)
+            * static_cast<std::vector<float>::size_type>(keyCount);
+    sampledNormalizedSquaredLengthCache->resize(cacheSize);
     for (int i = lastSavedInputSize; i < sampledInputSize; ++i) {
         for (int k = 0; k < keyCount; ++k) {
-            const int index = i * keyCount + k;
+            const auto index = static_cast<std::vector<float>::size_type>(i)
+                    * static_cast<std::vector<float>::size_type>(keyCount)
+                    + static_cast<std::vector<float>::size_type>(k);
             const int x = (*sampledInputXs)[i];
             const int y = (*sampledInputYs)[i];
             const float normalizedSquaredDistance =
