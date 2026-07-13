@@ -15,6 +15,7 @@ import sys
 import urllib.parse
 import uuid
 import xml.etree.ElementTree as ET
+import zipfile
 
 
 def run(command: list[str], cwd: pathlib.Path) -> str:
@@ -38,6 +39,13 @@ def require_match(pattern: str, text: str, label: str, flags: int = 0) -> str:
     if not match:
         raise RuntimeError(f"cannot determine {label}")
     return match.group(1)
+
+
+def require_property(text: str, name: str) -> str:
+    matches = re.findall(rf"^{re.escape(name)}=(.*)$", text, re.M)
+    if len(matches) != 1 or not matches[0]:
+        raise RuntimeError(f"cannot determine unique Gradle property {name}")
+    return matches[0]
 
 
 def normalize_license(name: str) -> str:
@@ -115,6 +123,7 @@ def gradle_components(root: pathlib.Path) -> list[dict[str, object]]:
             "releaseRuntimeClasspath",
             "--console=plain",
             "--no-configuration-cache",
+            "--offline",
         ],
         root,
     )
@@ -202,7 +211,15 @@ def cargo_components(root: pathlib.Path) -> list[dict[str, object]]:
     return components
 
 
-def generate_sbom(root: pathlib.Path, output: pathlib.Path, timestamp: str, version: str) -> None:
+def generate_sbom(
+    root: pathlib.Path,
+    output: pathlib.Path,
+    timestamp: str,
+    version: str,
+    application_id: str,
+    product_name: str,
+    apk: pathlib.Path,
+) -> None:
     components = gradle_components(root) + cargo_components(root)
     seen: set[str] = set()
     unique = []
@@ -211,24 +228,50 @@ def generate_sbom(root: pathlib.Path, output: pathlib.Path, timestamp: str, vers
         if reference not in seen:
             seen.add(reference)
             unique.append(component)
+    if not unique:
+        raise RuntimeError("resolved release dependency graph was empty")
+    if any(not component.get("licenses") for component in unique):
+        raise RuntimeError("release dependency has no reviewed license metadata")
+    application_ref = f"pkg:apk/{urllib.parse.quote(application_id)}@{urllib.parse.quote(version)}"
+    application_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
+    component_references = [str(component["bom-ref"]) for component in unique]
     document = {
+        "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
         "serialNumber": f"urn:uuid:{uuid.uuid4()}",
         "version": 1,
         "metadata": {
             "timestamp": timestamp,
-            "tools": {"components": [{"type": "application", "name": "CipherBoard release_metadata.py"}]},
+            "tools": {"components": [{"type": "application", "name": f"{product_name} release_metadata.py"}]},
             "component": {
                 "type": "application",
-                "name": "CipherBoard",
+                "name": product_name,
                 "version": version,
-                "purl": f"pkg:apk/org.cipherboard.securekeyboard@{urllib.parse.quote(version)}",
+                "bom-ref": application_ref,
+                "purl": application_ref,
+                "hashes": [{"alg": "SHA-256", "content": application_hash}],
             },
         },
         "components": unique,
+        "dependencies": [
+            {"ref": application_ref, "dependsOn": component_references},
+            *({"ref": reference, "dependsOn": []} for reference in component_references),
+        ],
     }
     output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def apk_abis(apk: pathlib.Path) -> list[str]:
+    with zipfile.ZipFile(apk) as archive:
+        abis = {
+            parts[1]
+            for name in archive.namelist()
+            if len(parts := name.split("/")) == 3 and parts[0] == "lib" and name.endswith(".so")
+        }
+    if not abis:
+        raise RuntimeError("APK contains no native libraries; cannot determine supported ABIs")
+    return sorted(abis)
 
 
 def generate_build_info(
@@ -246,7 +289,7 @@ def generate_build_info(
     upstream = (root / "UPSTREAM.md").read_text(encoding="utf-8")
     cargo_toml = (root / "crypto-core/native/Cargo.toml").read_text(encoding="utf-8")
 
-    version = require_match(r"^cipherboard\.versionName=(.+)$", gradle_properties, "version", re.M)
+    version = require_property(gradle_properties, "cipherboard.versionName")
     cert_output = run([apksigner, "verify", "--verbose", "--print-certs", str(apk)], root)
     certificate = require_match(
         r"(?:Signer #1|V[0-9]+ Signer): certificate SHA-256 digest: ([0-9a-fA-F]+)",
@@ -255,18 +298,31 @@ def generate_build_info(
     )
     permissions_output = run([apkanalyzer, "manifest", "permissions", str(apk)], root)
     permissions = sorted(
-        line.strip() for line in permissions_output.splitlines() if line.strip().startswith("android.permission.")
+        {
+            permission
+            for line in permissions_output.splitlines()
+            if (permission := line.strip()) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.]+", permission)
+        }
     )
     apk_hash = hashlib.sha256(apk.read_bytes()).hexdigest()
-    java_version = run(["java", "-version"], root).splitlines()[0]
+    java_home = os.environ.get("JAVA_HOME")
+    java_executable = "java"
+    if java_home:
+        candidate = pathlib.Path(java_home) / "bin" / ("java.exe" if os.name == "nt" else "java")
+        if candidate.is_file():
+            java_executable = str(candidate)
+    java_version = run([java_executable, "-version"], root).splitlines()[0]
+    product_name = require_property(gradle_properties, "cipherboard.productName")
 
     values = [
         ("Git commit", run(["git", "rev-parse", "HEAD"], root).strip()),
+        ("Product", product_name),
         ("HeliBoard upstream tag", require_match(r"^- Tag: `([^`]+)`", upstream, "upstream tag", re.M)),
         ("HeliBoard upstream commit", require_match(r"^- Commit: `([0-9a-f]{40})`", upstream, "upstream commit", re.M)),
         ("Android Gradle Plugin", require_match(r'com\.android\.tools\.build:gradle:([^\"]+)', root_gradle, "AGP")),
         ("Gradle", require_match(r"gradle-([0-9.]+)-bin\.zip", wrapper, "Gradle")),
         ("Java", java_version),
+        ("Android Build Tools", require_property(gradle_properties, "cipherboard.buildToolsVersion")),
         ("Android compileSdk", require_match(r"compileSdk\s*=\s*([0-9]+)", app_gradle, "compileSdk")),
         ("Android targetSdk", require_match(r"targetSdk\s*=\s*([0-9]+)", app_gradle, "targetSdk")),
         ("Android minSdk", require_match(r"minSdk\s*=\s*([0-9]+)", app_gradle, "minSdk")),
@@ -274,7 +330,7 @@ def generate_build_info(
         ("Rust", run(["rustc", "--version"], root).strip()),
         ("vodozemac", require_match(r"vodozemac\s*=\s*\{\s*version\s*=\s*\"=([^\"]+)\"", cargo_toml, "vodozemac")),
         ("Build date UTC", timestamp),
-        ("Supported ABIs", "arm64-v8a, x86_64"),
+        ("Supported ABIs", ", ".join(apk_abis(apk))),
         ("APK SHA-256", apk_hash),
         ("Signing certificate SHA-256", certificate.lower()),
         ("APK", apk.name),
@@ -299,8 +355,10 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     timestamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     properties = (root / "gradle.properties").read_text(encoding="utf-8")
-    version = require_match(r"^cipherboard\.versionName=(.+)$", properties, "version", re.M)
-    generate_sbom(root, output / "SBOM.json", timestamp, version)
+    version = require_property(properties, "cipherboard.versionName")
+    application_id = require_property(properties, "cipherboard.applicationId")
+    product_name = require_property(properties, "cipherboard.productName")
+    generate_sbom(root, output / "SBOM.json", timestamp, version, application_id, product_name, apk)
     generate_build_info(root, apk, output / "BUILD_INFO.txt", args.apksigner, args.apkanalyzer, timestamp)
     return 0
 

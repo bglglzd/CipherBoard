@@ -4,6 +4,53 @@ Status: normative design for CipherBoard v1. Statements marked **MUST** are
 release requirements, not claims about the current worktree. Implementation
 status is tracked separately in `SECURITY_CHECKLIST.md`.
 
+### Current implementation snapshot (2026-07-13)
+
+The worktree currently contains four physical Gradle modules: `:app`,
+`:crypto-core`, `:secure-storage`, and `:pairing`. `keyboard`, `secure-ui`, and
+`transport-envelope` remain logical package boundaries inside those modules;
+they are not separate Gradle modules. The Rust transport implementation lives
+inside `crypto-core/native`.
+
+Implemented source paths include:
+
+- an Android Keystore wrapping-key manager, authenticated encrypted record
+  store, encrypted owner/contact/pairing records, and revision-checked SQLite
+  transactions;
+- `SecureKeyboardRuntime`, which commits an advanced ratchet plus pending
+  outbound ciphertext before publication and commits replay, advanced ratchet,
+  and encrypted pending-display plaintext before returning it to the viewer;
+- a separate `FLAG_SECURE` composer activity with no-learning editor flags,
+  best-effort buffer clearing, contact/vault status, Universal/SMS selection,
+  and a one-shot process-local handoff of an exact persisted pending ciphertext
+  back to the originating host editor through the active IME;
+- bounded selected-text and `ACTION_PROCESS_TEXT` parsing, authenticated vault
+  unlock, a drawing-only protected viewer, timeout/background clearing, and
+  secure reply by internal contact ID;
+- an offline ZXing/CameraX QR codec and one-shot scanner controller joined to
+  a non-exported `FLAG_SECURE` two-QR pairing activity and an Android
+  coordinator that stages/consumes encrypted one-shot state for both roles;
+  and
+- a non-exported contact-details UI for fingerprint/Safety Number display,
+  rename, reverify, session destruction, deletion, and explicit re-pairing.
+
+Pending outbound records are contact-bound and can be retried without another
+ratchet step. The handoff capability is single-use and is bound to the pending
+operation, exact ciphertext, original host package/UID, input field metadata,
+selection and `InputConnection`/binder identity. The composer only encrypts,
+persists and arms this handoff; `LatinIME` performs `commitText()` after the
+original host editor is restored and then completes the pending record.
+Inbound recovery is bound to the digest of the complete ordered ciphertext;
+an abandoned pre-render lease retains the encrypted pending display for an
+exact retry, while a rendered/closed lease deletes it under no-history policy.
+
+The pairing/contact flow expires or cancels orphaned active operations in
+bounded cleanup batches and blocks a changed remote identity until explicit
+Safety Number verification. It has JVM state-machine coverage but no live
+two-device, process-kill, camera-permission, rotation, or GrapheneOS evidence.
+The provisional wire format and remaining protocol decisions are documented in
+`CRYPTO_PROTOCOL.md`.
+
 ## 1. System Context
 
 CipherBoard is one offline Android APK with two user-facing roles:
@@ -45,20 +92,25 @@ No module may invent a cryptographic primitive. `crypto-core` exposes a small
 byte-oriented JNI API; no long-lived native pointer is owned by Kotlin.
 
 Current upstream is HeliBoard `v4.0` at
-`bd48798b99cccc99704eebf2a9259c02dbd684d5`. The existing physical `:app`
-module and `crypto-core/native` scaffold do not by themselves mean the logical
-boundaries above are complete.
+`bd48798b99cccc99704eebf2a9259c02dbd684d5`. The physical Gradle/library
+modules do not by themselves mean the logical boundaries above are complete.
 
 ## 3. Runtime Components and Export Rules
 
 - `LatinIME` is exported only because Android requires an IME service and is
   protected by `android.permission.BIND_INPUT_METHOD`.
-- The launcher/settings activity is exported only for `MAIN/LAUNCHER`.
+- `CipherBoardHomeActivity` is exported for `MAIN/LAUNCHER`. Inherited settings
+  activities are non-exported; the external dictionary-dispatch intent surface
+  is removed. Remaining content-URI import paths are bounded and still require
+  final hostile-provider/device tests.
 - The process-text activity is exported for `ACTION_PROCESS_TEXT`, accepts
-  read-only `text/plain`, validates caller-supplied text before allocation or
-  storage, never returns a result containing plaintext, and has no arbitrary
+  read-only `text/plain`, requires an explicit Decrypt action before parsing or
+  ratchet mutation, validates caller-supplied text before unbounded allocation
+  or storage, never returns a result containing plaintext, and has no arbitrary
   deep-link route.
-- Pairing, viewer, composer, contact, and vault activities are non-exported.
+- Viewer, composer, pairing, contact-details, vault-settings and
+  security-information activities are non-exported. Pairing repair navigation
+  carries only a short-lived process-local token rather than a raw contact ID.
 - Boot and screen-state receivers perform only lock/migration bookkeeping.
   They never open the secure database before user unlock.
 - Providers are non-exported and MUST NOT expose secure storage. Upstream file
@@ -93,9 +145,11 @@ history, and learned secure-composer words are forbidden in DE storage.
 
 Every secure record lives under an explicitly credential-protected context.
 Opening it requires both `UserManager.isUserUnlocked == true` and an active
-authenticated DEK lease. Before first unlock, the shield action shows a locked
-state and cannot create identity, pair, encrypt, decrypt, enumerate contacts,
-or recover a pending operation. The ordinary keyboard remains usable.
+authenticated DEK lease. The IME and secure components are not direct-boot
+aware, so they do not start against CE preferences before first unlock. After
+first unlock, ordinary keyboard input is available; identity, pairing,
+encrypt/decrypt, contact enumeration and pending recovery still require an
+authenticated vault lease.
 
 Tests scan both `/data/user_de/` and `/data/user/` on a test device using
 sentinel values. Backup/restore code MUST have no route from the secure
@@ -106,8 +160,9 @@ repository into upstream keyboard backup archives.
 ### 5.1 Key hierarchy
 
 1. Generate a non-exportable AES-256-GCM key in Android Keystore.
-2. Request StrongBox first. Catch `StrongBoxUnavailableException` and retry in
-   TEE without crashing.
+2. Request StrongBox first. Catch `StrongBoxUnavailableException` and retry with
+   the platform Keystore without crashing; call the fallback TEE-backed only
+   when `KeyInfo` actually reports `TRUSTED_ENVIRONMENT`.
 3. Require `BIOMETRIC_STRONG` or `DEVICE_CREDENTIAL` authentication. The
    default lease is one minute; available policies are immediate, 30 seconds,
    one minute, and five minutes.
@@ -118,11 +173,12 @@ repository into upstream keyboard backup archives.
    strings.
 
 `KeyInfo.securityLevel` (or `isInsideSecureHardware` on older supported APIs)
-is shown honestly as StrongBox, TEE, software, or unknown. Secure messaging
-fails closed if a hardware-backed level required by release policy is not
-available; the ordinary keyboard still works. Keystore invalidation locks the
-vault and starts an explicit destructive recovery/re-pair flow. It never
-silently creates a replacement identity for existing contacts.
+is returned and shown after unlock. The StrongBox attempt falls back only to a
+key reported as `TRUSTED_ENVIRONMENT`; software or unknown security levels are
+rejected rather than mislabeled or silently accepted. Keystore invalidation
+locks the vault and existing records are not silently replaced. Physical
+StrongBox, TEE-fallback, biometric/device-credential and invalidation evidence
+is still required.
 
 ### 5.2 Record encryption
 
@@ -139,11 +195,23 @@ ledger, pending sends, and pending displays. Vodozemac pickles receive this
 outer authenticated-encryption layer; their legacy pickle encryption is not
 the sole at-rest protection.
 
-The database uses foreign keys and one transaction connection for every
-ratchet mutation. A per-contact mutex plus a persisted expected revision
-serializes send and receive. An optimistic revision mismatch aborts without
-publishing output. Android backup is disabled and data-extraction rules exclude
-all app data. There is no ratchet backup, export, restore, or clone function.
+The current SQLite schema also keeps operational indexes outside those AEAD
+blobs: record kind, SHA-256-derived keys/owner keys, record revision and
+creation/update timestamps, plus a `replay_ids` table containing a hash derived
+from random internal contact ID and public message ID and a receive timestamp.
+The bounded seen-message-ID ledger itself is also inside the encrypted session
+snapshot. The unencrypted indexes do not reveal contact names or raw IDs, but
+they reveal counts/timing and are not independently authenticated; database
+tampering can cause denial of service. Minimizing or authenticating this
+metadata is an open storage-hardening item.
+
+The database uses one SQLite transaction for every ratchet mutation.
+`SecureKeyboardRuntime` currently serializes operations with one process-wide
+lock and the store checks a persisted expected revision. An optimistic revision
+mismatch aborts without publishing output. Android backup is disabled in the
+source manifest and extraction rules exclude all app data; the merged release
+APK and real backup/transfer behavior still require verification. There is no
+ratchet backup, export, restore, or clone function.
 
 Flash wear levelling and JVM copies prevent a guarantee of physical secure
 erasure. Deletion removes keys/references and overwrites mutable buffers on a
@@ -151,55 +219,42 @@ best-effort basis; documentation MUST not claim more.
 
 ## 6. IME Plaintext Isolation
 
-Secure Composer does not edit the host application's field. It owns a private
-editor buffer in CipherBoard and uses the existing HeliBoard key layout as an
-input surface. Plaintext is never passed in an intent extra, saved instance
-state, `SavedStateHandle`, persistent draft, clipboard, suggestion history, or
-host `InputConnection`.
+Secure Composer is currently a separate CipherBoard activity and does not edit
+the host application's field. It owns a private `EditText`; the selected system
+IME, normally CipherBoard itself, provides its input. The view disables state
+saving, autofill, selection/copy/cut/share and personalized-learning flags, and
+is cleared on stop/destroy. No plaintext intent extra or persistent draft API
+exists. This source inspection is not yet the required sentinel test proving
+absence from IME learning, clipboard history, saved state, logs, or storage.
 
-### 6.1 First gate: event routing
+### 6.1 CipherBoard-owned editor boundary
 
-`SecureModeController` has fail-closed states `OFF`, `ENTERING`, `ACTIVE`,
-`ENCRYPTING`, and `EXITING`. In every state other than `OFF`, printable keys,
-gesture results, suggestions, emoji, space/enter, delete, composing updates,
-and editor actions are routed to a `SecureComposerSink`. The normal
-`InputLogic` host sink is detached. Personal learning, recents updates,
-clipboard suggestions/history, application completions, and host surrounding
-text reads are disabled before the state becomes `ACTIVE`.
+Composition occurs in a separate CipherBoard activity, so plaintext key events
+target its private editor rather than the host application's editor. The
+composer refuses plaintext entry unless CipherBoard is the current default IME
+and observes default-IME changes while open. CipherBoard-owned fields force
+`IME_FLAG_NO_PERSONALIZED_LEARNING` and no-suggestion semantics in the upstream
+`InputAttributes` path; the plaintext editor also disables state saving,
+autofill, content capture, Accessibility exposure and ordinary copy/cut/share.
+A password-field launch requires an explicit warning. Instrumented sentinel
+tests with upstream clipboard/learning preferences enabled remain required.
 
-Entry first finishes any pre-existing ordinary host composition, clears
-HeliBoard caches, and then flips the gate. Exit wipes composer buffers, clears
-IME caches and suggestion state, and only then restores ordinary routing. A
-password field requires an explicit warning before opening secure mode and
-never triggers an automatic ciphertext commit.
+### 6.2 One-shot host commit gate
 
-### 6.2 Second gate: `RichInputConnection`
+Encryption obtains the exact contact-bound `PendingOutbound` created in the
+same revision-checked storage operation. `SecureImeBridge` arms one in-memory
+capability containing its operation ID and exact `CB1` parts, scoped to the
+original host package and UID, editor/field identifiers, selection, private
+IME options and `InputConnection`/binder identity. The composer never receives
+or invokes the host connection; it clears and closes after durable encryption.
 
-Event routing is not sufficient because upstream has many output paths.
-`RichInputConnection` (and any remaining direct
-`getCurrentInputConnection()` call) MUST enforce the same gate at the final IPC
-boundary. While secure mode is not `OFF`, it denies normal calls that can send
-or transform content, including:
-
-- `commitText`, `setComposingText`, `setComposingRegion`, `commitCompletion`,
-  `commitCorrection`, and `commitContent`;
-- printable `sendKeyEvent`, paste/private commands, and editor actions;
-- host selection/cursor edits or batch operations not needed by the one
-  authorized commit; and
-- surrounding/extracted-text reads except the explicit bounded
-  "decrypt selected ciphertext" operation.
-
-Encryption creates a one-use, in-memory `CiphertextCommitCapability` bound to
-the persisted pending-operation ID, target `InputConnection` generation, exact
-wire bytes, and expiry. A dedicated `CiphertextCommitter` re-parses those bytes
-as bounded `CB1` data, verifies they equal the encrypted pending record, and
-calls `InputConnection.commitText()` once. The capability cannot authorize
-arbitrary text, `setComposingText`, key events, content URIs, or a different
-editor generation. It is consumed on the attempt, regardless of result.
-
-A CI source scan maintains an allowlist of all direct `InputConnection` access.
-Tests use a recording hostile `InputConnection` and fail if any secure
-plaintext reaches any method, not only `commitText`.
+When the original host editor is restored, `LatinIME` consumes the capability
+once, revalidates the editor scope, and performs one `commitText()` containing
+only the stored ciphertext. On success it deletes the pending record. On scope
+mismatch or failure, no arbitrary text is authorized and the contact-filtered
+pending operation remains available for exact retry without another encryption
+step. Unit tests cover one-shot consumption and host/editor mismatch; a
+recording-host framework instrumentation test remains a release gate.
 
 ## 7. Atomic Ratchet Operations
 
@@ -209,31 +264,41 @@ output bytes; Kotlin MUST not publish the output first.
 
 ### 7.1 Send
 
-Persisted send states are `READY_TO_COMMIT`, `HOST_ACCEPTED`, and `ABANDONED`.
+The current store represents readiness by one contact-bound encrypted
+pending-outbound record and deletes it only after a successful scoped
+`commitText()` attempt. The inner message has no sender sequence; the persisted
+ratchet revision supplies local concurrency control.
 
 1. Lock the contact and load session revision `n`.
 2. Encode the inner payload and call `Session::encrypt()` once.
 3. Build and fragment the exact `CB1` wire representation.
-4. In one database transaction, store session revision `n+1`, sender sequence,
-   and an encrypted `READY_TO_COMMIT` record containing the exact ciphertext.
+4. In one database transaction, store session revision `n+1` and an encrypted
+   pending record containing contact ID and the exact ciphertext.
 5. Only after commit, mint the scoped commit capability and send the exact wire
    bytes to the current host editor.
-6. If `InputConnection.commitText()` returns true, mark `HOST_ACCEPTED` in a
-   second transaction and wipe the composer. On false, retain the pending
-   ciphertext and show a retry/export-ciphertext-only action.
+6. If `InputConnection.commitText()` returns true, delete the pending record.
+   On false or scope mismatch, retain it for the contact-filtered retry action.
 
 A crash before step 4 leaves revision `n` and no externally visible
-ciphertext. A crash after step 4 recovers the already encrypted bytes and MUST
-never call `encrypt()` again. A crash after the host accepted text but before
-step 6 is inherently ambiguous because Android provides no transactional
-acknowledgement across application processes. Recovery labels the operation
-"insertion status unknown"; only an explicit user retry may reinsert the same
-ciphertext. It never advances the ratchet again. Receiver replay protection
-makes such a duplicate harmless, though duplicate transport text can remain.
+ciphertext. A crash after step 4 can be recovered from the already encrypted
+bytes without calling `encrypt()` again; the composer exposes the exact retry
+for the selected contact. A crash after the host accepted text but before
+pending deletion is inherently
+ambiguous because Android provides no transactional acknowledgement across
+application processes; the current record has no explicit "insertion status
+unknown" state. Receiver replay protection limits disclosure from a duplicate,
+but duplicate transport text can remain.
 
 ### 7.2 Receive
 
-Persisted display states are `READY_TO_DISPLAY`, `DISPLAYING`, and `CLOSED`.
+The store represents readiness by one encrypted pending-display record. It is
+bound to the contact, message ID and SHA-256 digest of the exact complete
+ordered ciphertext parts.
+
+The provisional inner message binds message ID and capabilities inside Olm but
+does not repeat identity, routing tag, sequence or content type. Strict UTF-8
+validation happens in the Android viewer after the receive transaction, not in
+Rust. The richer validation in step 3 remains a target protocol requirement.
 
 1. Strictly parse/reassemble all parts, then lock and resolve the contact.
 2. Reject a committed message ID replay before invoking Rust.
@@ -242,46 +307,74 @@ Persisted display states are `READY_TO_DISPLAY`, `DISPLAYING`, and `CLOSED`.
 4. In one transaction, store session revision `n+1`, replay record, receive
    sequence/window, and a DEK-encrypted `READY_TO_DISPLAY` plaintext record.
 5. Only after commit, decrypt the pending display record into the secure viewer.
-6. On close/background/timeout, wipe UI buffers and delete the pending display
-   record because v1 has no plaintext history.
+6. Mark the lease displayed only after the protected view accepts the text. On
+   close/background/timeout after render, wipe UI buffers and delete the
+   pending display because v1 has no plaintext history. Abandon before render
+   wipes the temporary buffer but retains the encrypted record for exact retry.
 
 A crash before step 4 changes nothing and the ciphertext may be tried again. A
-crash after step 4 recovers the pending display without decrypting the Olm
-message again. Authentication, parse, wrong-contact, replay, or skipped-key
-errors do not change persisted session state.
+crash after step 4 leaves a recoverable encrypted pending display without
+decrypting the Olm message again. Retrying the exact ciphertext reopens that
+record; a same-ID payload with a different digest fails closed.
+Authentication, parse, wrong-contact, replay, or skipped-key errors are designed
+not to change persisted state. A targeted remote-process SIGKILL after the
+inbound commit verifies recovery of the advanced revision, replay marker and
+encrypted pending display. Crashes between individual transaction statements
+and the wider device restart/error matrix remain untested.
 
 ## 8. Pairing and Trust
 
-Pairing is an explicit state machine: `OFFER_CREATED`, `RESPONSE_CREATED`,
+The target pairing state machine is `OFFER_CREATED`, `RESPONSE_CREATED`,
 `RESPONSE_ACCEPTED`, `UNVERIFIED`, `VERIFIED`, `EXPIRED`, or `CANCELLED`.
-Offers have a ten-minute maximum lifetime, random ID and nonce, are stored
-encrypted, and are single-use. Imported pairing IDs are recorded to reject
-re-import. Expiry supplements rather than replaces the consumption ledger,
-because offline wall-clock rollback cannot be excluded.
+Offers must have a short maximum lifetime, random ID and nonce, encrypted
+pending storage, and single-use/import protection. Expiry supplements rather
+than replaces a consumption ledger because offline wall-clock rollback cannot
+be excluded. The provisional Rust implementation permits up to 15 minutes;
+the earlier ten-minute design value is not its current wire behavior.
 
 Device B verifies and imports A's signed offer, creates an Olm V2 outbound
 session, encrypts a pairing-confirmation pre-key message, and shows a signed
 response QR. Device A verifies the response and transcript, creates the inbound
 session, consumes the one-time key, and commits the advanced account pickle,
 session, offer consumption, and contact state atomically. Ordinary `CB1` user
-messages can never create an inbound session. Both derive the same transcript
-hash, numeric Safety Number, and emoji code as specified in
-`CRYPTO_PROTOCOL.md`.
+messages can never create an inbound session. Both derive the same safety hash
+and comparison values as specified in `CRYPTO_PROTOCOL.md`.
 
-Cryptographic session creation yields `UNVERIFIED`. Each user must visually
-compare the displayed values and explicitly confirm before that local contact
-becomes `VERIFIED`. A changed identity key is a critical `KEY_CHANGED` state;
-no trust-on-first-use replacement is allowed. Re-pairing destroys the old
-session only after explicit confirmation and a new physical ceremony.
+Each user must visually compare the displayed values and explicitly confirm
+before that device persists a `VERIFIED` local contact. A changed identity key
+is a critical `KEY_CHANGED` state; no trust-on-first-use replacement is
+allowed. The current repair UI requires explicit session destruction first,
+then permits replacement only for a contact already marked as requiring
+pairing. Cancelling that new ceremony therefore leaves the contact safely
+blocked but without its old session.
+
+Crypto-core offer/response generation, storage codecs/repository mutations,
+Android coordinator and two-QR activity are joined in the current source. The
+coordinator atomically stages the responder session/response, resumes only the
+same pending offer, rejects consumed/expired state, and consumes pending state
+with contact and initial ratchet creation after explicit local confirmation.
+The activity requests Camera only from a Scan action, keeps QR handles out of
+saved state, clears QR bitmaps on exit/background, and is non-exported with
+`FLAG_SECURE`. Entry performs bounded cleanup of expired/orphaned active
+pairings, cancelling them and tombstoning their session payload; unfinished
+pairings can also be deleted explicitly. A changed identity is persisted as a
+blocking `KEY_CHANGED`/repair-required state until explicit physical pairing
+and Safety Number confirmation. The numeric Safety Number and eight-word code
+are both deterministic renderings of the same transcript hash. JVM tests cover
+these state transitions; live two-device and forced-process-crash evidence is
+still absent.
 
 ## 9. Secure UI Lifecycle
 
-Composer and viewer windows set `FLAG_SECURE`, disable autofill/content capture,
-exclude themselves from recents, hide on screen-off, and clear on
-`onStop`/background. Viewer text is non-selectable by default, has no share or
-copy action, is not exposed to Assistant, and closes on the configured timeout.
-"Reply securely" carries only an internal random contact ID; plaintext is
-wiped before navigation.
+Composer and viewer windows set `FLAG_SECURE` and are excluded from recents by
+the source manifest. The composer disables autofill and clears its editor on
+`onStop`; the viewer disables autofill/content capture and Android 13+ recents
+screenshots, clears on pause/stop/UI-hidden, and closes on a fixed 60-second
+backend timeout (bounded by the viewer to 10 seconds through five minutes).
+Viewer plaintext is drawn by a non-focusable, non-selectable view excluded from
+Accessibility; Assistant bundles are cleared. "Reply securely" carries only an
+internal contact ID and closes the display lease. Screen-off, screenshot,
+recents, Assistant and Accessibility behavior still requires device evidence.
 
 Kotlin uses `ByteArray`/`CharArray` where APIs permit, wipes arrays in `finally`,
 cancels work at lifecycle exit, and clears editable/spannable and IME caches.
@@ -309,6 +402,13 @@ Build and release gates also verify:
 
 Any appearance of `android.permission.INTERNET` is an unconditional release
 failure.
+
+The current source manifest contains no `INTERNET` or `ACCESS_NETWORK_STATE`.
+The CameraX video/media dependency path that introduced network-state
+permission is excluded from the runtime graph. The manifest also has
+`allowBackup=false`, complete extraction exclusions, and cleartext denial.
+These source controls and policy tests are implemented; the exact production-
+signed APK still requires an independent final permission dump.
 
 ## 11. Architectural Limits
 

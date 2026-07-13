@@ -1,149 +1,188 @@
 # CipherBoard Security Review Status
 
-Review date: 2026-07-13. This is an internal engineering review, not an
-independent security audit and not a production release approval.
+**Review date:** 2026-07-13
 
-## Reviewed Evidence
+**Reviewed tree:** current 2026-07-13 worktree; record the final commit in
+`BUILD_INFO.txt` for any artifact review
 
-The following evidence was observed for the committed crypto/JNI baseline:
+**Assurance:** internal source/document review, not an independent audit and not
+a production release approval
+
+Evidence below applies only to the named source/tests. It does not establish
+the signature, final merged manifest, physical-device or GrapheneOS behavior of
+an eventual production artifact.
+
+## Evidence Observed
 
 - `vodozemac 0.10.0` is exact-versioned with default features disabled and Olm
-  `SessionConfig::version_2()` enforced.
-- Cargo dependency graphs are fixed by two lockfiles; `cargo audit` reported no
-  known advisories at review time.
-- Native crypto tests: 20 passing, including 1000 messages, bounded
-  out-of-order delivery, replay after restart, tamper/truncation, Unicode,
-  multipart limits, corrupt state and transactional crash boundaries.
-- JNI host tests: three passing suites covering all opcodes, Alice/Bob pairing,
-  encrypt/decrypt, malformed input and property-generated arbitrary requests.
-- Android JNI instrumentation: one full Alice/Bob identity, QR transcript,
-  encrypt/decrypt and zeroization smoke test passed on an API 36 x86_64 AOSP
-  emulator.
-- Strict Rust formatting and Clippy passed; no raw native state handles cross
-  JNI. JNI exposes one `nativeInvoke(Int, ByteArray): ByteArray` operation.
-- The source manifest declares backup exclusion and cleartext disabled. The
-  repository contains no WebView or dynamic-code-loader use found by source
-  search.
+  `SessionConfig::version_2()` enforced. Rust Cargo lockfiles are checked in.
+- The latest native test run reported 27 passing tests. The suite covers
+  Alice/Bob pairing and matching comparison values, bidirectional traffic,
+  1000 messages, bounded reordering, replay after state restore, tamper,
+  truncation, Unicode, multipart bounds, state corruption, transactional API
+  boundaries, and canonical-CBOR regressions. Rust format and Clippy checks
+  were also reported passing in the same work session.
+- The complete current Gradle unit gate passes for `:app:testDebugUnitTest`,
+  `:crypto-core:testDebugUnitTest`, `:pairing:testDebugUnitTest`, and
+  `:secure-storage:testDebugUnitTest`. Module release lint gates also pass. Two
+  inherited HeliBoard regressions are explicitly `@Ignore`d with issue-specific
+  reasons; the full current gate does not rely on the older `runTests` build-
+  type bypass.
+- A pinned `cargo-fuzz 0.13.2`/`libfuzzer-sys 0.4.13` ASan campaign exercised
+  the production `CB1`/canonical-CBOR envelope parser for 601,574 inputs in 31
+  seconds with zero crashes or timeouts. The tracked harness has three bounded
+  modes and three seed files. This is useful parser evidence, not a substitute
+  for longer scheduled runs or pairing/JNI fuzz targets.
+- `:app:connectedDebugAndroidTest --no-configuration-cache` passed 7/7 tests
+  with zero failures/skips on the API 36 x86_64 `CipherBoard_API_36_AOSP`
+  no-Play emulator. The tests verify read-only process-text return behavior,
+  protected-viewer flags/background wiping, ciphertext-only clipboard fallback,
+  two close/reopen storage transactions, and three actual remote-process
+  `Process.killProcess`/SIGKILL boundaries. The fault fixture exists only in the
+  debug manifest/source set and is excluded from release.
+- The current debug APK also installed and launched its Home activity on that
+  emulator. English and per-app `ru-RU` Home hierarchies had bounded,
+  non-overlapping controls; Russian Home also fit in landscape at
+  `font_scale=1.3`. A `FLAG_SECURE` test capture was fully black, but this is not
+  secure-viewer screenshot acceptance. An inherited `SystemBroadcastReceiver`
+  locale-change self-termination loop found before IME selection was fixed; the
+  rebuilt process remained alive for the recorded three-second observation and
+  exposed the Russian hierarchy.
+- Source review confirms `allowBackup=false`, all-domain backup/device-transfer
+  exclusions, cleartext denial and no `INTERNET` or `ACCESS_NETWORK_STATE`
+  declaration. The CameraX video/media dependency path that introduced the
+  latter permission is excluded.
+- Packageable `:app` dependency graphs use strict locking in the checked-in
+  `app/gradle.lockfile`. Release SBOM generation consumes the resolved Gradle
+  graph plus locked Rust graphs; the generated artifact still needs manual
+  license review.
+- The release preflight verified an official OSV-Scanner v2.4.0 binary against
+  its pinned SHA-256 allowlist, required fresh local Maven and crates.io
+  vulnerability databases, and scanned all 255 CycloneDX SBOM packages fully
+  offline. It exited successfully with zero findings and produced
+  `VULNERABILITY_SCAN.json`; the clean final release must repeat this check.
+- GPLv3/Apache/BlueOak/CC texts, consolidated BSD notices, upstream provenance
+  and the license inventory are generated as offline APK assets, required
+  nonempty by a unit test, and displayed by a non-exported local license
+  activity. Release staging also creates an exact-commit source archive; both
+  outputs still require inspection on the final artifact.
+- Source search found no production HTTP client, Firebase, Google Play Services,
+  analytics, crash-reporting, advertising, WebView, or dynamic-code-loader use.
+  An inherited JVM test uses `HttpURLConnection`; it is not packaged production
+  code.
 
-This evidence proves only the tested module behavior at that point in time. It
-does not prove behavior of a future final APK.
+## Implemented Controls
 
-## Security Controls Implemented
+| Area | Current source control | Evidence still required |
+| --- | --- | --- |
+| Crypto | vodozemac Olm v2; signed offer/response; exact Rust versions | final protocol review, golden vectors, pairing/JNI fuzzing |
+| Envelope | bounded `CB1` Base64url/canonical-CBOR map; duplicate/core-field/trailing-byte checks; order-independent parts; real ASan/libFuzzer campaign | longer scheduled and Android/device tests |
+| Replay | 4096 IDs in serialized session plus per-contact 8192-marker SQLite bound committed with inbound state | inbound SIGKILL/reopen test passes; wider long-run/device restart matrix remains |
+| Storage | AES-256-GCM records with type/key/schema/revision AAD; random nonces; no-backup CE location | stolen-DB, WAL/SHM, corruption and backup/transfer device tests |
+| Keystore | non-exportable AES wrapping key; StrongBox-first; only reported TEE accepted as fallback; software/unknown rejected; user authentication | real StrongBox/TEE/invalidation/reboot tests |
+| Send atomicity | advanced ratchet plus contact-bound exact pending ciphertext commit before a one-shot host/editor-scoped IME handoff; exact retry without re-encrypt | real SIGKILL before commit and after commit/before handoff pass; in-transaction and real host-ack window remain |
+| Receive atomicity | replay, advanced ratchet and encrypted pending display commit together; exact-ciphertext digest recovery; pre-render abandon retains record | real post-commit SIGKILL and close/reopen pass; in-transaction failpoints remain |
+| Composer | separate `FLAG_SECURE` activity, no saved view state/autofill/copy/cut/paste/share, no-learning/clipboard-history gates, background clearing | hostile `InputConnection`, clipboard/learning/log/storage sentinel suite |
+| Decrypt/viewer | hostile selected-text bounds, read-only process-text result, vault auth, drawing-only inaccessible text, `FLAG_SECURE`, recents/background/timeout cleanup, reply by contact ID | process-text/FLAG_SECURE/background wipe/zeroization and clipboard fallback pass on AOSP; a separate `FLAG_SECURE` test screencap is black, while secure-viewer screenshot/recents/Assistant/Accessibility/screen-lock evidence remains |
+| Pairing/contact | signed native offer/response; encrypted one-shot state; bounded orphan cleanup; explicit comparison; changed identity blocks use until verification | live two-device, camera permission, lifecycle, process-kill and hostile-QR instrumentation |
+| QR | local ZXing codec and lifecycle-bound CameraX scanner with bounded ASCII payloads; Camera requested only by the Scan actions | real permission grant/deny/revoke and two-device camera evidence |
+| Manifest/signing | source backup/cleartext controls, forbidden-permission tests and public release-certificate SHA-256 pin | final signed APK `aapt`/`apkanalyzer`/`apksigner` verification |
 
-| Area | Current control |
-| --- | --- |
-| Crypto | vodozemac Olm v2; signed QR transcript; exact Cargo versions |
-| Transport | strict bounded CBOR/base64url parser; multipart consistency; inner message-ID binding |
-| Replay | bounded persistent message IDs plus Olm used-key rejection |
-| State transitions | consuming prepare APIs return `next_state` before ciphertext/plaintext exposure |
-| JNI | bounded versioned CBOR, stable numeric errors, no native pointer handles, temporary buffer zeroization |
-| Storage module | Keystore wrapping, StrongBox attempt/TEE fallback, authenticated records and lock policy code exists |
-| Pairing module | offline ZXing decoding and CameraX scanner module; camera is requested by the UI layer when used |
-| Manifest source | backup disabled; cleartext disabled; forbidden permission test code exists |
-| Release verifier | independent aapt/apkanalyzer/apksigner/zipalign/XML/DEX checks |
+## Verified Android Instrumentation Scope
 
-## Release Blockers
+The previous broad full-app/process-kill evidence blocker is closed for the
+seven demonstrated API 36 AOSP tests. Specifically:
 
-### Critical
+- process-text returns `RESULT_CANCELED` with no result data and leaves host text
+  unchanged; the viewer sets `FLAG_SECURE`, wipes byte/character plaintext on
+  background, and closes its display lease;
+- ciphertext clipboard fallback occurs only after the explicit action and the
+  original ciphertext clip remains unchanged;
+- outbound pending ciphertext and inbound replay/pending-display state remain
+  atomic across ordinary store close/reopen; and
+- three debug-only remote `:fault` process cases use actual SIGKILL before
+  outbound commit, after outbound commit before handoff, and after inbound
+  commit, then assert revision, exact pending ciphertext, replay marker and
+  pending display after reopening storage.
 
-1. **End-to-end product workflow is incomplete.** The application does not yet
-   expose the required Secure Composer, protected plaintext viewer,
-   `ACTION_PROCESS_TEXT` decrypt activity, selected-text decrypt flow, secure
-   reply, or complete contacts UI. Module tests cannot satisfy product
-   acceptance criteria.
-2. **Atomic storage integration is not demonstrated end to end.** The crypto
-   API returns transactional next state and the storage module has pending
-   records, but the application has not demonstrated atomic commit before
-   `InputConnection.commitText()` or before plaintext display across forced
-   process crashes.
-3. **Plaintext leakage controls are not verified in the final UI.** There is no
-   final evidence for `FLAG_SECURE`, recent-task redaction, background clearing,
-   accessibility/Assistant behavior, clipboard exclusion, saved-state
-   exclusion, no-learning mode, or logcat scans during the real workflow.
+This evidence does not inject a crash between individual SQLite statements
+inside one transaction, kill immediately around acknowledgement from a real
+host `InputConnection.commitText()`, or exercise a complete IME/composer/live-
+camera pairing flow. Android cannot know whether a host accepted `commitText()`
+immediately before process death; recovery may reinsert the exact ciphertext
+but must never re-encrypt from stale state, and the receiver rejects a duplicate
+as replay. These are explicit remaining coverage gaps, not claims of a test pass.
 
-### High
+## Residual Validation Before High-risk Use
 
-4. **No production-signed APK has been produced or independently verified.** A
-   release certificate fingerprint and final permission list do not exist yet.
-5. **Gradle transitives are not locked.** Direct versions are declared, but no
-   Gradle lockfiles are checked in. Builds are not yet reproducible.
-6. **Generated dependency evidence still requires release review.** The release
-   scripts generate CycloneDX `SBOM.json` and `BUILD_INFO.txt`, but Gradle
-   transitives remain unlocked and any SBOM component marked
-   `cipherboard:licenseReview=required` must be resolved before publication.
-7. **Hardware-backed Keystore behavior is not proven on physical devices.**
-   StrongBox success, TEE fallback, key invalidation after lock-screen changes,
-   reboot behavior, biometric/device-credential flows and rollback resistance
-   need instrumentation on relevant GrapheneOS devices.
-8. **Pairing lifecycle integration remains incomplete.** Expiry and OTK
-   consumption exist in crypto; cancellation, persisted pending offers,
-   duplicate QR UX, verified-state transitions and re-pairing/key-change alarms
-   require application-level tests.
+The following are assurance prerequisites and residual validation, not known
+critical source-code defects:
 
-### Medium
+- independent applied-cryptography and Android security review of the exact
+  protocol bytes, state transitions, IME/JNI/storage boundaries and final build;
+- physical GrapheneOS operation without Google Play, live two-camera QR pairing,
+  just-in-time permission grant/deny/revoke, and Network permission denial;
+- real StrongBox and TEE-only generation, authentication, reboot, timeout and
+  invalidation behavior; and
+- screenshot/recents/Accessibility/Assistant/screen-lock validation plus
+  independent hash, signature, permission, SBOM, vulnerability, source/license
+  bundle and installation checks for the exact clean final artifact.
 
-9. **Parser fuzzing is property-based, not a sustained native fuzz campaign.**
-   Add coverage-guided fuzzing with a retained corpus for transport and JNI
-   request codecs.
-10. **Exported-component policy is structural.** The verifier rejects unknown
-    exported shapes, but every exported intent handler still needs manual
-    validation review and malicious-intent instrumentation.
-11. **JNI uses `panic=abort` in release.** Expected failures are returned as
-    fixed codes, but an unexpected Rust panic terminates the process. Continue
-    removing panic paths and fuzz the exact release configuration.
-12. **Best-effort zeroization has platform limits.** Rust and owned Kotlin
-    buffers are cleared, but JVM strings, UI widgets, allocator copies and
-    operating-system memory may retain data. No guarantee of complete RAM
-    erasure is made.
-13. **Signing automation temporarily materializes passwords.** They are stored
-    only in restricted temporary files and never placed in command arguments,
-    but shell/JVM memory cannot be guaranteed to zeroize. Prefer a dedicated
-    offline signing environment or hardware-backed signing process for high
-    assurance.
+Lack of independent audit or physical-device evidence limits assurance and must
+be disclosed before high-risk use. It should not be mislabeled as a critical
+code vulnerability when no such defect has been demonstrated.
+
+## Documented Residual Risks and Follow-up
+
+- SQLite lookup/replay hashes, record kinds, revisions and timestamps expose
+  bounded count/timing metadata and permit denial-of-service tampering, while
+  secret values and ratchet state remain AEAD-encrypted.
+- Selected-text entry paths intentionally use different UI bounds; the larger
+  viewer grammar and smaller IME selection cap need device UX coverage.
+- JVM/Android UI objects, public routing/fingerprint summaries and local names
+  cannot be guaranteed to zeroize before garbage collection.
+- The 601,574-input ASan/libFuzzer run covers the envelope parser only; pairing,
+  inner and JNI codecs need additional targets and longer scheduled campaigns.
+- Restricted temporary password files avoid command-line disclosure, but
+  PowerShell/JVM memory cannot be guaranteed to zeroize; offline signing remains
+  preferable for a high-assurance release process.
+
+Previously reported source findings for unbounded offer lifetime, secure-mode
+paste, release panic handling, and absent invalidated-vault recovery have been
+closed in the current tree. Import bounds signed expiry against receiver time;
+secure editor/IME actions block paste and clipboard-history paths; Rust release
+profiles unwind into the JNI `catch_unwind` boundary; and destructive vault
+reset is offered only after observed key invalidation with explicit confirmation.
 
 ## APK Policy Review
 
-`scripts/verify-apk` fails on:
+`scripts/verify-apk` is designed to fail on forbidden permissions, backup or
+cleartext enablement, release debug/test flags, unknown exported shapes,
+network deep links, Firebase/GMS/advertising/analytics/crash/WebView/dynamic
+loader markers, invalid/non-v2/debug/mismatched-certificate signing and ZIP
+alignment failures. Release staging also hashes every published output.
 
-- Internet/network-state, contacts, SMS, overlay, broad package query and
-  accessibility-service permissions;
-- backup/cleartext, release debuggable/testOnly, unknown exported components,
-  exported providers and HTTP(S) deep links;
-- Firebase, GMS, advertising, analytics, crash SDK, WebView and dynamic loader
-  byte markers;
-- invalid signing, missing v2 signing, debug release certificate, or bad ZIP
-  alignment.
-
-This scanner does not establish that a component validates every semantic
-input, does not prove absence of native memory-safety defects, and cannot find
-all obfuscated malicious behavior. Treat it as a blocker test plus manual
+This scanner has not yet run against a final release APK. It cannot prove
+semantic caller validation, absence of native defects, absence of obfuscated
+behavior, or plaintext non-disclosure. It is a release blocker plus manual
 review, not an audit.
-
-## Dependency and License Review
-
-- HeliBoard upstream is pinned by full commit but its selected upstream commit
-  is unsigned; provenance is exact but not cryptographically attested.
-- Rust Cargo metadata contains license fields for every locked package.
-- vodozemac is Apache-2.0, compatible for aggregation with GPLv3 when Apache
-  notices and GPL corresponding-source duties are met.
-- Android direct versions and their license metadata are recorded in
-  `LICENSES.md`; absence of Gradle locking remains open.
-- No Firebase, Google Play Services, analytics, crash-reporting or ad dependency
-  is declared in the reviewed build files.
 
 ## Required Work Before High-risk Use
 
-1. Finish the application workflow and all critical controls above.
-2. Enable Gradle dependency locking, generate/review SBOM and reproducible build
-   information, and rebuild from a clean environment.
-3. Execute forced-crash atomicity tests at each persistent transition on real
-   Android storage.
-4. Perform GrapheneOS testing without Google Play on physical StrongBox and TEE
-   devices.
-5. Run leakage tests against logcat, clipboard, saved state, recents,
-   screenshots, Assistant and Accessibility.
-6. Obtain independent applied-cryptography and Android security review.
+1. Repeat and archive the seven passing AOSP instrumentation tests on the exact
+   release commit; add individual SQLite-statement failpoints, the real
+   `InputConnection.commitText()` acknowledgement window, and complete
+   IME/composer/pairing-camera E2E coverage.
+2. Run the full Gradle/Rust/static/fuzz/crash/leakage suite and repeat the pinned
+   offline OSV scan on a clean commit.
+3. Exercise physical GrapheneOS, live camera pairing, StrongBox/TEE,
+   authentication/invalidation, direct boot and protected windows as residual
+   platform validation.
+4. Build/sign/verify the clean release APK and independently recompute its
+   permissions, hash, certificate and complete artifact manifest.
+5. Obtain independent Android security and applied-cryptography review of the
+   exact protocol/build and remediate any findings before high-risk reliance.
 
-CipherBoard uses reviewed cryptographic primitives and has automated module
-tests, but the whole product must not be considered independently audited until
-external specialists have reviewed the integrated application and final build.
+Сборка реализует проверенные криптографические примитивы и прошла автоматические
+тесты, но весь продукт не следует считать независимо аудированным до проверки
+внешним специалистом по прикладной криптографии и Android security.

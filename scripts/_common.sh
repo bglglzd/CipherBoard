@@ -48,6 +48,14 @@ latest_build_tools_dir() {
     printf '%s' "$directory"
 }
 
+configured_build_tools_dir() {
+    sdk=$(sdk_root)
+    version=$(project_property cipherboard.buildToolsVersion)
+    directory=$sdk/build-tools/$version
+    [ -d "$directory" ] || die "configured Android SDK build-tools are not installed: $version"
+    printf '%s' "$directory"
+}
+
 sdk_executable() {
     base=$1
     shift
@@ -100,4 +108,13 @@ check_private_mode_posix() {
     else
         die "unable to verify file permissions: $path"
     fi
+}
+
+assert_clean_git_state() {
+    expected_commit=$1
+    actual_commit=$(git rev-parse HEAD) || die "cannot inspect Git HEAD"
+    [ "$actual_commit" = "$expected_commit" ] || die "Git HEAD changed during the release build"
+    status=$(git status --porcelain=v1 --untracked-files=all) || die "cannot inspect Git worktree"
+    [ -z "$status" ] || die "source worktree changed during the release build"
+    unset status actual_commit
 }

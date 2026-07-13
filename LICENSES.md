@@ -17,6 +17,11 @@ the upstream CC BY-SA set is covered by
 [`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0). CipherBoard branding does not
 claim affiliation with HeliBoard.
 
+The complete Blue Oak Model License used by `minicbor` is retained in
+[`LICENSE-BlueOak-1.0.0`](LICENSE-BlueOak-1.0.0). Consolidated BSD-3-Clause
+notices for the applicable resolved components are retained in
+[`LICENSE-BSD-3-Clause-NOTICES`](LICENSE-BSD-3-Clause-NOTICES).
+
 ## Android Runtime Dependencies
 
 The versions below are direct declarations in the current Gradle build. The
@@ -50,11 +55,11 @@ JetBrains Compose compatibility artifacts, JSpecify and the empty Guava
 license metadata is predominantly Apache-2.0; applicable BSD notices from
 CameraX are retained in packaged Android dependency metadata.
 
-**Reproducibility limitation:** Gradle dependency locking is not enabled and
-there is no checked-in Gradle lockfile. Direct versions and the Compose BOM are
-fixed, but the exact transitive graph is not yet cryptographically locked.
-Release engineering must enable and review Gradle locks before calling the
-build reproducible.
+Packageable application configurations use strict Gradle dependency locking.
+The reviewed resolved graph is committed in `app/gradle.lockfile`; intentional
+dependency changes must regenerate that file and review its diff together with
+the SBOM. This locks resolved versions, but does not by itself prove artifact
+provenance, license compatibility, or absence of vulnerabilities.
 
 ## Rust Runtime Dependencies
 
@@ -96,6 +101,8 @@ These are not intended to be packaged in the release APK:
 | --- | --- | --- |
 | Gradle | 8.14 | Apache-2.0 |
 | cargo-ndk | 4.1.2 used by the verified environment | MIT OR Apache-2.0 |
+| cargo-fuzz | 0.13.2 | MIT OR Apache-2.0 |
+| libfuzzer-sys | 0.4.13 | MIT OR Apache-2.0 |
 | proptest | 1.6.0 | MIT OR Apache-2.0 |
 | JUnit 4 | 4.13.2 | EPL-1.0 |
 | Mockito | 5.23.0 | MIT |
@@ -114,6 +121,22 @@ cargo tree --locked --target aarch64-linux-android --edges normal \
 ```
 
 Gradle POM metadata was checked from the resolved release graph. A generated
-SBOM and automated license-report artifact are still required for a production
-release; this hand-maintained inventory must be rechecked whenever a lockfile,
-BOM, or direct dependency changes.
+CycloneDX SBOM path now exists in the release scripts, but its exact-release
+output and every `cipherboard:licenseReview=required` component still require
+manual review. The release preflight used a SHA-pinned official OSV-Scanner
+v2.4.0 binary and fresh local Maven/crates.io databases to scan all 255 SBOM
+packages offline; it exited successfully with zero findings. The clean final
+release must repeat and archive this result. This inventory must be rechecked
+whenever a lockfile, BOM, or direct dependency changes.
+
+## Offline Distribution
+
+The APK build copies `LICENSE`, `LICENSE-Apache-2.0`,
+`LICENSE-BlueOak-1.0.0`, `LICENSE-BSD-3-Clause-NOTICES`,
+`LICENSE-CC-BY-SA-4.0`, this inventory, `THIRD_PARTY_NOTICES.md`, and
+`UPSTREAM.md` into generated `licenses/` assets. A non-exported local activity
+renders those packaged files without a network lookup, and a unit test requires
+every listed asset to exist and be nonempty. Release staging also creates
+`CipherBoard-<version>-source.tar.gz` from the exact clean Git commit and
+publishes `THIRD_PARTY_NOTICES.txt` beside the APK. The final archive, assets,
+notices, and resolved SBOM must still be inspected together before distribution.

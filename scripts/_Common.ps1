@@ -32,6 +32,15 @@ function Get-LatestBuildTools([string]$Sdk) {
     return $directories[-1].FullName
 }
 
+function Get-ConfiguredBuildTools([string]$Sdk, [string]$Root) {
+    $version = Get-PropertyValue (Join-Path $Root "gradle.properties") "cipherboard.buildToolsVersion"
+    $directory = Join-Path $Sdk "build-tools/$version"
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        Fail "configured Android SDK build-tools are not installed: $version"
+    }
+    return (Resolve-Path -LiteralPath $directory).Path
+}
+
 function Get-SdkTool([string]$Base) {
     foreach ($candidate in @($Base, "$Base.exe", "$Base.bat")) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
@@ -67,4 +76,26 @@ function Assert-PrivateFile([string]$Path) {
         }
         if ($sid -notin $allowed) { Fail "file ACL grants access to ${sid}: $Path" }
     }
+}
+
+function Assert-OutsideDirectory([string]$Path, [string]$Directory) {
+    $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
+    $resolvedDirectory = (Resolve-Path -LiteralPath $Directory).Path.TrimEnd(
+        [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    )
+    $prefix = $resolvedDirectory + [IO.Path]::DirectorySeparatorChar
+    if ($resolvedPath.Equals($resolvedDirectory, [StringComparison]::OrdinalIgnoreCase) -or
+        $resolvedPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        Fail "sensitive signing material must be outside the repository: $resolvedPath"
+    }
+}
+
+function Assert-CleanGitState([string]$Root, [string]$ExpectedCommit) {
+    $head = (& git -C $Root rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $head -ne $ExpectedCommit) {
+        Fail "Git HEAD changed during the release build"
+    }
+    $status = & git -C $Root status --porcelain=v1 --untracked-files=all
+    if ($LASTEXITCODE -ne 0) { Fail "cannot inspect Git worktree" }
+    if ($status) { Fail "source worktree changed during the release build" }
 }

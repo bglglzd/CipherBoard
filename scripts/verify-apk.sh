@@ -25,7 +25,7 @@ require_command find
 require_command sort
 
 sdk=$(sdk_root)
-build_tools=$(latest_build_tools_dir)
+build_tools=$(configured_build_tools_dir)
 aapt=$(sdk_executable "$build_tools/aapt") || die "aapt not found in $build_tools"
 apksigner=$(sdk_executable "$build_tools/apksigner") || die "apksigner not found in $build_tools"
 zipalign=$(sdk_executable "$build_tools/zipalign") || die "zipalign not found in $build_tools"
@@ -50,6 +50,9 @@ trap cleanup EXIT HUP INT TERM
 "$apkanalyzer" manifest permissions "$apk" >"$temp_dir/apkanalyzer-permissions.txt" || die "apkanalyzer permission dump failed"
 "$apkanalyzer" manifest print "$apk" >"$temp_dir/manifest.xml" || die "apkanalyzer manifest print failed"
 "$apkanalyzer" dex packages "$apk" >"$temp_dir/dex-packages.txt" || die "apkanalyzer DEX package scan failed"
+if grep -F 'java.lang.System void load(java.lang.String)' "$temp_dir/dex-packages.txt" >/dev/null 2>&1; then
+    die "arbitrary-path native code loading reference found in DEX"
+fi
 
 for permission in \
     android.permission.INTERNET \
@@ -68,14 +71,46 @@ for permission in \
     fi
 done
 
-"$python" "$SCRIPT_DIR/apk_policy.py" --mode "$mode" --manifest "$temp_dir/manifest.xml" --apk "$apk"
+base_package=$(project_property cipherboard.applicationId)
+version_name=$(project_property cipherboard.versionName)
+version_code=$(project_property cipherboard.versionCode)
+if [ "$mode" = debug ]; then
+    expected_package=$base_package.debug
+    set -- --expected-abi arm64-v8a --expected-abi x86_64
+else
+    expected_package=$base_package
+    set -- --expected-abi arm64-v8a
+fi
+"$python" "$SCRIPT_DIR/apk_policy.py" \
+    --mode "$mode" --manifest "$temp_dir/manifest.xml" --apk "$apk" \
+    --expected-package "$expected_package" \
+    --expected-version-name "$version_name" \
+    --expected-version-code "$version_code" \
+    "$@"
 "$zipalign" -c -P 16 -v 4 "$apk" >"$temp_dir/zipalign.txt" || die "APK zip alignment check failed"
 "$apksigner" verify --verbose --print-certs "$apk" >"$temp_dir/signature.txt" || die "APK signature verification failed"
 grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true' "$temp_dir/signature.txt" >/dev/null 2>&1 || \
     die "APK Signature Scheme v2 is required"
+grep -Fx 'Number of signers: 1' "$temp_dir/signature.txt" >/dev/null 2>&1 || \
+    die "APK must have exactly one signer"
 
-if [ "$mode" = release ] && grep -i 'Android Debug' "$temp_dir/signature.txt" >/dev/null 2>&1; then
-    die "release APK is signed with an Android debug certificate"
+if [ "$mode" = release ]; then
+    grep -F 'Verified using v3 scheme (APK Signature Scheme v3): true' "$temp_dir/signature.txt" >/dev/null 2>&1 || \
+        die "release APK Signature Scheme v3 is required"
+    if grep -i 'Android Debug' "$temp_dir/signature.txt" >/dev/null 2>&1; then
+        die "release APK is signed with an Android debug certificate"
+    fi
+    expected_signer=$(tr -d '[:space:]' <"$ROOT_DIR/SIGNING_CERTIFICATE_SHA256" | tr '[:upper:]' '[:lower:]')
+    case "$expected_signer" in
+        *[!0-9a-f]*|'') die "invalid pinned signing certificate fingerprint" ;;
+    esac
+    [ "${#expected_signer}" -eq 64 ] || die "invalid pinned signing certificate fingerprint"
+    actual_signer=$(sed -nE \
+        's/^.*certificate SHA-256 digest: ([0-9A-Fa-f:]+).*$/\1/p' \
+        "$temp_dir/signature.txt" | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+    [ -n "$actual_signer" ] || die "release signer SHA-256 fingerprint is missing"
+    [ "$actual_signer" = "$expected_signer" ] || \
+        die "release signer does not match the pinned update certificate"
 fi
 
 printf 'APK verification passed: %s\n' "$apk"

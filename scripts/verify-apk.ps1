@@ -7,7 +7,7 @@ param(
 
 $Apk = (Resolve-Path -LiteralPath $Apk).Path
 $Sdk = Get-SdkRoot
-$BuildTools = Get-LatestBuildTools $Sdk
+$BuildTools = Get-ConfiguredBuildTools $Sdk $Root
 $Aapt = Get-SdkTool (Join-Path $BuildTools "aapt")
 $ApkSigner = Get-SdkTool (Join-Path $BuildTools "apksigner")
 $ZipAlign = Get-SdkTool (Join-Path $BuildTools "zipalign")
@@ -30,8 +30,12 @@ try {
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer permission dump failed" }
     & $ApkAnalyzer manifest print $Apk 2>&1 | Set-Content -LiteralPath $Manifest -Encoding utf8
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer manifest print failed" }
-    & $ApkAnalyzer dex packages $Apk 2>&1 | Set-Content -LiteralPath (Join-Path $Temp "dex-packages.txt")
+    $DexPackages = Join-Path $Temp "dex-packages.txt"
+    & $ApkAnalyzer dex packages $Apk 2>&1 | Set-Content -LiteralPath $DexPackages
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer DEX package scan failed" }
+    if (Select-String -LiteralPath $DexPackages -SimpleMatch "java.lang.System void load(java.lang.String)" -Quiet) {
+        Fail "arbitrary-path native code loading reference found in DEX"
+    }
 
     $Forbidden = @(
         "android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE",
@@ -46,7 +50,20 @@ try {
     }
 
     $Mode = if ($DebugBuild) { "debug" } else { "release" }
-    Invoke-Checked $Python @((Join-Path $PSScriptRoot "apk_policy.py"), "--mode", $Mode, "--manifest", $Manifest, "--apk", $Apk)
+    $BasePackage = Get-PropertyValue (Join-Path $Root "gradle.properties") "cipherboard.applicationId"
+    $ExpectedPackage = if ($DebugBuild) { "$BasePackage.debug" } else { $BasePackage }
+    $ExpectedVersionName = Get-PropertyValue (Join-Path $Root "gradle.properties") "cipherboard.versionName"
+    $ExpectedVersionCode = Get-PropertyValue (Join-Path $Root "gradle.properties") "cipherboard.versionCode"
+    $PolicyArgs = @(
+        (Join-Path $PSScriptRoot "apk_policy.py"), "--mode", $Mode,
+        "--manifest", $Manifest, "--apk", $Apk,
+        "--expected-package", $ExpectedPackage,
+        "--expected-version-name", $ExpectedVersionName,
+        "--expected-version-code", $ExpectedVersionCode,
+        "--expected-abi", "arm64-v8a"
+    )
+    if ($DebugBuild) { $PolicyArgs += @("--expected-abi", "x86_64") }
+    Invoke-Checked $Python $PolicyArgs
     & $ZipAlign -c -P 16 -v 4 $Apk 2>&1 | Set-Content -LiteralPath (Join-Path $Temp "zipalign.txt")
     if ($LASTEXITCODE -ne 0) { Fail "APK zip alignment check failed" }
     & $ApkSigner verify --verbose --print-certs $Apk 2>&1 | Set-Content -LiteralPath $Signature
@@ -55,8 +72,25 @@ try {
     if (-not $SignatureText.Contains("Verified using v2 scheme (APK Signature Scheme v2): true")) {
         Fail "APK Signature Scheme v2 is required"
     }
+    if ($SignatureText -notmatch "(?m)^Number of signers: 1\r?$") {
+        Fail "APK must have exactly one signer"
+    }
+    if (-not $DebugBuild -and -not $SignatureText.Contains("Verified using v3 scheme (APK Signature Scheme v3): true")) {
+        Fail "release APK Signature Scheme v3 is required"
+    }
     if (-not $DebugBuild -and $SignatureText -match "(?i)Android Debug") {
         Fail "release APK is signed with an Android debug certificate"
+    }
+    if (-not $DebugBuild) {
+        $ExpectedSigner = (Get-Content -Raw -LiteralPath (Join-Path $Root "SIGNING_CERTIFICATE_SHA256")).Trim().ToLowerInvariant()
+        if ($ExpectedSigner -notmatch '^[0-9a-f]{64}$') { Fail "invalid pinned signing certificate fingerprint" }
+        $SignerMatch = [Regex]::Match(
+            $SignatureText,
+            '(?im)(?:Signer #1|V[0-9]+ Signer): certificate SHA-256 digest: ([0-9a-f:]+)'
+        )
+        if (-not $SignerMatch.Success) { Fail "release signer SHA-256 fingerprint is missing" }
+        $ActualSigner = $SignerMatch.Groups[1].Value.Replace(":", "").ToLowerInvariant()
+        if ($ActualSigner -ne $ExpectedSigner) { Fail "release signer does not match the pinned update certificate" }
     }
 
     $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Apk).Hash.ToLowerInvariant()

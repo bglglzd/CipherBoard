@@ -146,7 +146,12 @@ Windows `.sh` scripts should invoke Git Bash explicitly or prepend the Git
 installation is unnecessary unless a project script actually depends on it;
 Gradle provides APK packaging.
 
-## Missing Blockers and Required Actions
+## Initial Gaps and Required Actions
+
+This list records the state at the initial read-only audit. Java/tool selection,
+Android command-line tools, Rust targets/tools, the AOSP no-Play AVD and
+connected-test availability were subsequently resolved as described below; it
+must not be read as the current environment status.
 
 1. **Java compiler selection:** the active `JAVA_HOME` is a JRE without
    `javac`. Select the Android Studio JBR 21 for compatible Gradle builds, or a
@@ -177,11 +182,18 @@ build the pinned upstream revision:
 - `local.properties` was created as a Git-ignored file pointing to the SDK.
 - Build sessions select the Android Studio JBR/JDK 21 without changing the
   global `JAVA_HOME`.
-- Gradle installed the pinned NDK `28.0.13004108`, Android Platform 36 revision
-  2, and Build-Tools `35.0.0` after verifying the already accepted SDK licenses.
+- Gradle installed the pinned NDK `28.0.13004108` and Android Platform 36
+  revision 2 after verifying the already accepted SDK licenses. Release builds
+  are pinned to the already installed Build Tools `36.1.0`.
 - Rust targets `aarch64-linux-android` and `x86_64-linux-android` were installed.
 - `cargo-ndk 4.1.2` and `cargo-audit 0.22.2` were installed with Cargo's
   `--locked` option.
+- `cargo-fuzz 0.13.2` and the Rust nightly MSVC toolchain were installed for
+  the bounded libFuzzer/AddressSanitizer transport-parser campaign.
+- Official OSV-Scanner `2.4.0` for Windows amd64 was stored outside the
+  repository at
+  `~/.local/share/cipherboard/tools/osv-scanner/2.4.0/osv-scanner.exe`; its
+  official release SHA-256 is enforced by `scripts/osv_offline_scan.py`.
 - Official Android SDK Command-line Tools `20.0` (build `15641748`) were
   installed after verifying Google's published SHA-1
   `2bea1388b8a248040a340a08ca0638138633f687`; this provides `sdkmanager`,
@@ -201,3 +213,38 @@ The AOSP-only image `system-images;android-36;default;x86_64` revision 2 and AVD
 Store image and is the default local target for connected no-Play tests. A
 physical GrapheneOS device is still required for GrapheneOS-specific behavior,
 StrongBox/TEE reporting, and final device acceptance.
+
+The AOSP AVD was started as `emulator-5554`. Native Alice/Bob connected tests
+completed on this target. The full app command
+`:app:connectedDebugAndroidTest --no-configuration-cache` subsequently passed
+7/7 tests with 0 failures and 0 skipped on the same API 36 x86_64 no-Play AVD.
+Release lint for `app`, `crypto-core`, `pairing`, and `secure-storage` also
+passes after the API 23 compatibility fixes.
+
+The seven connected tests cover process-text returning `RESULT_CANCELED` with no
+data and unchanged host text; viewer `FLAG_SECURE`, background display-lease
+close and byte/char buffer zeroization; explicit ciphertext-only clipboard
+fallback retaining the clip; two real vault close/reopen atomicity cases; and
+three debug-only remote `:fault` process cases using actual
+`Process.killProcess`/SIGKILL before outbound commit, after outbound commit
+before handoff, and after inbound commit. The fault activity/source is excluded
+from release builds.
+
+This environment evidence does not cover failure between individual SQLite
+statements, an ambiguous kill immediately around acknowledgement from a real
+host `InputConnection.commitText()`, full IME/composer/live-camera pairing E2E,
+or any physical GrapheneOS, StrongBox, TEE or biometric behavior.
+
+The current debug APK was also installed and its Home activity launched on this
+AVD. The English hierarchy had bounded, non-overlapping controls. Applying the
+per-app `ru-RU` locale produced complete Russian Home strings, and at
+`font_scale=1.3` in landscape every observed Home text/button bound fit without
+overlap. A `FLAG_SECURE` test screencap was fully black; this was not a
+secure-viewer-specific screenshot acceptance test.
+
+The locale smoke exposed an inherited `SystemBroadcastReceiver` self-SIGKILL
+loop when changing locale before CipherBoard had been selected as the IME. After
+the fix, rebuild and reinstall, the app process remained alive for the recorded
+three-second observation and the Russian hierarchy remained available. Full
+ordinary-IME, composer, viewer-screenshot, accessibility and layout-matrix
+acceptance remains outstanding.

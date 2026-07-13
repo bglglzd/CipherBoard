@@ -16,8 +16,10 @@ It does not remove or replace copyright headers in individual files.
   share-alike requirements. CipherBoard uses distinct product branding and is
   not an official HeliBoard release.
 
-Complete license texts are distributed as `LICENSE`,
-`LICENSE-Apache-2.0`, and `LICENSE-CC-BY-SA-4.0`.
+Complete license texts and dependency notices are distributed as `LICENSE`,
+`LICENSE-Apache-2.0`, `LICENSE-BlueOak-1.0.0`,
+`LICENSE-BSD-3-Clause-NOTICES`, and `LICENSE-CC-BY-SA-4.0`. They are also
+readable without network access from CipherBoard's Licenses screen.
 
 ## Matrix vodozemac
 
@@ -71,9 +73,8 @@ direct, indirect, incidental, special, exemplary, or consequential damages.
 `minicbor 0.25.1` and `minicbor-derive 0.15.3` are offered under Blue Oak Model
 License 1.0.0. That license grants permission to do anything with the software
 that would otherwise infringe copyright or patent rights, subject to the
-license conditions and acceptance provisions. The authoritative license is
-included in the pinned crate source referenced by `Cargo.lock`:
-<https://blueoakcouncil.org/license/1.0.0>.
+license conditions and acceptance provisions. The complete license text is
+included in `LICENSE-BlueOak-1.0.0` and in the offline Licenses screen.
 
 ## Rust MIT/Apache Ecosystem
 

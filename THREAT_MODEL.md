@@ -14,6 +14,42 @@ CipherBoard must not be described as unbreakable, risk-free, absolutely secure,
 or "military grade." It aims to reduce specific, documented risks while
 retaining important residual risks.
 
+### Current implementation coverage
+
+As of this snapshot, the source tree implements encrypted vault records,
+Keystore StrongBox-first generation with fallback and reported security level,
+atomic send/receive record transactions, a separate secure composer,
+selected-text/`ACTION_PROCESS_TEXT` decryption, a protected viewer, and an
+offline QR codec/scanner. A non-exported protected two-QR activity now joins the
+native offer/response APIs to encrypted one-shot state for both roles and to
+contact creation only after explicit local Safety Number confirmation. Contact
+details support rename, reverify, session destruction, delete and re-pair. This
+reduces implementation risk but is not release evidence by itself.
+
+The pairing/contact source has JVM state-machine/navigation coverage, bounded
+orphan/expiry cleanup, explicit unfinished-pairing deletion and blocking
+identity-change handling. Targeted API 36 AOSP instrumentation now covers seven
+process-text/viewer/clipboard/vault tests, including three real remote-process
+SIGKILL boundaries around outbound and inbound storage commits. It does not
+cover pairing-specific process death, crashes between individual SQLite
+statements, the real `InputConnection.commitText()` acknowledgement window, or
+a complete IME/composer/live-camera flow. Live two-device camera exchange and
+GrapheneOS operation remain residual platform validation before high-risk use.
+Outbound recovery reuses a contact-bound exact pending ciphertext through a
+one-shot handoff scoped to the originating host/editor. Inbound recovery
+requires the exact ordered ciphertext digest and retains the encrypted pending
+display until the viewer has actually rendered it. Exact capability, routing,
+inner-binding and assembly-integrity decisions are recorded in
+`CRYPTO_PROTOCOL.md`; independent review remains an assurance prerequisite, not
+evidence of a known defect.
+
+Source inspection found no `INTERNET` or `ACCESS_NETWORK_STATE` declaration,
+runtime HTTP client, Firebase/Play Services/analytics/crash/ad SDK, WebView, or
+dynamic loader. The CameraX video/media dependency path is excluded; the
+manifest disables backup, excludes every extraction domain, and denies
+cleartext traffic. APK policy/source tests do not replace an independent
+permission and dependency review of the exact production-signed artifact.
+
 ## 1. System and Security Objective
 
 CipherBoard is a serverless Android input method and companion UI derived from
@@ -156,12 +192,29 @@ transcript. Both devices derive the same transcript hash, numeric Safety Number,
 and short emoji/word representation. These are two renderings of one value, not
 independent authentication mechanisms.
 
+The importer verifies the signed absolute expiry and rejects an offer whose
+remaining lifetime exceeds the protocol maximum plus the bounded clock
+tolerance. This prevents a producer from silently extending an offer
+indefinitely. Clock rollback beyond the accepted tolerance fails closed; no
+wall-clock check can be made rollback-proof against a compromised OS.
+
 The physical QR exchange reduces remote interception but does not prevent a
 nearby attacker from replacing a displayed QR code, substituting an APK, or
 convincing users to skip comparison. Verification is complete only after both
 users compare the Safety Number and explicitly confirm it. Imported, expired,
 consumed, duplicated, oversized, malformed, or version-incompatible offers must
 fail without creating a trusted contact.
+
+The current Android implementation stages encrypted one-shot state for both
+roles, cleans up expired/orphaned active state in bounded batches, requires an
+explicit confirmation action on each device before creating a verified
+contact, and treats a changed identity as a blocking state until explicit
+physical re-pairing and Safety Number confirmation. Its 80-digit numeric value
+and eight-word code are two deterministic representations of the same
+transcript hash. The earlier blanket absence of process-kill evidence is closed
+only for the three recorded vault boundaries. Pairing-specific process death
+and live two-device camera validation remain untested prerequisites before
+high-risk use; neither is represented as a pass by the narrower storage tests.
 
 ## 8. Transport Envelope and Metadata
 
@@ -215,8 +268,10 @@ For receive:
 2. Decrypt into a short-lived buffer and obtain advanced receive state.
 3. Atomically store that state plus an encrypted pending-display record.
 4. Show plaintext only after the transaction commits.
-5. Delete the pending-display record when the protected view closes, because v1
-   does not keep plaintext history or message keys for later convenience.
+5. Bind the pending display to contact/message ID and the digest of the exact
+   ordered ciphertext. An abandoned pre-render lease retains the encrypted
+   record for exact retry; after successful render, closing the protected view
+   deletes it because v1 keeps no plaintext history or message keys.
 
 Crash-injection tests are required before/after every state transition. Database
 transactions protect against ordinary process death and torn writes only when
@@ -233,16 +288,21 @@ rollback remains a residual risk under the excluded device-compromise model.
 
 All identity, session, replay, contact, pairing, and pending records must be
 authenticated-encrypted at rest. The wrapping key is generated in Android
-Keystore, attempted in StrongBox first, and falls back without crashing to TEE.
-The UI reports the actual security level; it must not label a software or TEE
-key as StrongBox. The key is non-exportable and gated by
-`BIOMETRIC_STRONG` or device credential.
+Keystore and attempted in StrongBox first. On StrongBox unavailability the app
+may retry the default provider without crashing, but accepts that result only
+when `KeyInfo` reports `TRUSTED_ENVIRONMENT`. Software and unknown levels fail
+closed rather than being labeled as TEE or StrongBox. The UI reports the actual
+accepted level. The key is non-exportable and gated by `BIOMETRIC_STRONG` or
+device credential; real hardware/authentication evidence remains pending.
 
 The default vault timeout is one minute, with immediate, 30-second, one-minute,
 and five-minute policies. The vault locks after boot, screen lock, manual lock,
 authentication timeout, detectable lock-screen changes, and key invalidation.
 Invalidated or missing keys produce a controlled unrecoverable-vault/re-pairing
-flow, not silent identity regeneration or plaintext fallback.
+flow, not silent identity regeneration or plaintext fallback. Destructive reset
+is exposed only after the runtime has observed key invalidation, requires an
+explicit confirmation, and deletes encrypted records/replay state before
+removing the wrapped key. Physical-device invalidation evidence remains pending.
 
 `android:allowBackup="false"` and current data extraction rules must exclude all
 records from cloud backup and device transfer. v1 provides no secret, ratchet,
@@ -250,6 +310,14 @@ or history export. Clearing app data/reinstalling destroys the identity and
 requires pairing again. Secure deletion is best effort: Android flash storage,
 filesystem journaling, wear levelling, and OS caches prevent a promise that old
 physical blocks are overwritten.
+
+The current database encrypts the bounded replay ledger inside the session
+snapshot, but also keeps hashed record/replay indexes and timestamps in
+plaintext SQLite columns for lookup and transactions. These values use random
+internal IDs rather than names/raw keys, yet expose record counts and timing and
+are not AEAD-authenticated. A copied locked-device database should not disclose
+message text or session keys, but this local metadata leakage and tamper/DoS
+surface remains open for minimization and device testing.
 
 ## 11. Plaintext UI and IME Isolation
 
@@ -265,6 +333,8 @@ In secure mode:
 - only ciphertext is passed with `commitText()` after explicit encryption;
 - clipboard access is prohibited for plaintext; ciphertext-only fallback is
   permitted after an explicit action;
+- secure editor and IME actions block copy, cut, paste, share, voice input and
+  IME-picker detours while plaintext is active;
 - personalized learning, user dictionary updates, input history, drafts, and
   clipboard history are disabled;
 - plaintext is excluded from `SavedStateHandle`, instance state, ViewModels
@@ -306,6 +376,13 @@ avoid unnecessary clones, never implement `Debug` with secret values, and never
 place secrets in panic or error messages. Buffers crossing FFI must be length
 checked and cleared by the owning side after use.
 
+Rust release profiles use unwind semantics so the narrow JNI boundary can catch
+an unexpected panic and return a fixed content-free error rather than aborting
+the IME process. This is containment, not proof that every dependency is
+panic-free. A pinned ASan/libFuzzer campaign ran the production envelope parser
+for 601,574 inputs without a crash or timeout; pairing/inner/JNI targets and
+longer scheduled campaigns remain required.
+
 Kotlin/Java should prefer `ByteArray` and `CharArray` for application-managed
 secret buffers, clear them, cancel work when the protected view closes, and
 avoid singletons or long-lived coroutines. Nevertheless, Android text widgets,
@@ -316,11 +393,14 @@ not guaranteed RAM erasure. The UI and documentation must not claim otherwise.
 
 ## 14. Logs, Diagnostics, and Supply Chain
 
-CipherBoard has no remote analytics, crash reporting, advertising, dynamic code
-loading, or WebView. Release logging excludes plaintext, full ciphertext, QR
-payloads, private keys, session state, full fingerprints, Safety Numbers, and
-contact names. Diagnostic events use coarse error codes and random test IDs.
-Stack traces are not shown to users.
+The reviewed source declares no remote analytics, crash reporting, advertising,
+dynamic code loading, or WebView. The newly added secure paths do not contain
+content-bearing log calls, and user errors are mapped to fixed messages. This
+has not yet been demonstrated by a release APK/runtime sentinel scan; inherited
+logging and every error path remain part of the release leakage test. Plaintext,
+full ciphertext, QR payloads, private keys, session state, full fingerprints,
+Safety Numbers, and contact names must never enter diagnostics. Stack traces
+must not be shown to users.
 
 The final manifest must contain no Internet, network-state, contacts, SMS,
 package-query, overlay, or Accessibility-service permission. Camera is requested
@@ -328,12 +408,24 @@ only when the user explicitly starts local QR scanning. GrapheneOS Network
 denial is defense in depth and not a substitute for removing network permission
 and network-capable dependencies.
 
-Dependencies are pinned and locked, notices and GPLv3 obligations are retained,
-and an SBOM is produced. Release verification includes manifest inspection,
-signature verification, certificate fingerprint, SHA-256, non-debuggable/test
-flags, exported-component review, dependency vulnerability review, and scans
+Rust dependencies are pinned and locked. Packageable Android dependency graphs
+are strictly locked in `app/gradle.lockfile`; final notice and production SBOM
+review remain required. Preflight verified the SHA-pinned official OSV-Scanner
+v2.4.0, fresh local Maven/crates.io databases, and all 255 SBOM packages fully
+offline with zero findings; the clean final release must repeat it. The APK build
+packages GPL/Apache/BlueOak/CC texts, consolidated BSD notices and provenance for
+offline viewing, while release staging creates an exact-commit GPL source
+archive. Release verification
+includes manifest inspection, signature verification, certificate fingerprint,
+SHA-256, non-debuggable/test flags, exported-component review, dependency
+vulnerability review, and scans
 for Firebase, Play Services, analytics, crash, advertising, test keys, secrets,
 and dynamic loading.
+
+The expected release-certificate SHA-256 is a reviewed public pin in
+`SIGNING_CERTIFICATE_SHA256`. It is not secret, but a change is a security-
+critical key-continuity event. Verification must reject an otherwise valid APK
+signed by a different certificate.
 
 ## 15. Metadata and Availability Residual Risks
 
@@ -380,6 +472,9 @@ Unit, property, fuzz, Android instrumentation, crash-injection, manifest,
 dependency, and signed-APK tests defined in `TEST_PLAN.md` and
 `SECURITY_CHECKLIST.md` must pass for the exact release commit and artifact.
 Testing on a GrapheneOS device without Sandboxed Google Play remains necessary.
+Current parser evidence includes a bounded 601,574-input ASan/libFuzzer
+campaign with no crash or timeout; it does not satisfy the remaining device,
+full-codec, long-duration, or exact-release validation gates.
 
 Automated tests can demonstrate selected behavior but cannot prove absence of
 all leakage or cryptographic design defects. Before use in a high-risk setting,

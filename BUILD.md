@@ -15,12 +15,13 @@ development dependency caches.
 | Android Gradle Plugin | 8.13.2 |
 | Kotlin | 2.3.20 |
 | JDK | 17 with `javac` |
+| Android build-tools | 36.1.0 |
 | compileSdk / targetSdk / minSdk | 36 / 36 / 23 |
 | Android NDK | 28.0.13004108 |
 | Rust used for verified JNI work | 1.94.0 |
 | cargo-ndk used for verified JNI work | 4.1.2 |
 | vodozemac | 0.10.0, locked |
-| Android ABIs | `arm64-v8a`, `x86_64` |
+| Android ABIs | release `arm64-v8a`; debug/test `arm64-v8a`, `x86_64` |
 
 The Gradle product identity is centralized in `gradle.properties`:
 
@@ -37,13 +38,24 @@ Change these values intentionally and review upgrade behavior before release.
 ## Prerequisites
 
 1. A JDK 17 installation containing `java`, `javac`, and `keytool`.
-2. Android SDK platform 36, build-tools, command-line tools and NDK
+2. Android SDK platform 36, Build Tools `36.1.0`, command-line tools and NDK
    `28.0.13004108`.
 3. Rust and Cargo with Android targets `aarch64-linux-android` and
    `x86_64-linux-android`.
 4. `cargo-ndk 4.1.2`, `cargo-audit`, Python 3, Git, ADB and standard shell
    tools. PowerShell scripts require PowerShell 7.
 5. `ANDROID_SDK_ROOT` or `ANDROID_HOME` set to the Android SDK.
+6. For release, official OSV-Scanner v2.4.0 plus local Maven and crates.io
+   `all.zip` databases no more than seven days old. The script verifies the
+   scanner against its pinned platform SHA-256 and runs it offline.
+
+Set `CIPHERBOARD_OSV_SCANNER` to the verified executable when it is not on
+`PATH`. Refresh only the public advisory databases before entering the offline
+release step:
+
+```text
+osv-scanner scan source --offline --offline-vulnerabilities --download-offline-databases --allow-no-lockfiles <empty-directory>
+```
 
 On Windows, ensure `JAVA_HOME` points to a JDK rather than a JRE. The Android
 Studio runtime can be used when it includes `javac`.
@@ -55,9 +67,17 @@ Studio runtime can be used when it includes `javac`.
 - Cargo direct dependencies use exact versions and both Rust crates have
   checked-in `Cargo.lock` files. Release commands use `--locked` where Cargo
   resolves Android artifacts.
-- **Gradle dependency locking is not yet enabled.** Direct dependencies and the
-  Compose BOM are versioned, but transitive artifacts are not represented by a
-  checked-in lockfile. This is a known reproducibility blocker.
+- The packageable `:app` dependency graphs use strict Gradle dependency
+  locking. Their resolved versions are committed in `app/gradle.lockfile`.
+  When an intentional dependency change is made, regenerate and review that
+  file with:
+
+```sh
+./gradlew :app:resolveApplicationDependencyLocks --write-locks --no-configuration-cache
+```
+
+Do not refresh locks incidentally during an unrelated change. Review both the
+lockfile diff and regenerated SBOM before accepting an upgrade.
 
 After dependencies have been cached, Gradle may be tested with `--offline`.
 This does not change the requirement that the installed application has no
@@ -68,27 +88,43 @@ network permission or runtime network behavior.
 From the repository root:
 
 ```sh
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:lintDebug
+./gradlew :app:lintDebug :app:testDebugUnitTest \
+  :crypto-core:testDebugUnitTest :pairing:testDebugUnitTest \
+  :secure-storage:testDebugUnitTest :app:assembleDebug
+
+./gradlew :app:lintRelease :crypto-core:lintRelease \
+  :pairing:lintRelease :secure-storage:lintRelease
 
 cargo fmt --all --manifest-path crypto-core/native/Cargo.toml -- --check
-cargo clippy --manifest-path crypto-core/native/Cargo.toml \
+cargo clippy --locked --manifest-path crypto-core/native/Cargo.toml \
   --all-targets --all-features -- -D warnings
-cargo test --manifest-path crypto-core/native/Cargo.toml
+cargo test --locked --manifest-path crypto-core/native/Cargo.toml
 cargo audit --file crypto-core/native/Cargo.lock
 
 cargo fmt --all --manifest-path crypto-core/jni/Cargo.toml -- --check
-cargo clippy --manifest-path crypto-core/jni/Cargo.toml \
+cargo clippy --locked --manifest-path crypto-core/jni/Cargo.toml \
   --all-targets --all-features -- -D warnings
-cargo test --manifest-path crypto-core/jni/Cargo.toml
+cargo test --locked --manifest-path crypto-core/jni/Cargo.toml
 cargo audit --file crypto-core/jni/Cargo.lock
 ```
+
+The production transport parser has a separate pinned cargo-fuzz package. From
+`crypto-core/native`, run a bounded sanitizer campaign with:
+
+```sh
+cargo +nightly fuzz run transport_parser fuzz/corpus/transport_parser -- \
+  -max_total_time=60 -max_len=32768 -timeout=5
+```
+
+See `crypto-core/native/fuzz/README.md` for pinned prerequisites and the Windows
+AddressSanitizer runtime setup. Fuzz dependencies are development-only and are
+not packaged in the APK.
 
 Run Android JNI instrumentation on an emulator or device:
 
 ```sh
 ./gradlew :crypto-core:connectedDebugAndroidTest
+./gradlew :app:connectedDebugAndroidTest --no-configuration-cache
 ```
 
 The Android library build invokes cargo-ndk for both supported ABIs and
@@ -113,11 +149,24 @@ PowerShell 7:
 ./scripts/verify-apk.ps1 [-DebugBuild] path/to/app.apk
 ```
 
-`build-debug` runs lint, unit tests, builds the APK, copies it to `dist/`, and
-applies the APK policy verifier. `build-release` additionally runs Rust checks,
-requires external signing material, signs with `apksigner`, and writes the APK
-SHA-256, CycloneDX `SBOM.json`, `BUILD_INFO.txt`, and notices. Neither release
-script creates or overwrites a keystore.
+`build-debug` runs the fork-wide source/security and Kotlin-format gates,
+`lintDebug`, full app/library debug unit tasks, builds the APK, copies it to
+`dist/`, and applies the APK policy verifier. Two inherited HeliBoard regression
+tests are explicitly `@Ignore`d with issue-specific reasons; no build type
+conditionally bypasses these two tests. `build-release` additionally runs all
+module release lint tasks, Rust format/Clippy/test/audit with locked graphs, requires
+external signing material, signs with `apksigner`, and writes the APK SHA-256,
+CycloneDX `SBOM.json`, offline `VULNERABILITY_SCAN.json`,
+`RELEASE_ARTIFACTS.sha256`, `BUILD_INFO.txt`, notices, and an exact-commit GPL
+source archive. It accepts only an official OSV-Scanner v2.4.0 binary with a
+pinned SHA-256, requires fresh local Maven/crates.io databases, scans without
+network access, and fails on a finding or package-count mismatch. It rechecks
+the same clean Git HEAD before signing and publication.
+Neither release script creates or overwrites a keystore.
+
+The APK includes complete local license/provenance texts as generated assets;
+the non-exported license activity reads only those packaged files and performs
+no network lookup.
 
 ## APK Verification Policy
 
@@ -130,15 +179,56 @@ Python 3. It fails closed on:
 - unapproved exported components or network deep links;
 - Firebase, Google Play Services, analytics, crash-reporting, advertising,
   WebView or dynamic-code-loader markers in executable APK entries;
-- missing v2 signature, failed signature validation, bad ZIP alignment, or an
-  Android debug certificate on a release APK.
+- missing v2 signature, failed signature validation, bad ZIP alignment, an
+  Android debug certificate, or a signer that does not match the reviewed
+  public `SIGNING_CERTIFICATE_SHA256` pin on a release APK.
 
 The policy is a release gate, not a substitute for manual intent-validation,
 native hardening, and source review.
 
 ## Current Status
 
-The crypto and JNI modules build and their automated tests pass, including an
-Android Alice/Bob JNI smoke test. The overall application is still under active
-integration. See `SECURITY_REVIEW.md`; do not interpret successful module
-builds as a production release approval or independent audit.
+On the current 2026-07-13 worktree, the complete app/library debug unit tasks and
+release lint gates for all four modules pass after the API 23 compatibility
+fixes. The Rust native suite reports 27 passing tests; Rust format, Clippy and
+dependency audit gates also pass. These results include
+deterministic CBOR and compact-SMS regressions, storage transactions,
+contact-bound pending operations, pairing cleanup/key-change behavior, and the
+process-local one-shot IME handoff.
+
+The production envelope parser also completed a 31-second ASan/libFuzzer run:
+601,574 inputs, zero crashes and zero timeouts. This bounded campaign does not
+replace longer scheduled fuzzing or future pairing/JNI targets. Release
+preflight also scanned all 255 CycloneDX packages using the pinned official
+OSV-Scanner v2.4.0 and fresh offline Maven/crates.io databases; it exited zero
+with no findings and generated `VULNERABILITY_SCAN.json`. The clean final release
+must repeat this gate; the preflight is not final-artifact approval.
+
+On the API 36 x86_64 `CipherBoard_API_36_AOSP` no-Play emulator,
+`:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7 tests with
+zero failures/skips. The scope covers read-only process-text behavior, viewer
+`FLAG_SECURE` and background byte/char wiping, ciphertext clipboard retention,
+two vault close/reopen atomicity tests, and three actual remote-process SIGKILL
+boundaries: before outbound commit, after outbound commit/before handoff, and
+after inbound commit. The remote `:fault` activity/fixture is debug-only and is
+not packaged in release.
+
+This run does not inject failure between individual SQLite statements, kill in
+the ambiguous instant around a real host `InputConnection.commitText()`
+acknowledgement, or exercise a complete IME/composer/live-camera pairing flow.
+No physical GrapheneOS, StrongBox, TEE-fallback, biometric, secure-viewer
+screenshot or two-camera result is claimed.
+
+The same debug APK installs and launches Home on the AOSP emulator. English and
+per-app `ru-RU` Home controls are bounded and non-overlapping; Russian landscape
+also fits at `font_scale=1.3`. A `FLAG_SECURE` test capture is fully black, but
+is not a secure-viewer screenshot test. After fixing an inherited
+`SystemBroadcastReceiver` self-SIGKILL loop on locale change before IME
+selection, the rebuilt process remained alive for the recorded three-second
+observation and exposed the Russian hierarchy. This smoke check is not ordinary
+IME input or full layout/accessibility coverage.
+
+No production-signed release, final release certificate fingerprint or
+physical-device acceptance result is claimed by this document. See
+`SECURITY_REVIEW.md`; passing source and unit gates is neither production
+release approval nor an independent audit.

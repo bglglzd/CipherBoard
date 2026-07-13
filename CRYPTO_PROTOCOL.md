@@ -1,441 +1,352 @@
-# CipherBoard Cryptographic Protocol v1
+# CipherBoard Protocol: Implemented Snapshot
 
-Status: normative pre-release specification. Wire version 1 is identified by
-`CB1:`. Any incompatible change to the encodings, transcript, identity binding,
-or Olm configuration requires a new wire prefix/version and migration ADR.
+**Snapshot date:** 2026-07-13
 
-This document specifies composition around library primitives; it does not
-specify a new cipher, signature, hash, KDF, AEAD, or Double Ratchet.
+**Wire version:** provisional `1`
 
-## 1. Cryptographic Dependencies
+**Release status:** not stable and not approved for production interoperability
+
+This document describes the bytes currently produced and accepted by
+`crypto-core/native`. It is deliberately descriptive, not an assertion that
+the protocol satisfies every CipherBoard v1 requirement. Open gaps are listed
+in section 11. A future incompatible correction must change the wire prefix or
+protocol version; it must not silently reinterpret already emitted version-1
+bytes.
+
+The implementation sources of truth are `account.rs`, `pairing.rs`,
+`session.rs`, and `envelope.rs`. Android storage and publication ordering are
+described in `ARCHITECTURE.md`.
+
+## 1. Cryptographic Dependency
 
 CipherBoard pins `matrix-org/vodozemac` crate `0.10.0` (tag `0.10.0`, commit
 `bb39ec65357989f975e0d47f9fb35e0656180151`, crates.io checksum
 `b98bf83c0992966775b8012f194b07b44928996163e5a05b741b43891571ae5b`).
-Only one-to-one Olm is used. Megolm is not used.
+Only one-to-one Olm is used. Every session is created with
+`SessionConfig::version_2()`; Megolm is not used.
 
-Every CipherBoard session uses `SessionConfig::version_2()` with the pinned
-`experimental-session-config` feature. V2 uses the full Olm MAC; V1's truncated
-MAC is rejected. Default `libolm-compat`, `low-level-api`,
-`insecure-pk-encryption`, `js`, and production `cfg(fuzzing)` are forbidden.
+Vodozemac 0.10.0 labels the v2 session configuration experimental. The
+published Least Authority review covered older vodozemac commits and did not
+audit this Android/JNI/storage/UI integration or this complete wire protocol.
+Use of the library is not an independent audit of CipherBoard. See
+`docs/adr/0001-crypto-library.md`.
 
-V2 remains explicitly experimental in vodozemac 0.10.0. The published 2022
-Least Authority audit reviewed older commits, did not audit Android/JNI or the
-Olm design itself, and did not cover this complete application or V2 as shipped
-here. Version 0.10.0 is newer than the audited commits. The known advisories
-fixed before 0.10.0 do not make this integration independently audited. Release
-claims and the Security UI MUST state this limitation. See
-`docs/adr/0001-crypto-library.md` for evidence and alternatives.
+CipherBoard uses vodozemac for Curve25519, Ed25519, Olm/Double Ratchet and its
+randomness. SHA-256 is provided by the Rust `sha2` crate. Android storage uses
+JCA/Keystore AES-256-GCM. The project does not implement these primitives.
 
-Other primitives are invoked through maintained library/platform APIs:
+## 2. Common Encoding Rules
 
-- SHA-256 for public transcript, fingerprint, routing, and assembly digests;
-- Ed25519 signatures through the vodozemac account API;
-- OS randomness through vodozemac/getrandom and Android Keystore providers;
-- AES-256-GCM through Android Keystore/JCA for DEK wrapping and encrypted local
-  records; and
-- strict Base64url and canonical CBOR through pinned libraries.
+- `H(x)` is SHA-256 over the exact bytes `x`.
+- All domain labels below are ASCII and include the final NUL byte shown as
+  `\0`.
+- QR and message tokens use RFC 4648 Base64url without padding.
+- Protocol integers are unsigned and use the shortest CBOR representation.
+- User message bodies are byte arrays. The Rust core does not normalize them.
+  The Android composer performs strict UTF-8 encoding and the viewer performs
+  strict UTF-8 decoding.
+- Random pairing IDs and message IDs are 16 bytes. Pairing nonces are 32 bytes.
+- Capability values are currently opaque `u32` values. There is no implemented
+  required-bit registry or critical-extension negotiation.
 
-CipherBoard does not implement these primitives.
+Pairing objects are fixed-length CBOR arrays. Transport envelopes are canonical
+CBOR maps. These are intentionally distinguished below.
 
-## 2. Byte and Encoding Conventions
+## 3. Identity and Routing
 
-- All integers are unsigned. `u16`, `u32`, and `u64` concatenated into a hash
-  input are big-endian.
-- `H(x)` means SHA-256 over the exact byte string `x`.
-- `len32(x)` is the four-byte big-endian length followed by `x`.
-- Domain strings below are exact ASCII bytes including the final `0x00`.
-- Random IDs are generated uniformly by the OS CSPRNG and are never derived
-  from names, device identifiers, or clocks.
-- Public Curve25519 and Ed25519 keys are their decoded 32-byte values, not
-  human Base64 text.
-- An Olm transport payload in CBOR is the bounded ASCII byte sequence returned
-  by `OlmMessage::to_parts()`. The receiver validates it and passes the same
-  bytes to `OlmMessage::from_parts()` with the specified numeric type.
-- User text is converted once to strict UTF-8 and is not normalized, trimmed,
-  case-folded, line-ending-converted, or otherwise rewritten. After decrypt,
-  the body bytes MUST match the original UTF-8 bytes exactly.
+A vodozemac account supplies a 32-byte Curve25519 identity key and a 32-byte
+Ed25519 identity key. Local owner and contact names are storage/UI metadata and
+do not enter crypto-core protocol objects.
 
-### 2.1 Canonical CBOR profile
-
-All protocol maps use unsigned integer keys and RFC 8949 deterministic
-encoding: definite lengths, shortest integer/length representation, and map
-keys in numeric encoded order. Floats, tags, indefinite items, duplicate keys,
-and invalid UTF-8 text items are rejected. Protocol values use byte strings
-rather than CBOR text unless stated otherwise.
-
-The parser is iterative/bounded to depth 4, at most 32 map entries, at most 64
-array entries, and the byte limits below. It rejects a value if re-encoding the
-full parsed structure, including retained unknown extension values, does not
-reproduce its canonical bytes. Keys `0..31` are core: an unknown core key is
-rejected. Keys `32..255` are optional extensions and may be skipped semantically
-only when absent from the message's `critical_extensions` array; their raw
-bounded values are retained for canonical validation. Extension values remain
-subject to all size/depth limits. Keys above 255 are rejected in v1.
-
-## 3. Identities and Fingerprints
-
-A fresh install/data reset creates one vodozemac `Account`. It provides a
-Curve25519 identity key for Olm and an Ed25519 key for signing pairing data.
-The locally chosen owner name is stored only in the vault and is not part of
-identity, fingerprint, pairing, routing, or messages.
-
-The public identity fingerprint digest is:
+The implemented 32-byte identity fingerprint is:
 
 ```text
-F = H("CipherBoard identity fingerprint v1\0" || curve25519 || ed25519)
+H("CipherBoard Identity v1\0" || curve25519 || ed25519)
 ```
 
-Human export is `CBFP1:` plus lowercase RFC 4648 Base32 of `F` without padding;
-the UI groups characters for readability but parsing removes only ASCII spaces
-and hyphens. A fingerprint is public comparison material, not a secret and not
-a remote pairing mechanism.
+No stable `CBFP1` public export encoder is implemented in the current runtime.
 
-Clearing application data creates unrelated identity keys. A peer MUST treat a
-different identity as `KEY_CHANGED`, block the old contact session, and require
-a new physical pairing. There is no automatic key replacement.
-
-## 4. Capability Flags
-
-Capability fields are `u64`. Bits `0..31` announce present features. Bits
-`32..63` mark the corresponding low bit as required. For `flags`:
+The implemented routing tag is derived from the two public identities, not the
+pairing transcript. Let each identity be `curve25519 || ed25519`, sort the two
+64-byte values lexicographically as `first, second`, then compute:
 
 ```text
-present  = flags & 0xffff_ffff
-required = flags >> 32
+first_16_bytes(H("CipherBoard Routing v1\0" || first || second))
 ```
 
-The receiver rejects if `required` contains an unknown bit or if
-`required & present != required`.
+Consequently, re-pairing the same two identities currently reuses a routing
+tag. Transcript-specific routing remains a protocol-hardening blocker.
 
-| Low bit | Name | Meaning |
-| --- | --- | --- |
-| 0 | `FRAGMENT_V1` | CB1 fragmentation/reassembly |
-| 1 | `SMS_COMPACT_V1` | sender selected the 152-character part profile |
-| 2 | `UTF8_EXACT_V1` | body is exact, unnormalized UTF-8 |
-| 3 | `OLM_V2_FULL_MAC` | vodozemac `SessionConfig::version_2()` |
+Serialized account and session snapshots are internal state, not transport
+formats. They are prefixed `CBA1` and `CBS1` respectively and contain bounded
+vodozemac pickles. Session snapshots also contain the pinned local/remote
+identities, routing tag, and up to 4096 seen message IDs. Android must wrap
+these snapshots in authenticated encrypted vault records before persistence.
 
-Pairing and messages MUST set bits 0, 2, and 3 as present and required. SMS
-parts additionally set bit 1 as present; it is not cryptographically required.
-No negotiation may clear required `OLM_V2_FULL_MAC`.
+## 4. Pairing Offer (`CBO1`)
 
-## 5. Offline QR Pairing
-
-QR data uses byte mode and ASCII-safe prefixes `CBO1:` (offer) and `CBR1:`
-(response), followed by unpadded Base64url of canonical CBOR. A decoded QR is
-limited to 16,384 bytes and its CBOR to the limits in section 2.1. QR parsing is
-entirely local.
-
-Offers have a configured lifetime of ten minutes and MUST NOT exceed 600
-seconds (`expires_at - created_at`). Offline clock changes can affect expiry;
-the persistent single-use ledger is therefore authoritative even if the clock
-moves backwards.
-
-### 5.1 Offer
-
-Device A generates a fresh Olm one-time key, `pairing_id` (16 random bytes), and
-`offer_nonce` (32 random bytes). The unsigned offer is the canonical CBOR map:
-
-| Key | Field | Type and constraint |
-| --- | --- | --- |
-| 0 | `protocol_version` | uint, exactly `1` |
-| 1 | `qr_type` | uint, exactly `1` (offer) |
-| 2 | `pairing_id` | bstr, 16 bytes |
-| 3 | `created_at` | u64 Unix seconds |
-| 4 | `expires_at` | u64, greater than created, delta <= 600 |
-| 5 | `offer_nonce` | bstr, 32 bytes |
-| 6 | `a_curve25519` | bstr, 32 bytes |
-| 7 | `a_ed25519` | bstr, 32 bytes |
-| 8 | `one_time_key_id` | bstr, 1..64 printable ASCII bytes |
-| 9 | `one_time_curve25519` | bstr, 32 bytes |
-| 10 | `capability_flags` | u64, section 4 |
-| 11 | `critical_extensions` | array<uint>, canonical ascending, unique |
-
-The signature input is:
+Text form is:
 
 ```text
-"CipherBoard pairing offer signature v1\0" || canonical(unsigned_offer)
+CBO1:<unpadded-base64url(fixed-cbor-array)>
 ```
 
-Device A signs it with its vodozemac Ed25519 identity key. The final offer is
-the same map plus key `12`, `signature` (64-byte bstr). The signature binds the
-Curve25519 identity and one-time key to the displayed Ed25519 identity. Local
-names and device metadata are absent.
+The final offer is a definite CBOR array of 10 elements, in order:
 
-Device A stores the exact final offer, its one-time key/account revision, expiry,
-and `OFFER_CREATED` state encrypted in the vault before displaying the QR.
-Cancellation/expiry deletes the pending state and the key is never reused for
-another offer.
-
-### 5.2 Import and pairing confirmation
-
-Device B rejects an expired, non-canonical, incorrectly signed, unsupported, or
-previously imported `pairing_id`. Under a vault transaction it records the
-import, creates a V2 outbound session for A's Curve25519 identity and one-time
-key, and encrypts exactly one Olm **pre-key** message whose plaintext is this
-canonical CBOR map:
-
-| Key | Field | Type and constraint |
-| --- | --- | --- |
-| 0 | `inner_version` | uint, `1` |
-| 1 | `inner_type` | uint, `0` (pairing confirmation) |
-| 2 | `pairing_id` | bstr16 |
-| 3 | `offer_digest` | bstr32; `H(canonical(final_offer))` |
-| 4 | `response_nonce` | bstr32 generated by B |
-| 5 | `a_curve25519` | bstr32 |
-| 6 | `a_ed25519` | bstr32 |
-| 7 | `b_curve25519` | bstr32 |
-| 8 | `b_ed25519` | bstr32 |
-| 9 | `negotiated_capabilities` | u64, no downgrade |
-| 10 | `critical_extensions` | array<uint> |
-
-The advanced outbound session and exact pre-key ciphertext are committed before
-B displays a response. Recovery reuses that exact response and never creates a
-second session from the same imported offer.
-
-### 5.3 Response and transcript
-
-The response core is a canonical map with keys `0..12`:
-
-| Key | Field | Type and constraint |
-| --- | --- | --- |
-| 0 | `protocol_version` | uint, `1` |
-| 1 | `qr_type` | uint, `2` (response) |
-| 2 | `pairing_id` | bstr16, equals offer |
-| 3 | `offer_digest` | bstr32 |
-| 4 | `created_at` | u64 Unix seconds, not after expiry |
-| 5 | `expires_at` | u64, exactly the offer value |
-| 6 | `response_nonce` | bstr32 |
-| 7 | `b_curve25519` | bstr32 |
-| 8 | `b_ed25519` | bstr32 |
-| 9 | `negotiated_capabilities` | u64 |
-| 10 | `olm_message_type` | uint, exactly `0` (pre-key) |
-| 11 | `olm_payload` | bstr, 1..8192 ASCII bytes |
-| 12 | `critical_extensions` | array<uint> |
-
-Let `O` be the exact canonical final offer (including A's signature), and `R`
-the exact canonical response core. The transcript hash is:
-
-```text
-T = H("CipherBoard pairing transcript v1\0" || len32(O) || O || len32(R) || R)
-```
-
-The final response adds key `13`, `transcript_hash` (bstr32 equal to `T`). B
-then signs:
-
-```text
-"CipherBoard pairing response signature v1\0" ||
-canonical(response_with_transcript_without_signature)
-```
-
-The final response adds key `14`, B's 64-byte Ed25519 `signature`.
-
-Device A verifies offer ownership/state/expiry, both digests, B's signature,
-capabilities, and transcript before calling
-`Account::create_inbound_session(SessionConfig::version_2(), ...)`. Successful
-inbound creation must decrypt the pre-key confirmation and every inner field
-must match the response and original offer. In one transaction A stores the
-advanced account (consumed one-time key), new session, peer identity, transcript,
-routing tag, and consumed offer state. Any mismatch changes no state.
-
-B stores the same transcript with its already advanced outbound session. Both
-contacts remain `UNVERIFIED` until their respective user explicitly confirms a
-physical comparison. Because v1 has no third acknowledgement QR, one device
-cannot cryptographically know that the other user pressed Confirm; verification
-status is deliberately local.
-
-### 5.4 Routing tag and comparison values
-
-The stable per-session routing tag exposed in every transport envelope is:
-
-```text
-routing_tag = first_16_bytes(
-  H("CipherBoard routing tag v1\0" || T)
-)
-```
-
-The numeric Safety Number is derived independently:
-
-```text
-D = H("CipherBoard numeric safety number v1\0" || T)
-N = OS2IP(D) mod 10^60
-```
-
-Display `N` as exactly 60 zero-padded decimal digits in 12 groups of five. All
-groups must be compared; truncation is UI-only and MUST NOT be offered as a
-successful verification path.
-
-The supplemental emoji code uses:
-
-```text
-E = H("CipherBoard emoji safety code v1\0" || T)
-```
-
-Take the high nibble then low nibble of each of the first four bytes of `E`,
-yielding eight indices. Map each nibble using this exact version-1 table:
-
-| Hex | Unicode sequence | Hex | Unicode sequence |
-| --- | --- | --- | --- |
-| 0 | U+2B50 | 8 | U+1F4A1 |
-| 1 | U+1F511 | 9 | U+1F512 |
-| 2 | U+1F514 | A | U+1F3B5 |
-| 3 | U+1F4D8 | B | U+2615 |
-| 4 | U+1F388 | C | U+1F332 |
-| 5 | U+23F0 | D | U+1F527 |
-| 6 | U+2693 | E | U+2602 U+FE0F |
-| 7 | U+2708 U+FE0F | F | U+1F34E |
-
-The numeric Safety Number is the primary comparison; emoji is a shorter
-cross-check. The UI shows identity fingerprints separately.
-
-## 6. Authenticated Inner Message
-
-Before Olm encryption, every user message is the following canonical CBOR map:
-
-| Key | Field | Type and constraint |
-| --- | --- | --- |
-| 0 | `inner_version` | uint, exactly `1` |
-| 1 | `inner_type` | uint, exactly `1` (user text) |
-| 2 | `message_id` | bstr16 random |
-| 3 | `routing_tag` | bstr16 |
-| 4 | `sender_ed25519` | bstr32, pinned identity |
-| 5 | `recipient_ed25519` | bstr32, pinned identity |
-| 6 | `sender_sequence` | u64, starts at 1 and increments transactionally |
-| 7 | `body_utf8` | bstr, 0..262,144 bytes, strict UTF-8 |
-| 8 | `content_flags` | u64, zero in v1 |
-| 9 | `critical_extensions` | array<uint> |
-
-The outer message ID and routing tag must equal the authenticated inner values.
-Sender and recipient keys bind the message to the verified pairing rather than
-only to a database row. Sequence allows a receiver to label a valid delayed or
-out-of-order message; it is not a trusted clock and does not make the external
-transport ordered. Empty and all valid Unicode messages are allowed.
-
-Olm's MAC authenticates the inner bytes and session. Sender authentication to a
-human depends on the signed pairing transcript and explicit Safety Number
-verification. Before that comparison the session is encrypted but remains
-vulnerable to a pairing man-in-the-middle.
-
-## 7. `CB1` Transport Envelope
-
-One transport part is exactly:
-
-```text
-CB1:<unpadded-base64url(canonical-cbor-envelope)>
-```
-
-The Base64 alphabet is `A-Z a-z 0-9 - _`; padding, non-alphabet characters,
-and whitespace inside a token are rejected. A selection may contain multiple
-tokens separated by ASCII space, tab, CR, or LF. The collector ignores other
-non-token text only when the user explicitly chooses scan-selection mode; the
-strict process-text path rejects trailing or leading non-whitespace text.
-
-The envelope map is:
-
-| Key | Field | Type and constraint |
-| --- | --- | --- |
-| 0 | `protocol_version` | uint, exactly `1` |
-| 1 | `message_type` | uint, exactly `1` (Olm user message) |
-| 2 | `routing_tag` | bstr16 |
-| 3 | `message_id` | bstr16 |
-| 4 | `olm_message_type` | uint: `0` pre-key or `1` normal |
-| 5 | `part_number` | uint, 1-based |
-| 6 | `part_count` | uint, 1..128; number >= part number |
-| 7 | `capability_flags` | u64, section 4 |
-| 8 | `olm_payload_part` | bstr, may be empty only for a one-part empty library payload (normally impossible) |
-| 9 | `olm_payload_digest` | bstr32, SHA-256 of complete Olm ASCII payload |
-| 10 | `critical_extensions` | array<uint> |
-
-All parts of one message MUST have identical fields 0..4, 6..7, and 9. Part
-numbers are unique and complete. Concatenating field 8 in ascending part order
-must hash to field 9 before Olm parsing. The unkeyed digest is only an early
-assembly/corruption check; authenticity comes from Olm and the inner bindings.
-
-Unknown protocol version, message/Olm type, required capability, critical
-extension, non-canonical CBOR, duplicate field/part, inconsistent message ID or
-metadata, absent part, digest mismatch, invalid Base64, or bytes after the CBOR
-root are fatal and never mutate ratchet state.
-
-### 7.1 Limits and fragmentation profiles
-
-| Limit | Value |
+| Index | Value |
 | --- | --- |
-| Plaintext UTF-8 body | 262,144 bytes |
-| Complete Olm ASCII payload | 524,288 bytes |
-| Parts per message | 128 |
-| Decoded CBOR per Universal part | 16,384 bytes |
-| One encoded Universal token | 24,000 ASCII characters |
-| One SMS compact token | 152 ASCII characters |
-| Aggregate selected input | 3,145,728 bytes |
-| Incomplete assemblies | 16 globally, 4 per routing tag |
-| Incomplete assembly lifetime | 24 hours elapsed time while app data persists |
+| 0 | protocol version `1` |
+| 1 | object type `1` (offer) |
+| 2 | random pairing ID, bstr16 |
+| 3 | A Curve25519 identity, bstr32 |
+| 4 | A Ed25519 identity, bstr32 |
+| 5 | A generated Olm one-time Curve25519 key, bstr32 |
+| 6 | offered capabilities, `u32` |
+| 7 | expiration as Unix epoch seconds, `u64` |
+| 8 | random offer nonce, bstr32 |
+| 9 | Ed25519 signature, bstr64 |
 
-Universal mode uses the largest field-8 slice that keeps decoded CBOR at or
-below 16,384 bytes and the encoded token at or below 24,000 characters. SMS
-compact mode searches downward for the largest slice whose complete `CB1`
-token is at most 152 ASCII characters and sets capability bit 1. The fragmenter
-first computes the resulting part count and refuses the operation if it exceeds
-128. It never silently switches profiles.
+Elements 0 through 8 form the unsigned offer array. The signature input is:
 
-The UI estimates GSM-7 concatenated SMS count (160 septets for one segment,
-153 per concatenated segment) but labels it an estimate because transport apps
-may add separators or transcode. SMS parts are individually self-describing,
-need no spaces, and may arrive in any order. CipherBoard does not decrypt until
-all parts are present. Universal parts may be joined with newline for one
-`commitText` call. Plaintext is not compressed.
+```text
+"CipherBoard Pairing Offer v1\0" || canonical(unsigned_offer_array)
+```
 
-## 8. Replay, Ordering, and Ratchet State
+Offer creation accepts a TTL from 1 through 900 seconds and stores only the
+resulting expiration. The wire object has no creation time or one-time-key ID.
+The decoder verifies exact array length, field sizes, signature, trailing-byte
+absence, and byte-for-byte canonical re-encoding. `now > expires_at` is expired;
+equality is still accepted. Because creation time is absent, a decoder cannot
+independently prove that an offer produced by another implementation had a
+maximum 900-second lifetime.
 
-`message_id` uniqueness is checked at send creation and recorded at receive in
-the same transaction as the advanced session. The replay ledger is bounded by
-a documented retention policy but MUST retain at least 4,096 received IDs per
-contact; eviction never restores an Olm message key. A duplicate is rejected
-either by the ledger or by vodozemac's missing-message-key result.
+The offer hash used by the response is:
 
-The receiver keeps a high sender sequence and a bounded seen window. A lower
-previously unseen sequence that Olm can decrypt is accepted and marked
-out-of-order; an already seen sequence is replay. Gaps are reported without
-claiming that the missing transport message was maliciously delayed. Arbitrary
-delay and global ordering cannot be prevented in a serverless text transport.
+```text
+offer_hash = H(canonical(final_offer_array))
+```
 
-CipherBoard does not raise vodozemac's high-level limits: five stored receiving
-chains, up to 40 skipped message keys per chain, and maximum forward gap 2000.
-Thus out-of-order support is bounded, not unlimited. Used message keys are not
-retained for history. Send and receive for one session are serialized and every
-mutation uses a monotonic persisted revision.
+## 5. Pairing Response (`CBR1`)
 
-The crash-consistent state transitions in `ARCHITECTURE.md` are part of the
-protocol implementation requirement: state plus pending ciphertext on send,
-and state plus replay plus encrypted pending display on receive, commit before
-publication. Retrying a pending send reuses exactly the same `CB1` bytes.
+Device B verifies the offer and expiration, creates an Olm v2 outbound session,
+and encrypts this fixed CBOR array as its first Olm pre-key plaintext:
 
-## 9. Reset, Re-pair, and Failure Rules
+| Index | Value |
+| --- | --- |
+| 0 | protocol version `1` |
+| 1 | pairing ID, bstr16 |
+| 2 | offer hash, bstr32 |
+| 3 | B response nonce, bstr32 |
 
-- Authentication/MAC, format, identity, routing, transcript, replay, part, or
-  UTF-8 failure changes no session/account state.
-- Unknown stored schema or vodozemac pickle version fails closed as `SESSION_ERROR`;
-  it is never deserialized optimistically.
-- Manual session reset destroys the local session and sets `PAIRING_REQUIRED`.
-  It does not create a replacement session from old QR data.
-- Re-pairing uses new pairing IDs/nonces/one-time keys and a new transcript.
-  Old routing tags and sessions are not accepted by the replacement contact.
-- Contact deletion removes encrypted local records and keys/references on a
-  best-effort Android basis. Previously exported ciphertext remains in external
-  applications but is not made decryptable by preserving message keys.
-- Keystore invalidation makes the vault unrecoverable. After explicit user
-  acknowledgement the only supported recovery is destructive identity reset
-  and physical re-pairing.
+The final response text is `CBR1:` plus unpadded Base64url of a definite CBOR
+array of 11 elements:
 
-## 10. Required Protocol Evidence
+| Index | Value |
+| --- | --- |
+| 0 | protocol version `1` |
+| 1 | object type `2` (response) |
+| 2 | pairing ID, bstr16 |
+| 3 | B Curve25519 identity, bstr32 |
+| 4 | B Ed25519 identity, bstr32 |
+| 5 | offer hash, bstr32 |
+| 6 | random response nonce, bstr32 |
+| 7 | Olm message type, currently required to become a pre-key message during completion |
+| 8 | non-empty Olm ASCII payload as bstr, at most 32 KiB |
+| 9 | `offer_capabilities & local_capabilities`, `u32` |
+| 10 | B Ed25519 signature, bstr64 |
 
-Before `CB1` is declared stable, release artifacts MUST include golden vectors
-for identity fingerprints, offer/response signatures, transcript hash, routing
-tag, numeric/emoji comparisons, inner CBOR, one/multipart envelopes, Base64url,
-and Unicode byte equality. Independent Alice/Bob states must exercise first
-pre-key creation, bidirectional traffic, 1000 messages, gaps, reordering,
-mutation, replay, concurrent calls, transaction crash points, deletion, and
-re-pairing. Property and fuzz tests must prove that arbitrary parser input
-cannot panic or allocate beyond limits.
+Elements 0 through 9 form the unsigned response. The signature input is:
 
-Passing those tests is not equivalent to an independent cryptographic or
-Android security audit.
+```text
+"CipherBoard Pairing Response v1\0" || canonical(unsigned_response_array)
+```
+
+Device A additionally checks matching pairing ID and offer hash, ensures the
+response capability bits are a subset of the offer, requires an Olm pre-key
+message, creates the inbound session on a private account copy, and checks the
+encrypted four-element binder. Only then is the caller's account advanced.
+Persisting that advanced account makes a second completion fail because the
+one-time key has been consumed.
+
+The Rust responder does not mutate account state and does not itself remember
+imported pairing IDs. Durable duplicate-import/single-response enforcement on
+device B therefore depends on the Android pending-pairing ledger. The current
+Android coordinator stages the encrypted responder session and exact response
+under the pairing ID, returns that same response for the same still-active
+offer, and rejects consumed, expired, cancelled, or conflicting state. Contact,
+initial ratchet, and pending-state consumption are committed together only
+after the responder explicitly confirms the displayed comparison values. This
+integration also exposes explicit unfinished-pairing deletion and performs
+bounded expiry/orphan cleanup that cancels active state and tombstones staged
+session material. It has JVM state-machine coverage but not process-kill or
+live two-device evidence.
+
+The QR library additionally limits decoded text to 16,384 ASCII bytes, while
+crypto-core accepts pairing text up to 32 KiB. The stricter Android QR limit is
+the effective camera path limit.
+
+## 6. Safety Comparison
+
+Both sides currently compute:
+
+```text
+S = H("CipherBoard Safety v1\0" || final_offer_array || final_response_array)
+```
+
+The numeric representation covers all 256 bits by splitting `S` into eight
+big-endian `u32` values and formatting each as exactly 10 decimal digits. The
+result is eight space-separated groups, 80 digits total.
+
+The supplementary word code takes the high and low nibble of each of the first
+four bytes and maps the eight nibbles to this fixed table:
+
+```text
+0 amber   1 birch   2 cloud   3 dawn
+4 elm     5 frost   6 glass   7 harbor
+8 iris    9 jade    A kite    B linen
+C maple   D north   E opal    F pine
+```
+
+Android displays both implemented values to each role and requires explicit
+local confirmation before persisting a verified contact. Both are derived from
+the same transcript hash, as required; the product requirements do not mandate
+a particular digit count or require emoji instead of a word code. The current
+80-digit/eight-word rendering is therefore the provisional version-1 rendering,
+not a mismatch. The ceremony has not yet been exercised with two physical
+devices and cameras.
+
+## 7. Authenticated Inner User Message
+
+The current inner plaintext passed to Olm is a definite CBOR array of four
+elements:
+
+| Index | Value |
+| --- | --- |
+| 0 | inner version `1` |
+| 1 | random message ID, bstr16 |
+| 2 | capabilities, `u32` |
+| 3 | user bytes, bstr, at most 192 KiB |
+
+On receive, inner message ID and capabilities must exactly match the outer
+reassembled envelope. Olm authenticates the inner bytes and ratchet session.
+The current inner object does not separately repeat sender/recipient identity,
+routing tag, content type, or sequence number. Those proposed bindings are not
+implemented and must not be claimed.
+
+The Rust API permits an empty byte body. The current Android composer refuses
+an empty editor value, so empty-message product support is not end-to-end.
+
+## 8. Transport Envelope (`CB1`)
+
+One part is:
+
+```text
+CB1:<unpadded-base64url(canonical-cbor-map)>
+```
+
+The implemented map has nine mandatory unsigned integer keys:
+
+| Key | Value |
+| --- | --- |
+| 0 | protocol version `1`, `u8` |
+| 1 | message type `1`, `u8` |
+| 2 | routing tag, bstr16 |
+| 3 | message ID, bstr16 |
+| 4 | Olm message type `0` or `1`, `u8` |
+| 5 | this part's Olm payload bytes, bstr |
+| 6 | one-based part number, `u16` |
+| 7 | total parts, `u16`, 1 through 128 |
+| 8 | capabilities, `u32` |
+
+Unknown keys 9 through 127 are rejected as mandatory. Keys 128 and above are
+accepted only for a bounded scalar (`bool`, `null`, signed/unsigned integer) or
+a byte/text string of at most 1024 bytes. Arrays, maps, tags, floats and
+indefinite values are rejected. There is no implemented `critical_extensions`
+array.
+
+The parser enforces a definite map of at most 32 fields, strictly increasing
+canonical integer keys, no duplicates, shortest integer/map/string encodings,
+exact fixed-size fields, no trailing bytes, Base64url alphabet without padding,
+and a maximum encoded token length of 32 KiB. Regression tests reject
+non-shortest map lengths, keys and optional scalar values.
+
+Every part must agree on routing tag, message ID, Olm type, total count and
+capabilities. Part numbers must be unique and complete; input order is
+irrelevant. Reassembled Olm bytes are limited to 256 KiB. There is no outer
+whole-payload digest field. Corruption is ultimately rejected by Olm
+authentication and the authenticated inner message bindings, but the omitted
+early assembly digest remains a design difference from the requested format.
+
+## 9. Fragmentation Limits
+
+| Property | Implemented value |
+| --- | --- |
+| Android composer plaintext | non-empty, at most Rust limit after UTF-8 encoding |
+| Rust plaintext body | 192 KiB |
+| Reassembled Olm payload | 256 KiB |
+| Parts | 128 |
+| Encoded token | 32 KiB |
+| Universal chunk | 16 KiB of Olm payload |
+| SMS compact chunk | 48 bytes of Olm payload |
+| Viewer first-pass part | 32 KiB characters |
+| Viewer first-pass selection | 128 parts plus separators, about 4 MiB characters |
+
+`SMS_COMPACT` selects a fixed 48-byte payload chunk. Regression tests assert
+that every complete ASCII `CB1` token is at most 153 characters, including the
+canonical-CBOR envelope and Base64url expansion. The Android estimate uses the
+same 48-byte logical chunk size. This is a conservative compact transport
+profile; an actual carrier may still split or transform text according to its
+own SMS encoding and concatenation policy.
+
+The parser does not persist incomplete assemblies: selected text must contain
+all parts in one invocation. There is no 24-hour partial-message collector in
+the current application.
+
+## 10. Replay and Atomic Android State
+
+The serialized session holds up to 4096 seen message IDs. A duplicate is
+rejected from that ledger or by vodozemac when its message key is no longer
+available. Vodozemac's own skipped-message limits bound out-of-order delivery.
+
+The Android runtime implements these publication boundaries:
+
+- send: advanced encrypted ratchet state and exact pending ciphertext are
+  committed in one SQLite transaction before the composer asks the live IME to
+  call `InputConnection.commitText()` through a one-shot handoff bound to the
+  originating host/editor and contact;
+- receive: replay row, advanced encrypted ratchet state and an encrypted
+  pending-display plaintext record are committed in one SQLite transaction
+  before the viewer opens that record; the pending record is bound to the
+  digest of the exact ordered ciphertext parts;
+- abandoning a display lease before render retains that encrypted record for
+  an exact-ciphertext retry; closing a rendered lease deletes it; and
+- completing a successful host insertion deletes the contact-bound pending-
+  outbound record, while a failed/mismatched handoff keeps the exact bytes for
+  retry without a new ratchet step.
+
+These source-level transactions, retry/recovery paths and JVM unit tests are
+implemented. Forced process-crash instrumentation at every boundary and the
+ambiguous host-accepted/status-crash case have not yet been demonstrated on
+Android.
+
+## 11. Protocol Blockers Before a Stable v1
+
+1. Decide and version the pairing/envelope/inner schemas; the previous
+   aspirational document did not match emitted bytes.
+2. Validate the integrated Android pairing persistence/UI, B-side
+   duplicate-import ledger, bounded orphan cleanup, expiry/cancel handling,
+   explicit verification, identity-change blocking and re-pair flow with live
+   two-device and process-kill tests. Add a signed creation time or otherwise
+   make the maximum original TTL enforceable by the receiving device; the wire
+   currently carries only the claimed expiry.
+3. Define capability semantics and downgrade handling; current `u32`
+   intersection has no required-feature policy.
+4. Decide whether routing must be transcript-specific and whether sender,
+   recipient, sequence and routing fields must be repeated inside Olm.
+5. Decide whether an outer assembly digest is required and version any change.
+6. Add stable golden vectors and an independent decoder/oracle for every final
+   field, domain separator and limit.
+7. Run sustained coverage-guided fuzzing and Android forced-crash/restart tests.
+
+Passing current automated tests is not equivalent to independent protocol or
+product security review.
