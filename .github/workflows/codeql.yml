@@ -1,0 +1,151 @@
+name: CodeQL advanced
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 2 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  RUST_TOOLCHAIN: "1.94.0"
+  CARGO_NDK_VERSION: "4.1.2"
+  ANDROID_PLATFORM: "36"
+  ANDROID_BUILD_TOOLS: "36.1.0"
+  ANDROID_NDK: "28.0.13004108"
+
+jobs:
+  source:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, c-cpp, python, rust]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze source
+        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          category: /language:${{ matrix.language }}
+
+  android:
+    name: CodeQL (java-kotlin manual Android build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: codeql-cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: codeql-cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          yes | "$sdkmanager" --licenses >/dev/null || true
+          "$sdkmanager" --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;${ANDROID_NDK}" \
+            "platform-tools"
+
+      - name: Install Rust Android toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+          config: |
+            threat-models: local
+
+      - name: Build Android Java and Kotlin sources
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace --no-configuration-cache --no-build-cache \
+            clean :app:assembleDebug
+
+      - name: Ensure dependency locks were not rewritten
+        run: git diff --exit-code -- app/gradle.lockfile '**/Cargo.lock'
+
+      - name: Analyze Android sources
+        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          category: /language:java-kotlin
+
+  required:
+    name: CodeQL required
+    if: ${{ always() }}
+    needs: [source, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every CodeQL analysis
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+        run: |
+          test "$SOURCE_RESULT" = success
+          test "$ANDROID_RESULT" = success

@@ -50,10 +50,10 @@ A complete JDK is bundled with Android Studio:
 - Android Studio build: `AI-261.23567.138.2611.15646644`
 - Cached Gradle wrapper distributions: `8.10.2`, `8.14`
 
-Builds should use the repository's Gradle wrapper. Set `JAVA_HOME` for the
-build session to the Android Studio JBR only after confirming compatibility
-with the checked-in wrapper. If that wrapper does not support JDK 21, install
-or select a complete JDK 17 rather than using the current JRE-only installation.
+Builds use the repository's Gradle wrapper and JDK 21. Set `JAVA_HOME` for the
+build session to the Android Studio JBR; the application source and bytecode
+compatibility remain pinned to Java 17. Do not use the current JRE-only default
+installation because it lacks `javac`, and Robolectric API 36 requires JDK 21.
 
 ## Android SDK
 
@@ -155,8 +155,8 @@ connected-test availability were subsequently resolved as described below; it
 must not be read as the current environment status.
 
 1. **Java compiler selection:** the active `JAVA_HOME` is a JRE without
-   `javac`. Select the Android Studio JBR 21 for compatible Gradle builds, or a
-   complete supported JDK 17.
+   `javac`. Select the Android Studio JBR 21 for Gradle builds and Robolectric
+   API 36 tests.
 2. **Android Command-line Tools:** install the official latest package to
    provide `sdkmanager`, `avdmanager`, and `apkanalyzer`.
 3. **Rust Android targets:** install pinned support for

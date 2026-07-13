@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  JAVA_VERSION: "17"
+  JAVA_VERSION: "21"
   PYTHON_VERSION: "3.12"
   RUST_TOOLCHAIN: "1.94.0"
   CARGO_NDK_VERSION: "4.1.2"
@@ -84,12 +84,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
-      - name: Check out exact release commit
+      - name: Check out trusted workflow ref
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ needs.validate.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Select validated release commit
+        env:
+          RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$RELEASE_COMMIT" HEAD
+          git checkout --detach "$RELEASE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 
       - name: Set up Java
         uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0

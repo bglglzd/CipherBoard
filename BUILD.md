@@ -14,7 +14,7 @@ development dependency caches.
 | Gradle wrapper | 8.14; distribution SHA-256 pinned in wrapper properties |
 | Android Gradle Plugin | 8.13.2 |
 | Kotlin | 2.3.20 |
-| JDK | 17 with `javac` |
+| JDK | 21 with `javac` (application bytecode remains Java 17 compatible) |
 | Android build-tools | 36.1.0 |
 | compileSdk / targetSdk / minSdk | 36 / 36 / 23 |
 | Android NDK | 28.0.13004108 |
@@ -37,7 +37,7 @@ Change these values intentionally and review upgrade behavior before release.
 
 ## Prerequisites
 
-1. A JDK 17 installation containing `java`, `javac`, and `keytool`.
+1. A JDK 21 installation containing `java`, `javac`, and `keytool`.
 2. Android SDK platform 36, Build Tools `36.1.0`, command-line tools and NDK
    `28.0.13004108`.
 3. Rust and Cargo with Android targets `aarch64-linux-android` and

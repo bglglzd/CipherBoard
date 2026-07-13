@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  JAVA_VERSION: "17"
+  JAVA_VERSION: "21"
   PYTHON_VERSION: "3.12"
   RUST_TOOLCHAIN: "1.94.0"
   CARGO_NDK_VERSION: "4.1.2"

@@ -58,7 +58,7 @@ design issue rather than weakening the control in code.
 ## Development Setup
 
 Use the pinned versions in [`BUILD.md`](BUILD.md). The normal environment uses
-JDK 17, Android SDK/Build Tools 36.1.0, NDK 28.0.13004108, Rust/Cargo, and
+JDK 21, Android SDK/Build Tools 36.1.0, NDK 28.0.13004108, Rust/Cargo, and
 `cargo-ndk`. Import the repository root in Android Studio or build from a shell.
 
 Build and verify a debug APK on Linux or macOS:
