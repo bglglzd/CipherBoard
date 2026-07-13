@@ -1,0 +1,39 @@
+[package]
+name = "cipherboard-crypto"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+name = "cipherboard_crypto"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+base64 = "=0.22.1"
+getrandom = "=0.2.16"
+minicbor = { version = "=0.25.1", features = ["derive", "std"] }
+serde = { version = "=1.0.219", features = ["derive"] }
+serde_json = "=1.0.140"
+sha2 = "=0.10.9"
+vodozemac = { version = "=0.10.0", default-features = false, features = ["experimental-session-config"] }
+zeroize = { version = "=1.8.2", features = ["derive"] }
+
+[dev-dependencies]
+proptest = "=1.6.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"

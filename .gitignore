@@ -15,3 +15,8 @@ tools/*.txt
 *.patch
 *.diff
 *.sh
+!scripts/*.sh
+target
+*.jks
+*.keystore
+signing.properties
