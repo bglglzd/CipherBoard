@@ -262,6 +262,6 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
-    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.36.0")
+    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.50.0")
     "debugImplementation"("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 }
