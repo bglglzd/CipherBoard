@@ -36,6 +36,7 @@
     <string name="cipherboard_home_keyboard_settings">Keyboard settings</string>
     <string name="cipherboard_home_security">Security</string>
     <string name="cipherboard_home_licenses">Licenses and source</string>
+    <string name="cipherboard_home_updates">Updates</string>
     <string name="cipherboard_home_lock_vault">Lock Vault</string>
     <string name="cipherboard_home_status_verified">Verified</string>
     <string name="cipherboard_home_status_unverified">Unverified</string>
@@ -76,4 +77,20 @@
     <string name="cipherboard_security_limit_defects">Defects in the cryptographic library, Android integration, parser, storage, pairing flow, or user interface.</string>
     <string name="cipherboard_security_audit_notice">CipherBoard uses established cryptographic primitives, but the complete product has not undergone an independent security audit.</string>
     <string name="cipherboard_security_high_risk">Before high-risk use, verify the APK signing certificate and SHA-256 from a trusted source, keep verified boot and the bootloader locked, use a strong device PIN or password, disable untrusted Accessibility services, compare every Safety Number in person, and obtain an independent applied-cryptography and Android security review.</string>
+
+    <string name="cipherboard_updates_title">Updates</string>
+    <string name="cipherboard_updates_offline_notice">CipherBoard has no network access and cannot check for updates. Automatic update checks and installations are handled by an external installer such as Obtainium.</string>
+    <string name="cipherboard_updates_current_version">Current version: %1$s</string>
+    <string name="cipherboard_updates_repository_title">Official source and releases</string>
+    <string name="cipherboard_updates_repository_url" translatable="false">https://github.com/bglglzd/CipherBoard</string>
+    <string name="cipherboard_updates_open_repository">Open GitHub repository</string>
+    <string name="cipherboard_updates_open_failed">No app can open the repository link.</string>
+    <string name="cipherboard_updates_obtainium_title">Automatic updates with Obtainium</string>
+    <string name="cipherboard_updates_step_install_obtainium">Install Obtainium from a source you trust.</string>
+    <string name="cipherboard_updates_step_add_source">Add the CipherBoard GitHub repository URL shown above as an app source.</string>
+    <string name="cipherboard_updates_step_stable_releases">Keep prereleases disabled so Obtainium selects stable CipherBoard releases.</string>
+    <string name="cipherboard_updates_step_allow_installs">Allow Obtainium to install apps when Android asks, then approve the first update.</string>
+    <string name="cipherboard_updates_numbered_step">%1$d. %2$s</string>
+    <string name="cipherboard_updates_keep_data_warning">Install updates over the existing app. Do not uninstall CipherBoard: uninstalling or clearing its data deletes the local identity and requires pairing again.</string>
+    <string name="cipherboard_updates_signature_notice">Android accepts an update only when its package name and signing certificate match the installed CipherBoard app. Verify release checksums through a trusted channel for high-risk use.</string>
 </resources>

@@ -83,6 +83,12 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
             android:exported="false" />
 
         <activity
+            android:name="helium314.keyboard.secure.update.UpdateInfoActivity"
+            android:label="@string/cipherboard_updates_title"
+            android:theme="@style/platformActivityTheme"
+            android:exported="false" />
+
+        <activity
             android:name="helium314.keyboard.secure.home.ContactDetailsActivity"
             android:label="@string/cipherboard_contact_title"
             android:theme="@style/platformActivityTheme"

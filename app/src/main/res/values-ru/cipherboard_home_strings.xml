@@ -36,6 +36,7 @@
     <string name="cipherboard_home_keyboard_settings">Настройки клавиатуры</string>
     <string name="cipherboard_home_security">Безопасность</string>
     <string name="cipherboard_home_licenses">Лицензии и исходный код</string>
+    <string name="cipherboard_home_updates">Обновления</string>
     <string name="cipherboard_home_lock_vault">Заблокировать хранилище</string>
     <string name="cipherboard_home_status_verified">Проверен</string>
     <string name="cipherboard_home_status_unverified">Не проверен</string>
@@ -76,4 +77,19 @@
     <string name="cipherboard_security_limit_defects">Ошибки криптографической библиотеки, интеграции с Android, парсера, хранилища, процедуры сопряжения или интерфейса.</string>
     <string name="cipherboard_security_audit_notice">CipherBoard использует проверенные криптографические примитивы, но весь продукт не проходил независимый аудит безопасности.</string>
     <string name="cipherboard_security_high_risk">Перед использованием в ситуации высокого риска проверьте сертификат подписи APK и SHA-256 через доверенный канал, сохраните Verified Boot и заблокированный загрузчик, задайте надёжный PIN-код или пароль, отключите недоверенные службы Accessibility, лично сравнивайте каждый Safety Number и проведите независимую проверку со специалистом по прикладной криптографии и Android security.</string>
+
+    <string name="cipherboard_updates_title">Обновления</string>
+    <string name="cipherboard_updates_offline_notice">У CipherBoard нет доступа к сети, поэтому приложение не может проверять обновления. Автоматическую проверку и установку выполняет внешняя программа, например Obtainium.</string>
+    <string name="cipherboard_updates_current_version">Текущая версия: %1$s</string>
+    <string name="cipherboard_updates_repository_title">Официальный исходный код и релизы</string>
+    <string name="cipherboard_updates_open_repository">Открыть репозиторий GitHub</string>
+    <string name="cipherboard_updates_open_failed">Нет приложения, которое может открыть ссылку на репозиторий.</string>
+    <string name="cipherboard_updates_obtainium_title">Автоматические обновления через Obtainium</string>
+    <string name="cipherboard_updates_step_install_obtainium">Установите Obtainium из источника, которому доверяете.</string>
+    <string name="cipherboard_updates_step_add_source">Добавьте указанный выше URL репозитория CipherBoard на GitHub как источник приложения.</string>
+    <string name="cipherboard_updates_step_stable_releases">Отключите предварительные релизы, чтобы Obtainium выбирал стабильные версии CipherBoard.</string>
+    <string name="cipherboard_updates_step_allow_installs">Разрешите Obtainium устанавливать приложения по запросу Android, затем подтвердите первое обновление.</string>
+    <string name="cipherboard_updates_numbered_step">%1$d. %2$s</string>
+    <string name="cipherboard_updates_keep_data_warning">Устанавливайте обновления поверх существующего приложения. Не удаляйте CipherBoard: удаление приложения или очистка его данных уничтожает локальную личность и требует повторного сопряжения.</string>
+    <string name="cipherboard_updates_signature_notice">Android принимает обновление, только если package name и сертификат подписи совпадают с установленным CipherBoard. При использовании в ситуации высокого риска проверяйте контрольные суммы релиза через доверенный канал.</string>
 </resources>

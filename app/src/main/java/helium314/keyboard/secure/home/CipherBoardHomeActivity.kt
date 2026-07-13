@@ -61,6 +61,7 @@ import androidx.fragment.app.FragmentActivity
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.utils.Theme
 import helium314.keyboard.settings.SettingsActivity
+import helium314.keyboard.secure.update.UpdateInfoActivity
 import org.cipherboard.securekeyboard.runtime.OwnerIdentitySummary
 import org.cipherboard.securekeyboard.runtime.SecureContactSummary
 import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime
@@ -109,6 +110,7 @@ class CipherBoardHomeActivity : FragmentActivity() {
                         onLockVault = ::lockVault,
                         onSecurity = ::openSecurity,
                         onLicenses = ::openLicenses,
+                        onUpdates = ::openUpdates,
                         showInvalidatedResetConfirmation = showInvalidatedResetConfirmation.value,
                         onRequestInvalidatedReset = { showInvalidatedResetConfirmation.value = true },
                         onDismissInvalidatedReset = { showInvalidatedResetConfirmation.value = false },
@@ -327,6 +329,10 @@ class CipherBoardHomeActivity : FragmentActivity() {
         startActivity(Intent(this, LicenseInfoActivity::class.java))
     }
 
+    private fun openUpdates() {
+        startActivity(Intent(this, UpdateInfoActivity::class.java))
+    }
+
     private fun showError(message: Int) {
         releaseContactTokens(screenState.value)
         screenState.value = HomeScreenState.Locked(getString(message), isCritical = false)
@@ -430,6 +436,7 @@ private fun HomeScreen(
     onLockVault: () -> Unit,
     onSecurity: () -> Unit,
     onLicenses: () -> Unit,
+    onUpdates: () -> Unit,
     showInvalidatedResetConfirmation: Boolean,
     onRequestInvalidatedReset: () -> Unit,
     onDismissInvalidatedReset: () -> Unit,
@@ -457,6 +464,7 @@ private fun HomeScreen(
                 onUnlock,
                 onSecurity,
                 onLicenses,
+                onUpdates,
                 onRequestInvalidatedReset,
             )
             is HomeScreenState.IdentityRequired -> IdentityContent(
@@ -465,6 +473,7 @@ private fun HomeScreen(
                 onCreateIdentity,
                 onLockVault,
                 onLicenses,
+                onUpdates,
             )
             is HomeScreenState.Ready -> ReadyContent(
                 state,
@@ -476,6 +485,7 @@ private fun HomeScreen(
                 onLockVault,
                 onSecurity,
                 onLicenses,
+                onUpdates,
             )
         }
     }
@@ -508,6 +518,7 @@ private fun LockedContent(
     onUnlock: () -> Unit,
     onSecurity: () -> Unit,
     onLicenses: () -> Unit,
+    onUpdates: () -> Unit,
     onResetInvalidatedVault: () -> Unit,
 ) {
     Column(
@@ -548,6 +559,9 @@ private fun LockedContent(
         TextButton(onClick = onLicenses) {
             Text(stringResource(R.string.cipherboard_home_licenses))
         }
+        TextButton(onClick = onUpdates) {
+            Text(stringResource(R.string.cipherboard_home_updates))
+        }
     }
 }
 
@@ -558,6 +572,7 @@ private fun IdentityContent(
     onCreateIdentity: (String) -> Unit,
     onLockVault: () -> Unit,
     onLicenses: () -> Unit,
+    onUpdates: () -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     LazyColumn(
@@ -606,6 +621,9 @@ private fun IdentityContent(
             TextButton(onClick = onLicenses, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.cipherboard_home_licenses))
             }
+            TextButton(onClick = onUpdates, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cipherboard_home_updates))
+            }
         }
     }
 }
@@ -621,6 +639,7 @@ private fun ReadyContent(
     onLockVault: () -> Unit,
     onSecurity: () -> Unit,
     onLicenses: () -> Unit,
+    onUpdates: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
@@ -699,6 +718,9 @@ private fun ReadyContent(
                 }
                 OutlinedButton(onClick = onLicenses, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.cipherboard_home_licenses))
+                }
+                OutlinedButton(onClick = onUpdates, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.cipherboard_home_updates))
                 }
                 OutlinedButton(
                     onClick = onLockVault,
