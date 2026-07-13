@@ -11,7 +11,8 @@ are recorded here.
 - Upstream repository: `https://github.com/HeliBorg/HeliBoard.git`
 - Upstream tag: `v4.0`
 - Upstream commit: `bd48798b99cccc99704eebf2a9259c02dbd684d5`
-- Development branch: `feature/secure-messaging-keyboard`
+- Initial development branch: `feature/secure-messaging-keyboard`
+- Public default branch: `main`
 - Git version: `2.53.0.windows.1` (`x86_64`)
 - Git global `core.longpaths`: unset
 - Git global `core.autocrlf`: unset

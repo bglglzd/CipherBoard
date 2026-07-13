@@ -1,8 +1,9 @@
 # CipherBoard Test Plan
 
-Status: required verification plan. This file defines tests and evidence; it
-does not claim they currently pass. Results belong in CI artifacts,
-`SECURITY_REVIEW.md`, and the signed release report.
+Status: required verification plan. This file defines tests and records only the
+explicitly identified evidence snapshot below. Artifact-specific results belong
+in CI artifacts, `SECURITY_REVIEW.md`, generated `BUILD_INFO.txt`, and the signed
+release report.
 
 ## 1. Test Policy
 
@@ -34,7 +35,7 @@ Required layers:
 Unit fakes establish deterministic error coverage but cannot satisfy a
 hardware/device acceptance gate.
 
-### 1.1 Current evidence snapshot (not a release result)
+### 1.1 Current evidence snapshot (not an independent audit)
 
 As of 2026-07-13, stored/reported local evidence is:
 
@@ -44,13 +45,13 @@ As of 2026-07-13, stored/reported local evidence is:
 | repository Android unit gate | full `app`, `crypto-core`, `pairing`, and `secure-storage` debug unit tasks pass | JVM/fakes; not framework/camera/real-Keystore evidence; two inherited regressions are explicitly ignored with issue-specific reasons |
 | repository Android lint gate | app/library module release lint tasks pass on current worktree | rerun and archive for the final commit/artifact |
 | envelope cargo-fuzz | pinned ASan/libFuzzer run completed 601,574 inputs in 31 seconds with zero crashes/timeouts | bounded local run; not long-duration, multi-platform, pairing, inner-codec, or JNI evidence |
-| dependency vulnerability preflight | official SHA-pinned OSV-Scanner v2.4.0 scanned all 255 SBOM packages against fresh offline Maven/crates.io DBs; exit 0/zero findings | repeat and archive against the clean final release SBOM |
+| dependency vulnerability scan | official SHA-pinned OSV-Scanner v2.4.0 scanned all 255 SBOM packages against fresh offline Maven/crates.io DBs; exit 0/zero findings, including the pre-public local signed-candidate run | repeat and archive against the final public release SBOM |
 | offline licenses | unit test requires GPL/Apache/BlueOak/BSD/CC/notices/provenance assets to exist and be nonempty | final APK asset/manual completeness review pending |
 | pairing/contact | state-machine tests cover one-shot state, bounded orphan cleanup, duplicate/expiry and blocking identity change | no live-camera/permission/pairing E2E or pairing-specific process-kill evidence |
 | pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass before outbound commit, after outbound commit/before handoff, and after inbound commit | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
 | Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/composer/live-camera E2E |
 | debug Home UI smoke | current APK installs/launches; English and per-app `ru-RU` Home controls do not overlap; Russian landscape fits at font scale 1.3; locale-change process remains alive after the receiver fix | Home only; no full screen/theme/font-2.0/RTL matrix and no ordinary IME input claim |
-| production APK verification | not claimed by this snapshot | exact signed artifact, certificate/hash/SBOM review still required |
+| signed release candidate | a clean pre-public local pipeline produced a non-debug-signed APK and passed scripted signature, permission, APK-policy, SBOM/vulnerability, and artifact-hash gates | its evidence bundle is local, untracked, and unpublished; rebuild and publish new evidence for the final public tag; physical install acceptance is not claimed |
 | GrapheneOS/physical devices | not run | D01-D14 remain residual validation prerequisites before high-risk use, not demonstrated critical code defects |
 
 Independent protocol review should validate the exact documented routing,
@@ -400,10 +401,11 @@ Release additionally requires:
   packageable Gradle locks only for an intentional dependency change with
   `./gradlew :app:resolveApplicationDependencyLocks --write-locks --no-configuration-cache`;
 - SBOM generation for Gradle, Rust and packaged native components;
-- OSV/cargo audit review with no untriaged applicable vulnerability. Preflight
-  passed with the pinned official OSV-Scanner v2.4.0, fresh offline Maven and
-  crates.io databases, all 255 SBOM packages, and zero findings; repeat it for
-  the clean final release and archive `VULNERABILITY_SCAN.json`;
+- OSV/cargo audit review with no untriaged applicable vulnerability. The clean
+  pre-public local signed candidate passed with the pinned official OSV-Scanner
+  v2.4.0, fresh offline Maven and crates.io databases, all 255 SBOM packages,
+  and zero findings; repeat it for the final public release tag and archive that
+  run's `VULNERABILITY_SCAN.json`;
 - ktlint/detekt/Android lint with no release error;
 - secret scan of tracked and distribution files;
 - license compatibility/notices verification;

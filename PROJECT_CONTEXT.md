@@ -27,7 +27,7 @@ artifact base name MUST be defined from centralized build configuration. The
 current upstream `helium314.keyboard` identifiers and HeliBoard artifact name
 are baseline values to migrate, not final CipherBoard values.
 
-The inherited APK minimum remains API 21 for ordinary keyboard use. Version 1
+The APK minimum is API 23 for ordinary keyboard use. Version 1
 secure messaging requires API 30 or newer so the Keystore key can enforce the
 combined `BIOMETRIC_STRONG or DEVICE_CREDENTIAL` policy without a weaker
 compatibility path. On older Android the secure entry points fail closed and
@@ -36,8 +36,8 @@ meet this floor.
 
 ## Repository Baseline
 
-- Workspace: `<workspace>\cipherboard`
-- Development branch: `feature/secure-messaging-keyboard`
+- Workspace: repository root
+- Default public branch: `main`
 - Official upstream: `HeliBorg/HeliBoard`
 - Stable tag: `v4.0`
 - Pinned upstream commit: `bd48798b99cccc99704eebf2a9259c02dbd684d5`
@@ -53,11 +53,11 @@ iconography, signing, and support language. Russian and English layouts,
 dictionaries, emoji, symbols, Unicode support, and ordinary HeliBoard settings
 remain functional.
 
-At the time this context was written, the worktree still largely reflects the
-upstream single `:app` module. The Rust crate is a scaffold and the upstream
-manifest still contains permissions/storage settings forbidden by CipherBoard.
-Documents describe the target and test gates; they do not convert pending work
-into a completed security claim.
+The repository now contains the HeliBoard-based `:app` together with dedicated
+`:crypto-core`, `:pairing`, and `:secure-storage` modules. Release gates inspect
+the packaged manifest, DEX files, native ABIs, signature, backup policy, and
+runtime permissions. Passing those automated checks is not a substitute for an
+independent Android and applied-cryptography audit.
 
 ## Non-Negotiable Invariants
 

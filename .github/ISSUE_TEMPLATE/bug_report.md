@@ -1,36 +1,68 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report a reproducible CipherBoard defect using synthetic data
+title: "[Bug] "
 labels: bug
+assignees: ""
 ---
 
-Please see the appropriate readme section for issue reporting guidelines: https://github.com/HeliBorg/HeliBoard?tab=readme-ov-file#reporting-issues
-tl;dr:
-* search for duplicates, also in closed issues
-* a single issue per topic
-* reduce screenshot size
-
 <!--
-issue template below, please remove above text before submitting (and the template too if you think it's a good idea)
-Please choose a meaningful title for your issue, and consider that if you want help you should provide enough information that people can actually help
+Security vulnerability? Stop here and follow SECURITY.md. Do not disclose an
+unpatched vulnerability publicly.
+
+Never include real plaintext, complete ciphertext, contact names, QR payloads,
+private keys, session state, full fingerprints, Safety Numbers, Vault files,
+signing material, or unredacted logs/screenshots. Use disposable identities and
+synthetic messages.
 -->
 
-**Describe the bug**
+## Summary
 
-**To Reproduce**
-If possible, provide all the necessary steps to reproduce your problem, including the involved apps and text field or settings if relevant.
-In case you cannot reproduce the bug, say so and provide information about when the bug may occur for you. Settings and the app you're writing in are usually important, please don't omit them.
+<!-- What happened? Keep this to one problem. -->
 
-**Expected behavior**
-If it's not obvious (e.g. not crash), describe how you think the app should behave.
+## Reproduction
 
-**Screenshots**
-ONLY add screenshots when they add real value.
-If you add screenshots, reduce the size or use thumbnails to keep the issue nicely readable.
+1.
+2.
+3.
 
-**App version**
-Please provide the explicit version (not just "latest"), or if you build the app yourself specify the latest commit.
+<!-- State whether this is reproducible every time. Use only synthetic data. -->
 
-**Device:**
- - Model: [e.g. Samsung Galaxy S9]
- - OS: [e.g. Android 10] (please also mention whether you are using the manufacturer's OS or a custom ROM)
+## Expected Behavior
+
+<!-- What should have happened? -->
+
+## Observed Behavior
+
+<!-- Include content-free error codes when available. Do not paste stack traces
+or logcat until you have checked and redacted every line. -->
+
+## Environment
+
+- CipherBoard version:
+- Source commit, if self-built:
+- APK source and SHA-256:
+- Device model:
+- Android/GrapheneOS version:
+- Sandboxed Google Play present: yes / no
+- Displayed Vault security level: StrongBox / TEE / unavailable
+- Keyboard language and layout:
+- Host application category and field type:
+- Vault lock policy:
+
+## Regression
+
+<!-- Did this work in an earlier CipherBoard version? Which one? -->
+
+## Additional Context
+
+<!-- Attach no private conversations or secrets. If a visual is essential,
+reproduce it with synthetic content and redact system identifiers. -->
+
+## Checklist
+
+- [ ] I searched open and closed issues.
+- [ ] This report covers one problem.
+- [ ] I reproduced it with a disposable identity and synthetic content.
+- [ ] I removed secrets, personal data, full identifiers, and unredacted logs.
+- [ ] This is not an undisclosed security vulnerability.

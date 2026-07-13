@@ -1,12 +1,28 @@
 ---
-name: Other
-about: Anything that does not fit into the other categories. Please don't use this for questions, discussions, or anything that fits into one of the other issue categories.
+name: Documentation or maintenance
+about: Report a focused non-runtime issue that is not a bug or feature request
+title: "[Maintenance] "
+labels: ""
+assignees: ""
 ---
 
-Please see the appropriate readme section for issue reporting guidelines: https://github.com/HeliBorg/HeliBoard?tab=readme-ov-file#reporting-issues
-tl;dr:
-* search for duplicates, also in closed issues
-* a single issue per topic
-* ONLY add screenshots when necessary, and reduce their size
+<!--
+Do not use this template for security vulnerabilities, general support, or
+multiple unrelated topics. Follow SECURITY.md for vulnerabilities and
+SUPPORT.md for support guidance.
+-->
 
-<!-- please remove above text before submitting, and choose a meaningful title for your issue -->
+## Affected File or Area
+
+## Problem
+
+## Proposed Correction
+
+## Evidence or References
+
+## Checklist
+
+- [ ] I searched open and closed issues.
+- [ ] This issue contains no secrets, personal data, or unpatched vulnerability
+      details.
+- [ ] This report covers one topic.

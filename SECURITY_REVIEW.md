@@ -2,15 +2,17 @@
 
 **Review date:** 2026-07-13
 
-**Reviewed tree:** current 2026-07-13 worktree; record the final commit in
-`BUILD_INFO.txt` for any artifact review
+**Reviewed tree:** current 2026-07-13 worktree. A clean pre-public local signed
+candidate was verified separately, but its local evidence bundle is not tracked
+or published and must not be transferred to the rewritten public history.
 
 **Assurance:** internal source/document review, not an independent audit and not
 a production release approval
 
-Evidence below applies only to the named source/tests. It does not establish
-the signature, final merged manifest, physical-device or GrapheneOS behavior of
-an eventual production artifact.
+Evidence below applies only to the named source, tests, or artifact. The prior
+local candidate has signature and merged-manifest evidence, but it does not
+establish those properties for a later public-source commit, and it provides no
+physical-device or GrapheneOS evidence.
 
 ## Evidence Observed
 
@@ -60,7 +62,8 @@ an eventual production artifact.
   its pinned SHA-256 allowlist, required fresh local Maven and crates.io
   vulnerability databases, and scanned all 255 CycloneDX SBOM packages fully
   offline. It exited successfully with zero findings and produced
-  `VULNERABILITY_SCAN.json`; the clean final release must repeat this check.
+  `VULNERABILITY_SCAN.json`. The pre-public local signed candidate repeated this
+  gate; the final public tag must repeat it and publish its own report.
 - GPLv3/Apache/BlueOak/CC texts, consolidated BSD notices, upstream provenance
   and the license inventory are generated as offline APK assets, required
   nonempty by a unit test, and displayed by a non-exported local license
@@ -86,7 +89,7 @@ an eventual production artifact.
 | Decrypt/viewer | hostile selected-text bounds, read-only process-text result, vault auth, drawing-only inaccessible text, `FLAG_SECURE`, recents/background/timeout cleanup, reply by contact ID | process-text/FLAG_SECURE/background wipe/zeroization and clipboard fallback pass on AOSP; a separate `FLAG_SECURE` test screencap is black, while secure-viewer screenshot/recents/Assistant/Accessibility/screen-lock evidence remains |
 | Pairing/contact | signed native offer/response; encrypted one-shot state; bounded orphan cleanup; explicit comparison; changed identity blocks use until verification | live two-device, camera permission, lifecycle, process-kill and hostile-QR instrumentation |
 | QR | local ZXing codec and lifecycle-bound CameraX scanner with bounded ASCII payloads; Camera requested only by the Scan actions | real permission grant/deny/revoke and two-device camera evidence |
-| Manifest/signing | source backup/cleartext controls, forbidden-permission tests and public release-certificate SHA-256 pin | final signed APK `aapt`/`apkanalyzer`/`apksigner` verification |
+| Manifest/signing | source backup/cleartext controls, forbidden-permission tests and public release-certificate SHA-256 pin; a pre-public local signed candidate passed scripted APK/signature policy | repeat `aapt`/`apkanalyzer`/`apksigner` verification and publish its evidence for the final public tag |
 
 ## Verified Android Instrumentation Scope
 
@@ -162,10 +165,13 @@ network deep links, Firebase/GMS/advertising/analytics/crash/WebView/dynamic
 loader markers, invalid/non-v2/debug/mismatched-certificate signing and ZIP
 alignment failures. Release staging also hashes every published output.
 
-This scanner has not yet run against a final release APK. It cannot prove
-semantic caller validation, absence of native defects, absence of obfuscated
-behavior, or plaintext non-disclosure. It is a release blocker plus manual
-review, not an audit.
+This policy scanner ran successfully against the pre-public local signed
+candidate. Its local evidence is not tracked or published and must not be used
+to verify the rewritten public history. It must run again for the final public
+tag before publication. Even a passing result cannot prove semantic caller
+validation, absence of native defects, absence of obfuscated behavior, or
+plaintext non-disclosure. It is a release blocker plus manual review, not an
+audit.
 
 ## Required Work Before High-risk Use
 
@@ -178,8 +184,9 @@ review, not an audit.
 3. Exercise physical GrapheneOS, live camera pairing, StrongBox/TEE,
    authentication/invalidation, direct boot and protected windows as residual
    platform validation.
-4. Build/sign/verify the clean release APK and independently recompute its
-   permissions, hash, certificate and complete artifact manifest.
+4. Repeat build/sign/verification on the final public release tag and
+   independently recompute its permissions, hash, certificate and complete
+   artifact manifest; do not reuse the pre-public local candidate evidence.
 5. Obtain independent Android security and applied-cryptography review of the
    exact protocol/build and remediate any findings before high-risk reliance.
 

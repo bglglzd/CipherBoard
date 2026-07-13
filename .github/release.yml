@@ -1,0 +1,25 @@
+changelog:
+  exclude:
+    labels:
+      - skip changelog
+  categories:
+    - title: Security and cryptography
+      labels:
+        - security
+        - cryptography
+    - title: Features and improvements
+      labels:
+        - enhancement
+    - title: Fixes
+      labels:
+        - bug
+    - title: Dependencies and delivery
+      labels:
+        - dependencies
+        - ci/cd
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Other changes
+      labels:
+        - "*"

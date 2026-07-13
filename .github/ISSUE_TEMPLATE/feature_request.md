@@ -1,32 +1,54 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Propose a focused offline CipherBoard improvement
+title: "[Feature] "
 labels: enhancement
+assignees: ""
 ---
 
-Please see the appropriate readme section for issue reporting guidelines: https://github.com/HeliBorg/HeliBoard?tab=readme-ov-file#reporting-issues
-tl;dr:
-* search for duplicates, also in closed issues
-* check FAQ / hidden features
-* a single issue per topic
-* ONLY add screenshots when necessary, and reduce their size
-
 <!--
-issue template below, please remove above text before submitting (and the template too if you think it's a good idea)
-Please choose a meaningful title for your issue
+Search open and closed issues first. CipherBoard version 1 is serverless and
+offline. Requests that require INTERNET, accounts, cloud services, telemetry,
+remote key backup, Google Play Services, or silent identity changes are outside
+the current security model.
 -->
 
-<!-- Please check FAQ and hidden features whether what you want is already implemented -->
+## Problem
 
-**Is your feature request related to a problem? Please describe.**
+<!-- Describe the user problem, not only the proposed UI. -->
 
-**Describe the solution you'd like**
-Please provide a description of what you would like to have. The clearer it is described, the better it can be implemented the way you want it.
+## Proposed Behavior
 
-**Use case**
-Provide a clear and concise description of *your use case* and what you thus think is missing, and why.
+<!-- Describe the complete workflow and failure states. -->
 
-**Describe alternatives you've considered (if any)**
+## Security and Privacy Impact
 
-**App version**
-Please provide the explicit version, you're using.
+<!-- Which plaintext, identity, pairing, storage, IME, Intent, clipboard,
+backup, permission, or metadata boundaries would change? -->
+
+## Offline Behavior
+
+<!-- Explain how the feature works with no network and no Google Play Services. -->
+
+## Alternatives
+
+<!-- What can users do today? Which simpler options were considered? -->
+
+## Compatibility and UX
+
+<!-- Consider ordinary keyboard mode, Secure Composer, English/Russian UI,
+large fonts, TalkBack for non-secret controls, landscape, and GrapheneOS. -->
+
+## Acceptance Criteria
+
+- [ ]
+- [ ]
+
+## Checklist
+
+- [ ] I searched open and closed issues.
+- [ ] This request covers one coherent feature.
+- [ ] I read `PROJECT_CONTEXT.md` and `THREAT_MODEL.md`.
+- [ ] The proposal does not require a server, network permission, account, or
+      cloud dependency.
+- [ ] I identified security/privacy tradeoffs rather than claiming zero risk.

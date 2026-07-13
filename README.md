@@ -1,138 +1,291 @@
-# HeliBoard
-HeliBoard is a privacy-conscious and customizable open-source keyboard, based on AOSP / OpenBoard.
-Does not use internet permission, and thus is 100% offline.
+<p align="center">
+  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="112" height="112" alt="CipherBoard application icon">
+</p>
 
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/helium314.keyboard/)
-[<img src="https://user-images.githubusercontent.com/663460/26973090-f8fdc986-4d14-11e7-995a-e7c5e79ed925.png" alt="Get APK from GitHub" height="80">](https://github.com/HeliBorg/HeliBoard/releases/latest)
-[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height="80">](https://apt.izzysoft.de/fdroid/index/apk/helium314.keyboard)
+<h1 align="center">CipherBoard</h1>
 
-## Table of Contents
+<p align="center">
+  Offline-first encrypted Android keyboard for physically QR-paired messaging.
+</p>
 
-- [Features](#features)
-- [Contributing](#contributing-)
-   * [Reporting Issues](#reporting-issues)
-   * [Translations](#translations)
-   * [To Community](#to-community)
-   * [Code Contribution](CONTRIBUTING.md)
-- [Links](#links)
-- [License](#license)
-- [Credits](#credits)
-  * [Funding](#funding)
+<p align="center">
+  <a href="https://github.com/bglglzd/CipherBoard/actions/workflows/ci.yml"><img src="https://github.com/bglglzd/CipherBoard/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/bglglzd/CipherBoard/actions/workflows/instrumentation.yml"><img src="https://github.com/bglglzd/CipherBoard/actions/workflows/instrumentation.yml/badge.svg" alt="Android instrumentation status"></a>
+  <a href="https://github.com/bglglzd/CipherBoard/releases/latest"><img src="https://img.shields.io/github/v/release/bglglzd/CipherBoard?display_name=tag&amp;sort=semver" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue" alt="GPL-3.0-only license"></a>
+</p>
 
-# Features
-<ul>
-  <li>Add dictionaries for suggestions and spell check</li>
-  <ul>
-    <li>build your own, or get them  <a href="https://codeberg.org/Helium314/aosp-dictionaries#dictionaries">here</a> (quality may vary)</li>
-    <li>additional dictionaries for emojis or scientific symbols can be used to provide suggestions (similar to "emoji search")</li>
-    <li>note that for Korean layouts, suggestions only work using <a href="https://github.com/openboard-team/openboard/commit/83fca9533c03b9fecc009fc632577226bbd6301f">this dictionary</a>, the tools in the dictionary repository are not able to create working dictionaries</li>
-  </ul>
-  <li>Customize keyboard themes (style, colors and background image)</li>
-  <li>Emoji search (inline and separate, requires <a href="https://codeberg.org/Helium314/aosp-dictionaries">emoji dictionary</a>)</li>
-  <ul>
-    <li>can follow the system's day/night setting on Android 10+ (and on some versions of Android 9)</li>
-    <li>can follow dynamic colors for Android 12+</li>
-  </ul>
-  <li>Customize keyboard <a href="https://github.com/HeliBorg/HeliBoard/blob/main/layouts.md">layouts</a> (only available when disabling <i>use system languages</i>)</li>
-  <li>Customize special layouts, like symbols, number,  or functional key layout</li>
-  <li>Multilingual typing</li>
-  <li>Glide typing (<i>only with closed source library</i> ☹️)</li>
-  <ul>
-    <li>library not included in the app, as there is no compatible open source library available</li>
-    <li>can be extracted from GApps packages ("<i>swypelibs</i>"), or downloaded <a href="https://github.com/erkserkserks/openboard/tree/46fdf2b550035ca69299ce312fa158e7ade36967/app/src/main/jniLibs">here</a> (click on the file and then "raw" or the tiny download button)</li>
-  </ul>
-  <li>Clipboard history</li>
-  <li>One-handed mode</li>
-  <li>Split keyboard</li>
-  <li>Number pad</li>
-  <li>Backup and restore your settings and learned word / history data</li>
-</ul>
+CipherBoard is an offline-first encrypted text keyboard for Android, designed
+primarily for current GrapheneOS devices. It combines a HeliBoard-based input
+method with local identities, physical QR pairing, a protected composer, and a
+protected message viewer.
 
-For [FAQ](https://github.com/HeliBorg/HeliBoard/wiki/FAQ), [hidden features](https://github.com/HeliBorg/HeliBoard/wiki/9.-Hidden-features) and more information about the app and features, please visit the [wiki](https://github.com/HeliBorg/HeliBoard/wiki)
+CipherBoard is an unofficial modified fork of HeliBoard. It is not an official
+HeliBoard release and is not endorsed or supported by the HeliBoard project.
 
-# Contributing ❤
+> [!WARNING]
+> CipherBoard is pre-1.0 security-sensitive software. It uses reviewed
+> cryptographic primitives and has automated test coverage, but the complete
+> product has not received an independent applied-cryptography and Android
+> security audit. Do not treat it as audited or risk-free.
 
-## Reporting Issues
+[English](#what-it-does) | [Русский](#кратко-по-русски)
 
-Whether you encountered a bug, or want to see a new feature in HeliBoard, you can contribute to the project by opening a new issue [here](https://github.com/HeliBorg/HeliBoard/issues). Your help is always welcome!
+| Project fact | Current value |
+| --- | --- |
+| Maturity | Pre-1.0; current version `0.1.0` |
+| Application ID | `org.cipherboard.securekeyboard` |
+| Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
+| Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
+| Runtime network | No Internet or network-state permission; no runtime network feature |
+| Interface languages | English and Russian |
 
-Before opening a new issue, be sure to check the following:
- - **Does the issue already exist?** Make sure a similar issue has not been reported by browsing [existing issues](https://github.com/HeliBorg/HeliBoard/issues?q=). Please search open and closed issues. In case of feature requests you could also check the [FAQ](https://github.com/HeliBorg/HeliBoard/wiki/FAQ) and [hidden features](https://github.com/HeliBorg/HeliBoard/wiki/9.-Hidden-features).
- - **Is the issue still relevant?** Make sure your issue is not already fixed in the latest version of HeliBoard.
- - **Is it a single topic?** If you want to suggest multiple things, open multiple issues.
- - **Did you use the issue template?** It is important to make life of our kind contributors easier by avoiding issues that miss key information to their resolution.
-Note that issues that that ignore part of the issue template will likely get treated with very low priority, as often they are needlessly hard to read or understand (e.g. huge screenshots, not providing a proper description, or addressing multiple topics). Blatant violation of the guidelines may result in the issue getting closed.
+## What It Does
 
-If you're interested, you can read the following useful text about effective bug reporting (a bit longer read): https://www.chiark.greenend.org.uk/~sgtatham/bugs.html
+Two people can install the same APK and exchange encrypted text without
+accounts, phone numbers, email addresses, or a CipherBoard server:
 
-## Translations
-Translations can be added using [Weblate](https://translate.codeberg.org/projects/heliboard/). You will need an account to update translations and add languages. Add the language you want to translate to in Languages -> Manage translated languages in the top menu bar.
-Updating translations in a PR will not be accepted, as it may cause conflicts with Weblate translations.
+1. Each device creates a local cryptographic identity inside an authenticated
+   Vault.
+2. The devices pair in person by scanning an offer QR code and a response QR
+   code.
+3. Both people compare the same Safety Number before marking the contact as
+   verified.
+4. The sender opens the shield action in the keyboard and writes in the
+   CipherBoard-owned Secure Composer.
+5. CipherBoard advances and durably stores the Olm ratchet, then commits only a
+   `CB1:` ciphertext envelope to the external app.
+6. The recipient selects the ciphertext and uses **Decrypt in CipherBoard**.
+   Plaintext is displayed in a protected, read-only CipherBoard window and is
+   not returned to the transport app.
 
-Some notes on translations
-* when translating metadata, translating the changelogs is rather useless. It's available as it was requested by translators.
-* the `hidden_features_message` is horrible to translate with Weblate, and serves little benefit as it's just a copy of what's already in the wiki: https://github.com/HeliBorg/HeliBoard/wiki/9.-Hidden-features. It's been made available in the app on user request/contribution.
+The transport can be SMS, email, a messenger, or any other application that
+can carry text. CipherBoard does not send messages itself.
 
-## To Community
-There is the [discussions on GitHub](https://github.com/HeliBorg/HeliBoard/discussions), or if you prefer a more open network there is [Lemmy](https://lemmy.world/c/Heliboard).
-You can share your themes, layouts and dictionaries with other people:
-* Themes can be saved and loaded using the menu on top-right in the _adjust colors_ screen
-  * you can share custom colors in a separate [discussion section](https://github.com/HeliBorg/HeliBoard/discussions/categories/custom-colors)
-  * there are theme collections available at [Star-Trowa/heliboard-themes](https://github.com/Star-Trowa/heliboard-themes) and [PickleHik3/droid-tings](https://github.com/PickleHik3/droid-tings)
-* Custom keyboard layouts are text files whose content you can edit, copy and share
-  * this applies to main keyboard layouts and to special layouts adjustable in advanced settings
-  * see [layouts.md](layouts.md) for details
-  * you can share custom layouts in a separate [discussion section](https://github.com/HeliBorg/HeliBoard/discussions/categories/custom-layout)
-  * [Roccobot's Layout Maker](https://roccobot.github.io/HeliBoard-RLM/) is a browser-based editor for json layout files
-* Creating dictionaries is a little more work
-  * first you will need a wordlist, as described [here](https://codeberg.org/Helium314/aosp-dictionaries/src/branch/main/wordlists/sample.combined) and in the repository readme
-  * the you need to compile the dictionary using [external tools](https://github.com/remi0s/aosp-dictionary-tools)
-  * the resulting file (and ideally the wordlist too) can be shared with other users
-  * note that there will not be any further dictionaries added to this app, but you can add dictionaries to the [dictionaries repository](https://codeberg.org/Helium314/aosp-dictionaries)
+## Security Boundary
 
-## Code Contribution
-See [Contribution Guidelines](CONTRIBUTING.md)
+### Implemented controls
 
-# Links
-* Info
-  * [Wiki](https://github.com/HeliBorg/HeliBoard/wiki), including FAQ, help on customizing layouts, and gesture data gathering
-  * [Layout documentation](layouts.md) (more technical info regarding layout customization)
-  * [For creating custom dictionaries](https://codeberg.org/Helium314/aosp-dictionaries#wordlist-information) (see also top of the linked readme)
-* Community
-  * [Lemmy](https://lemmy.world/c/Heliboard)
-  * [Reddit](https://www.reddit.com/r/HeliBoard)
-  * GitHub [discussions](https://github.com/HeliBorg/HeliBoard/discussions)
-* Other
-  * [Translations](https://translate.codeberg.org/projects/heliboard/)
-  * [Dictionaries](https://codeberg.org/Helium314/aosp-dictionaries)
-  * [k3lp](https://codeberg.org/k3lp/k3lp) is a WIP library for keyboard layout parsing that will be implemented in HeliBoard when ready (created by [FlorisBoard](https://github.com/florisboard/florisboard/) maintainers)
-  * [swipe-o-scope](https://codeberg.org/eclexic/swipe-o-scope) for visualizing gesture data as created when using gesture data gathering
+- No `android.permission.INTERNET`, network client, Firebase, Google Play
+  Services, analytics, advertising, or crash-reporting SDK is part of the
+  runtime design.
+- Pairing is local and serverless. Version 1 supports physical two-way QR
+  pairing only.
+- The cryptographic core uses pinned `vodozemac 0.10.0` Olm sessions with the
+  version 2 session configuration. CipherBoard does not implement Curve25519,
+  Ed25519, AEAD, or the Double Ratchet primitives itself.
+- Ratchet state, replay state, and pending operations are transactionally
+  committed before ciphertext leaves the IME or plaintext is displayed.
+- Vault records are encrypted with a random data-encryption key wrapped by a
+  non-exportable, hardware-backed Android Keystore key. StrongBox is attempted
+  first; a verified TEE-backed key is the fallback. Software-only keys are not
+  accepted.
+- Android backup and device-transfer extraction are disabled for application
+  data.
+- Secure Composer disables personalized learning, suggestions, clipboard
+  history, copy/cut/paste actions, autofill, saved view state, and content
+  capture. It never commits plaintext through the host `InputConnection`.
+- The protected viewer uses `FLAG_SECURE`, disables plaintext selection and
+  sharing, clears on backgrounding, and does not return plaintext through
+  `ACTION_PROCESS_TEXT`.
+- Transport and QR parsers have explicit size/count limits and reject malformed,
+  duplicate, non-canonical, inconsistent, or trailing data.
 
-# License
+### What it does not solve
 
-HeliBoard (as a fork of OpenBoard) is licensed under GNU General Public License v3.0.
+CipherBoard cannot fully protect messages when the unlocked device, operating
+system, installed APK, or accessibility environment is compromised. It also
+cannot prevent a camera or nearby person from seeing the screen, hide transport
+metadata, resist physical coercion, or eliminate implementation and dependency
+defects. `FLAG_SECURE` and best-effort memory clearing are useful controls, not
+absolute guarantees.
 
- > Permissions of this strong copyleft license are conditioned on making available complete source code of licensed works and modifications, which include larger works using a licensed work, under the same license. Copyright and license notices must be preserved. Contributors provide an express grant of patent rights.
+The normal keyboard mode retains HeliBoard behavior and may use learning or
+clipboard features according to its ordinary settings. The stricter controls
+above apply to Secure Composer and the protected viewer.
 
-See repo's [LICENSE](/LICENSE) file.
+Read the complete [threat model](THREAT_MODEL.md),
+[protocol specification](CRYPTO_PROTOCOL.md), and current
+[security review status](SECURITY_REVIEW.md) before evaluating the application
+for sensitive use.
 
-Since the app is based on Apache 2.0 licensed AOSP Keyboard, an [Apache 2.0](LICENSE-Apache-2.0) license file is provided.
-The icon is licensed under [Creative Commons BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). A [license file](LICENSE-CC-BY-SA-4.0) is also included.
+## Quick Start
 
-# Credits
-- Icon by [Fabian OvrWrt](https://github.com/FabianOvrWrt) with contributions from [The Eclectic Dyslexic](https://github.com/the-eclectic-dyslexic)
-- [OpenBoard](https://github.com/openboard-team/openboard)
-- [AOSP Keyboard](https://android.googlesource.com/platform/packages/inputmethods/LatinIME/)
-- [LineageOS](https://review.lineageos.org/admin/repos/LineageOS/android_packages_inputmethods_LatinIME)
-- [Simple Keyboard](https://github.com/rkkr/simple-keyboard)
-- [Indic Keyboard](https://gitlab.com/indicproject/indic-keyboard)
-- [FlorisBoard](https://github.com/florisboard/florisboard/)
-- Our [contributors](https://github.com/HeliBorg/HeliBoard/graphs/contributors)
+### 1. Obtain and verify an APK
 
-## Funding
+Use only a release published by this CipherBoard repository or build from a
+reviewed source commit. Do not install an APK linked from the upstream HeliBoard
+project and assume it is CipherBoard.
 
-This project is funded through [NGI Mobifree Fund](https://nlnet.nl/mobifree), a fund established by [NLnet](https://nlnet.nl) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu) program. Learn more at the [NLnet project page](https://nlnet.nl/project/GestureTyping).
+Verify the release checksum before installation:
 
-[<img src="https://nlnet.nl/logo/banner.png" alt="NLnet foundation logo" width="20%" />](https://nlnet.nl)
+```sh
+sha256sum --check CipherBoard-0.1.0-release.apk.sha256
+```
 
-Further the project benefits from donations provided by many users (thank you all!).
+On Windows PowerShell:
+
+```powershell
+(Get-FileHash .\CipherBoard-0.1.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.1.0-release.apk.sha256
+```
+
+If Android Build Tools are installed, also verify the APK signature and compare
+the reported SHA-256 certificate digest with
+[`SIGNING_CERTIFICATE_SHA256`](SIGNING_CERTIFICATE_SHA256). Obtain the expected
+digest through a channel you trust independently of the APK download.
+
+```sh
+apksigner verify --verbose --print-certs CipherBoard-0.1.0-release.apk
+```
+
+Install or update the verified APK:
+
+```sh
+adb install -r CipherBoard-0.1.0-release.apk
+```
+
+Debug APKs are developer artifacts signed with a public debug key. Do not use
+them for real secrets.
+
+### 2. Enable CipherBoard
+
+On GrapheneOS, open **Settings > System > Keyboard > On-screen keyboard >
+Manage on-screen keyboards** and enable CipherBoard. Menu wording can differ
+slightly between Android releases.
+
+In **Settings > Apps > CipherBoard**, keep Network denied as defense in depth,
+deny Sensors if your OS exposes that permission and it is not needed, and grant
+Camera only when you intentionally start QR scanning. CipherBoard does not need
+Contacts, SMS, or storage access.
+
+### 3. Create an identity and pair
+
+1. Open CipherBoard and choose a local owner name. The name is not the
+   cryptographic identity and is not shared during pairing.
+2. Unlock the Vault with a strong device credential or strong biometric.
+3. On device A, add a contact, enter a local label, and show the offer QR.
+4. On device B, add a contact, scan the offer, enter a local label, and show the
+   response QR.
+5. On device A, scan the response.
+6. Compare the full Safety Number on both devices in person. Mark the contact
+   verified only when every group matches.
+
+If either identity changes, stop using the old session and pair again. Never
+silently accept a changed key.
+
+### 4. Send and decrypt
+
+To send, focus the destination text field, open CipherBoard, tap the shield,
+choose a verified contact, write the message, and tap **Encrypt**. Confirm the
+action that inserts the resulting ciphertext. The host field must receive only
+text beginning with `CB1:`.
+
+To receive, select all ciphertext parts in the transport app and choose
+**Decrypt in CipherBoard** from Android's text actions. Confirm decryption,
+unlock the Vault, and read the result in the protected viewer. Ciphertext may be
+copied as a fallback; plaintext is never copied automatically.
+
+By default CipherBoard does not keep plaintext history or message keys for
+convenient re-reading. A previously viewed message may therefore be impossible
+to decrypt again after its temporary local display record is removed.
+
+## Кратко по-русски
+
+CipherBoard - офлайн-клавиатура для обмена зашифрованным текстом без аккаунтов,
+телефонных номеров и сервера CipherBoard. Обычный режим основан на HeliBoard. В
+защищённом режиме открытый текст вводится в собственном редакторе CipherBoard,
+а внешнему приложению передаётся только шифротекст `CB1:`.
+
+Для начала:
+
+1. Установите только проверенный release APK из этого репозитория и сверьте
+   SHA-256 и fingerprint сертификата подписи.
+2. Включите CipherBoard в системных настройках клавиатур. На GrapheneOS
+   дополнительно запретите приложению Network.
+3. Создайте локальную identity и разблокируйте Vault.
+4. Выполните взаимное физическое QR-сопряжение двух устройств.
+5. Полностью сравните Safety Number на обоих экранах и только после этого
+   подтвердите контакт.
+6. Для отправки нажмите кнопку со щитом, выберите контакт, введите сообщение и
+   зашифруйте его. Во внешнем поле должен появиться только `CB1:`-шифротекст.
+7. Для чтения выделите шифротекст и выберите **Расшифровать в CipherBoard**.
+
+Приложение не считается независимо аудированным. Оно не защищает от полного
+компрометационного доступа к разблокированному устройству, вредоносной
+Accessibility-службы, подменённого APK, съёмки экрана камерой, анализа
+метаданных транспорта или физического принуждения. Перед использованием в
+ситуации высокого риска прочитайте [модель угроз](THREAT_MODEL.md) и
+[текущий отчёт о проверках](SECURITY_REVIEW.md).
+
+## Build From Source
+
+The full, pinned environment and release procedure are documented in
+[`BUILD.md`](BUILD.md) and [`RELEASE.md`](RELEASE.md). The short debug path is:
+
+```sh
+./scripts/build-debug.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\build-debug.ps1
+```
+
+The scripts run source-policy checks, Android lint, module unit tests, build the
+APK, and verify its manifest policy. A production release additionally requires
+a clean worktree, external signing material, Rust checks, Android device tests,
+an offline vulnerability database, and exact APK verification. Never commit a
+keystore, signing password, private key, production identity, QR payload, or
+session state.
+
+## Repository Map
+
+| Path | Responsibility |
+| --- | --- |
+| `app/` | HeliBoard-based IME, onboarding, contacts, composer, viewer, and Android integration |
+| `crypto-core/` | Minimal Kotlin/JNI boundary and Rust `vodozemac` protocol core |
+| `secure-storage/` | Keystore key management, encrypted records, replay state, and atomic operations |
+| `pairing/` | Offline pairing state machine and local QR integration |
+| `scripts/` | Reproducible build, signing, APK policy, SBOM, and security checks |
+
+Architecture and review documents:
+
+- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) - scope and product invariants
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) - components and trust boundaries
+- [`CRYPTO_PROTOCOL.md`](CRYPTO_PROTOCOL.md) - wire and state protocol
+- [`THREAT_MODEL.md`](THREAT_MODEL.md) - threats, assumptions, and limitations
+- [`SECURITY_CHECKLIST.md`](SECURITY_CHECKLIST.md) - requirement traceability
+- [`TEST_PLAN.md`](TEST_PLAN.md) - test matrix and acceptance evidence
+- [`UPSTREAM.md`](UPSTREAM.md) - exact HeliBoard provenance
+- [`LICENSES.md`](LICENSES.md) and
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) - licensing inventory
+
+## Contributing, Support, and Security Reports
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Bug
+reports must use synthetic content and must not include real plaintext,
+ciphertext, contact names, full fingerprints, Safety Numbers, QR payloads,
+private keys, or session state.
+
+- General usage and build help: [`SUPPORT.md`](SUPPORT.md)
+- Security vulnerabilities: [`SECURITY.md`](SECURITY.md)
+- Community expectations: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+
+Security reports are accepted in English or Russian. Do not disclose an
+unpatched vulnerability in a public issue.
+
+## License and Upstream Attribution
+
+CipherBoard is distributed under the GNU General Public License version 3.0.
+See [`LICENSE`](LICENSE) for the license text and [`LICENSES.md`](LICENSES.md)
+for component-specific notices. Distributors of modified binaries must satisfy
+the GPL corresponding-source and notice requirements.
+
+CipherBoard is based on HeliBoard `v4.0`, pinned to commit
+`bd48798b99cccc99704eebf2a9259c02dbd684d5`. The exact provenance and the
+limitations of the unsigned upstream tag are documented in
+[`UPSTREAM.md`](UPSTREAM.md). Credits and notices for HeliBoard, OpenBoard, AOSP
+Keyboard, LineageOS, and other upstream contributors are preserved in the
+source and notice files.

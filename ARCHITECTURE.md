@@ -407,8 +407,11 @@ The current source manifest contains no `INTERNET` or `ACCESS_NETWORK_STATE`.
 The CameraX video/media dependency path that introduced network-state
 permission is excluded from the runtime graph. The manifest also has
 `allowBackup=false`, complete extraction exclusions, and cleartext denial.
-These source controls and policy tests are implemented; the exact production-
-signed APK still requires an independent final permission dump.
+These source controls and policy tests are implemented. A pre-public local
+signed candidate passed the scripted APK permission and signature policy, but
+its evidence bundle is untracked and unpublished. The final public tag must be
+rebuilt, independently dumped, and accompanied by its own `BUILD_INFO.txt` and
+release assets rather than inheriting that candidate's result.
 
 ## 11. Architectural Limits
 

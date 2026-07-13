@@ -1,94 +1,218 @@
-# Getting Started
+# Contributing to CipherBoard
 
-HeliBoard project is based on Gradle and Android Gradle Plugin. To get started, you can install [Android Studio](https://developer.android.com/studio), and import project 'from Version Control / Git / Github' by providing this git repository [URL](https://github.com/HeliBorg/HeliBoard) (or git SSH [URL](git@github.com:Helium314/heliboard.git)).
-Of course you can also use any other compatible IDE, or work with text editor and command line.
-Once everything is up correctly, you're ready to go!
+CipherBoard welcomes focused bug fixes, tests, documentation, localization, and
+security improvements. It is a security-sensitive Android input method, so
+changes that would be routine in another application may alter a plaintext,
+identity, storage, or ratchet trust boundary here.
 
-If you have difficulties implementing some functionality, you're welcome to ask for help. No one will write the code for you, but often other contributors can give you very useful hints.
+By participating, follow the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). By
+submitting a contribution, you confirm that you have the right to provide it
+under the repository's applicable licenses.
 
-# About the Code
+## Before You Start
 
-HeliBoard is based on AOSP keyboard, and in many places still contains mostly the original code. There are some extensions, and some parts have been replaced completely.
-When working on this app, you will likely notice its rather large size, and quite different code styles and often ancient comments and _TODO_s, where the latter are typically untouched since AOSP times.
-Unfortunately a lot of the old code is hard to read or to fully understand with all of its intended (and unintended) consequences.
+1. Read [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md),
+   [`ARCHITECTURE.md`](ARCHITECTURE.md), and
+   [`THREAT_MODEL.md`](THREAT_MODEL.md).
+2. Search open and closed issues for the same problem.
+3. For a substantial feature, protocol change, new dependency, permission, or
+   trust-boundary change, open a design issue before implementation.
+4. For an undisclosed vulnerability, stop and follow [`SECURITY.md`](SECURITY.md)
+   instead of opening a public issue or pull request.
 
-Some hints for finding what you're looking for:
-* Layouts: stored in `layouts` folder in assets, interpreted by `KeyboardParser` and `TextKeyData`
-  * Popups: either on layouts, or in `locale_key_texts` (mostly letter variations for specific languages that are not dependent on layout)
-* Touch and swipe input handling: `PointerTracker`
-* Handling of keycode / text inputs: `InputLogic`
-  * chain: `PointerTracker` -> `KeyboardActionListenerImpl` -> `LatinIME` -> `InputLogic`
-* Suggestions: `DictionaryFacilitatorImpl`, `Suggest`, `InputLogic`, and `SuggestionStripView` (in order from creation to display, omitting the native library)
-* Communication with the app / text field (inputs, reading current text): `RichInputConnection`
-* Receiving events and information from the app / text field: `LatinIME`
-* Settings are in `SettingsValues`, with some functionality in `Settings` and the default values in `Default`
+Issues, review descriptions, logs, and test fixtures must use synthetic data.
+Never publish real message plaintext, complete ciphertext, contact names, QR
+payloads, private keys, session/account state, full fingerprints, Safety
+Numbers, signing material, or device identifiers.
 
-# Guidelines
+## Non-Negotiable Invariants
 
-Note that the maintainer only has very limited time, and thus review might take a while.
-This especially applies to large PRs (hundreds of lines), which recently started to become more common. Sorry, but there is simply not enough time to review everything.  
-What's more likely to be reviewed soon:
-* Simple changes (but depends on what effect they have, as in some places it's easy to introduce unintended changes)
-* Wanted / accepted changes (labels [_PR_](https://github.com/HeliBorg/HeliBoard/labels/PR), [_contributor needed_](https://github.com/HeliBorg/HeliBoard/issues?q=label%3A%22contributor%20needed%22), [_help wanted_](https://github.com/HeliBorg/HeliBoard/labels/help%20wanted))
-* Changes where the hard work is mostly investigation / research rather than coding
-  * e.g. compiling text lists to dictionaries, customizable icons / key backgrounds, OnePlus disabling keyboard on reboot, ...
+Contributions must preserve these properties:
 
-What will likely take some time (depends very much on how much other stuff is coming in):
-* Large changes (especially when connected to rather niche functionality)
-* Changes in code that is prone to introducing unintended effects
-  * `InputLogic`, `Suggest`, `RichInputConnection` are especially dangerous here, and also hard to test (behavior may depend on app and possibly OS version)
+- Runtime code has no network capability. Do not add `INTERNET`,
+  `ACCESS_NETWORK_STATE`, localhost communication, network clients, Firebase,
+  Google Play Services, analytics, advertising, or remote crash reporting.
+- Secure Composer plaintext never reaches the host editor, clipboard, Intent
+  extras, saved state, logs, notifications, files, learning history, or
+  analytics. Only ciphertext may pass through `InputConnection.commitText()`.
+- Protected-viewer plaintext is not returned to the source app, copied,
+  shared, indexed, backed up, or retained after its display lifetime.
+- Identity, Olm account/session state, contacts, replay state, and pending
+  display records remain encrypted at rest under the authenticated Vault.
+- An outbound ratchet advance and its exact pending ciphertext are committed in
+  one transaction before host insertion. An inbound ratchet advance, replay
+  marker, and encrypted pending display are committed in one transaction before
+  rendering.
+- Android Auto Backup and device-transfer extraction remain disabled for all
+  application data.
+- Pairing remains physical, mutual, signed, expiring, and single-use. Identity
+  changes require explicit re-pairing and are never silently accepted.
+- Cryptographic primitives and the Double Ratchet are provided by reviewed,
+  pinned libraries. Do not introduce custom primitives or protocol shortcuts.
+- Release policy rejects unreviewed permissions, exported components, ABIs,
+  signing certificates, debug fixtures, test code, and network/telemetry SDKs.
 
-## Recommended
+If a proposed feature cannot satisfy an invariant, document the conflict in the
+design issue rather than weakening the control in code.
 
-If you want to contribute, it's a good idea to make sure your idea is actually wanted in HeliBoard.
-Best check related issues before you start working on a PR. If the issue has the [labels](https://github.com/HeliBorg/HeliBoard/labels) [_PR_](https://github.com/HeliBorg/HeliBoard/labels/PR) or [_contributor needed_](https://github.com/HeliBorg/HeliBoard/issues?q=label%3A%22contributor%20needed%22) (even closed ones), contributions are wanted. If you don't find a related issue, it's recommended to open one, but ultimately it's your choice.
-Asking before starting a PR may help you for getting pointers to potentially relevant code, and deciding how to implement your desired changes.
+## Development Setup
 
-HeliBoard is a complex application and used by users with a large variety of opinions on how things should be.
-When contributing to the app, please:
-* Be careful when modifying core components, as it's easy to trigger unintended consequences
-* When introducing a feature or change that might not be wanted by everyone, make it optional
-* Keep code simple where possible. Complex code is harder to review and to maintain, so the complexity should also add a clear benefit
-* Avoid noticeable performance impact. Some parts of the code are executed very frequently, and the keyboard should stay responsive even on older devices.
-* Try making use of in-place mechanisms instead of re-inventing the wheel. Your contribution should only add as much complexity as necessary, the code is overly complicated already 😶.
-* Keep your changes to few places, as opposed to sprinkling them over many parts of the code. This helps with keeping down complexity during review, and with maintainability of the app.
-* Make a draft PR when you intend to still work on it. Submitting an unfinished PR can be a good idea when you're not sure how to best continue and would like some comments.
-* When you fix a bug without opening an issue, please provide a way to reproduce the bug (see [bug report template](.github/ISSUE_TEMPLATE/bug_report.md))
-* Noticeable adjustments (keyboard UI, default layouts, ...) should either provide a benefit for everyone, or be optional.
+Use the pinned versions in [`BUILD.md`](BUILD.md). The normal environment uses
+JDK 17, Android SDK/Build Tools 36.1.0, NDK 28.0.13004108, Rust/Cargo, and
+`cargo-ndk`. Import the repository root in Android Studio or build from a shell.
 
-Further things to consider (though irrelevant for most PRs):
-* APK size:
-  * Large increases should be discussed first, and will only be added when it's considered worth the increase for a majority of users. It might be possible to avoid size increase by importing optional parts, like it's done for dictionaries.
-  * Small increases like when adding code or layouts are never an issue
-* Do not add proprietary code or binary blobs. If it turns out to be necessary for a feature you want to add, it might be acceptable when the user opts in and imports those parts, like it's done for glide typing.
-* Privacy: Only relevant when adding some form of communication with other apps. Internet permission will not be added.
-* If your contribution contains code that is not your own, provide a link to the source
-  * This is especially relevant to be sure the code's license is compatible to HeliBoard's GPL3
+Build and verify a debug APK on Linux or macOS:
 
-## Necessary
+```sh
+./scripts/build-debug.sh
+```
 
-Some parts of the guidelines are necessary to fulfill for facilitating code review. It doesn't need to be perfect from the start, but consider it for your future PRs when you're reminded of these guidelines. Note that the larger / more complex your PR is, the more relevant these guidelines are.
-Your PR should:
-- **Be only about a single thing**. Mixing unrelated or semi-related contributions into a single PR is hard to review and can get messy. As a general rule: if one part doesn't need the other one(s), it should be separate PRs. If one feature builds on top of another one, but the base is usable on its own, do a PR for the base and then a follow-up once it's merged.
-- **Have a proper description**. A good description helps _a lot_ for understanding what you intend to achieve with the changes, and for understanding the code. This is relevant for separating wanted from unintended changes in behavior during review.
-- **No translations**. Translations should be done using [Weblate](https://translate.codeberg.org/projects/heliboard/). Exception is when you add new resource strings, those can be added right away.
+On Windows PowerShell:
 
-Please leave dependency upgrades to the maintainers, unless you state a good reason why they should be done now.
+```powershell
+.\scripts\build-debug.ps1
+```
 
-# Adding / Adjusting Layouts
+The script runs the repository source-policy and Kotlin-style checks, Android
+lint, all application/library debug unit tests, the APK build, and manifest/APK
+policy verification. It writes a developer APK under `dist/`.
 
-See [layouts.md](layouts.md#adding-new-layouts--languages) for how to add new layouts to the app. Please stay in line with other layouts regarding the popup keys.
+Never use or commit production signing material. Release signing is deliberately
+separate and is described in [`RELEASE.md`](RELEASE.md).
 
-When editing existing layouts, please consider that people should should still get what they're used to. In case of doubt it might be better to add a new layout instead of overhauling existing layouts.
-`locale_key_texts` files should only contain letters that are actually part of the language, with exception of the optional `more_popups_<...>.txt` files.
+## Choosing the Right Tests
 
-# Update Emojis
+Run the smallest relevant tests while iterating, then the full debug gate before
+requesting review.
 
-See make-emoji-keys tool [README](tools/make-emoji-keys/README.md).
+Android/Kotlin unit tests:
 
-# Translations
-Translations can be added using [Weblate](https://translate.codeberg.org/projects/heliboard/). You will need an account to update translations and add languages. Add the language you want to translate to in Languages -> Manage translated languages in the top menu bar.
-Updating translations in a PR will not be accepted, as it may cause conflicts with Weblate translations.
+```sh
+./gradlew :app:testDebugUnitTest \
+  :crypto-core:testDebugUnitTest \
+  :pairing:testDebugUnitTest \
+  :secure-storage:testDebugUnitTest
+```
 
-# Dictionaries
-No new dictionaries will be added to this app. Please submit dictionaries and the wordlist to the [dictionaries repository](https://codeberg.org/Helium314/aosp-dictionaries)
+Release lint:
+
+```sh
+./gradlew :app:lintRelease \
+  :crypto-core:lintRelease \
+  :pairing:lintRelease \
+  :secure-storage:lintRelease
+```
+
+Rust checks:
+
+```sh
+cargo fmt --all --manifest-path crypto-core/native/Cargo.toml -- --check
+cargo clippy --locked --manifest-path crypto-core/native/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+cargo test --locked --manifest-path crypto-core/native/Cargo.toml
+
+cargo fmt --all --manifest-path crypto-core/jni/Cargo.toml -- --check
+cargo clippy --locked --manifest-path crypto-core/jni/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+cargo test --locked --manifest-path crypto-core/jni/Cargo.toml
+```
+
+Android instrumentation requires a running API 36 emulator or device:
+
+```sh
+./gradlew :crypto-core:connectedDebugAndroidTest \
+  :app:connectedDebugAndroidTest
+```
+
+Changes to ratchet transactions, process recovery, IME handoff, pairing, QR,
+selected-text parsing, storage, Keystore handling, or protected UI require the
+corresponding instrumentation and fault-injection coverage in
+[`TEST_PLAN.md`](TEST_PLAN.md). Parser changes require regression/property tests
+and an appropriate fuzz run. Do not use real secrets as fixtures or snapshots.
+
+## Change-Specific Requirements
+
+### Cryptography and protocol
+
+- Keep Rust dependency versions exact and lockfiles reviewed.
+- Use `vodozemac` APIs rather than reimplementing cryptography.
+- Keep the JNI surface minimal, stateless, bounded, panic-contained, and free of
+  long-lived native handles.
+- Zeroize owned secret buffers where practical and keep errors content-free.
+- Update `CRYPTO_PROTOCOL.md`, the crypto ADR, compatibility vectors, negative
+  tests, property tests, and fuzz corpora when wire/state behavior changes.
+- Treat a protocol version, canonical encoding, transcript, routing tag, replay,
+  skipped-key, or message-limit change as a security design change.
+
+### Storage and lifecycle
+
+- Preserve optimistic revisions and single SQLite transactions around ratchet
+  transitions.
+- Test process death before and after each durable boundary. A retry may reuse
+  the exact stored ciphertext, but must never encrypt again from stale state.
+- Keep all secret records in credential-encrypted, no-backup storage.
+- Do not rely on SharedPreferences or the application sandbox alone for secret
+  state.
+- Handle StrongBox absence, TEE fallback, Vault lock, screen lock, reboot, and
+  Keystore invalidation explicitly.
+
+### IME and user interface
+
+- Test both ordinary HeliBoard input and Secure Composer behavior.
+- Verify Russian, English, emoji, symbols, multiline fields, orientation, and
+  password-field warnings when input behavior changes.
+- Do not store secret text in `String`, ViewModel, `SavedStateHandle`, singleton,
+  static field, long-lived coroutine, filename, or test output when a bounded,
+  wipeable representation is practical.
+- Protected UI must retain `FLAG_SECURE`, background clearing, disabled
+  selection/share/autofill/content capture, and no lifecycle-state restoration.
+- Add every user-visible string to both `values/` and `values-ru/`. Check long
+  Russian text, large fonts, TalkBack labels for non-secret controls, landscape,
+  and RTL layout behavior.
+
+### Dependencies, permissions, and exported components
+
+- Discuss every new runtime dependency before adding it. Record its exact
+  version, license, provenance, runtime behavior, and vulnerability review.
+- Update dependency locks intentionally; never introduce a floating version.
+- A new permission or exported component needs a written threat analysis and
+  release-policy update. Network, contacts, SMS, overlay, package-query, and
+  accessibility-service permissions are outside version 1 scope.
+- QR processing must remain fully local and must not depend on Play Services or
+  a cloud recognition API.
+- Keep `THIRD_PARTY_NOTICES.md`, `LICENSES.md`, SBOM generation, and GPL
+  corresponding-source obligations current.
+
+### HeliBoard-derived code
+
+CipherBoard retains a large AOSP/OpenBoard/HeliBoard codebase. Useful entry
+points include:
+
+- key/touch input: `PointerTracker`, `LatinIME`, and `InputLogic`;
+- host editor communication: `RichInputConnection`;
+- suggestions: `DictionaryFacilitatorImpl`, `Suggest`, and the suggestion strip;
+- layouts: asset layout files, `KeyboardParser`, and `TextKeyData`;
+- settings: `SettingsValues`, `Settings`, and `Default`.
+
+Keep unrelated upstream refactors out of security changes. Preserve existing
+copyright headers, mark modifications where required, and document any upstream
+cherry-pick in `UPSTREAM.md` or the pull request.
+
+## Pull Request Checklist
+
+A reviewable pull request:
+
+- addresses one coherent problem and links its issue or design discussion;
+- explains user-visible behavior and security/privacy impact;
+- identifies changed trust boundaries and failure modes;
+- contains focused tests, including negative and crash-boundary cases where
+  relevant;
+- updates English and Russian resources and affected architecture/security docs;
+- reports the exact commands run and their results;
+- contains no generated APK, keystore, password, local SDK path, secret fixture,
+  or unrelated formatting churn; and
+- keeps the worktree compatible with the full debug build script.
+
+Use the repository pull request template. Maintainers may request a smaller
+change, additional tests, or external specialist review before accepting a
+security-sensitive modification.

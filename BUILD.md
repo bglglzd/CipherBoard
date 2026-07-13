@@ -201,8 +201,12 @@ The production envelope parser also completed a 31-second ASan/libFuzzer run:
 replace longer scheduled fuzzing or future pairing/JNI targets. Release
 preflight also scanned all 255 CycloneDX packages using the pinned official
 OSV-Scanner v2.4.0 and fresh offline Maven/crates.io databases; it exited zero
-with no findings and generated `VULNERABILITY_SCAN.json`. The clean final release
-must repeat this gate; the preflight is not final-artifact approval.
+with no findings. A clean pre-public local signed-candidate pipeline subsequently
+repeated the gate, signed the APK with the pinned non-debug release certificate,
+ran the APK policy verifier, and generated a local evidence bundle. That bundle
+is not tracked or published and must not be treated as evidence for the rewritten
+public history. The final public tag must run the complete pipeline again and
+publish its own `BUILD_INFO.txt`, hash manifest, and other release assets.
 
 On the API 36 x86_64 `CipherBoard_API_36_AOSP` no-Play emulator,
 `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7 tests with
@@ -228,7 +232,8 @@ selection, the rebuilt process remained alive for the recorded three-second
 observation and exposed the Russian hierarchy. This smoke check is not ordinary
 IME input or full layout/accessibility coverage.
 
-No production-signed release, final release certificate fingerprint or
-physical-device acceptance result is claimed by this document. See
-`SECURITY_REVIEW.md`; passing source and unit gates is neither production
-release approval nor an independent audit.
+A pre-public local signed candidate exists, but this document does not claim
+that candidate as the final published release or as evidence for the rewritten
+public history. No physical-device or GrapheneOS acceptance result is claimed.
+See `SECURITY_REVIEW.md`; passing automated and artifact gates is neither
+independent audit evidence nor approval for high-risk use.

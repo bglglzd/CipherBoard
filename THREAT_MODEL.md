@@ -47,8 +47,10 @@ Source inspection found no `INTERNET` or `ACCESS_NETWORK_STATE` declaration,
 runtime HTTP client, Firebase/Play Services/analytics/crash/ad SDK, WebView, or
 dynamic loader. The CameraX video/media dependency path is excluded; the
 manifest disables backup, excludes every extraction domain, and denies
-cleartext traffic. APK policy/source tests do not replace an independent
-permission and dependency review of the exact production-signed artifact.
+cleartext traffic. A pre-public local signed candidate passed the scripted APK
+policy, but its evidence is untracked and unpublished. That does not replace
+independent permission and dependency review of the exact published artifact,
+and the gate must be repeated for the final public tag.
 
 ## 1. System and Security Objective
 
@@ -396,8 +398,9 @@ not guaranteed RAM erasure. The UI and documentation must not claim otherwise.
 The reviewed source declares no remote analytics, crash reporting, advertising,
 dynamic code loading, or WebView. The newly added secure paths do not contain
 content-bearing log calls, and user errors are mapped to fixed messages. This
-has not yet been demonstrated by a release APK/runtime sentinel scan; inherited
-logging and every error path remain part of the release leakage test. Plaintext,
+passed source and APK-marker policy on a pre-public local signed candidate, but
+has not yet been demonstrated by a physical runtime leakage/sentinel campaign;
+inherited logging and every error path remain part of that test. Plaintext,
 full ciphertext, QR payloads, private keys, session state, full fingerprints,
 Safety Numbers, and contact names must never enter diagnostics. Stack traces
 must not be shown to users.
@@ -410,9 +413,10 @@ and network-capable dependencies.
 
 Rust dependencies are pinned and locked. Packageable Android dependency graphs
 are strictly locked in `app/gradle.lockfile`; final notice and production SBOM
-review remain required. Preflight verified the SHA-pinned official OSV-Scanner
-v2.4.0, fresh local Maven/crates.io databases, and all 255 SBOM packages fully
-offline with zero findings; the clean final release must repeat it. The APK build
+review remain required. The pre-public local signed candidate verified the
+SHA-pinned official OSV-Scanner v2.4.0, fresh local Maven/crates.io databases,
+and all 255 SBOM packages fully offline with zero findings; the final public
+release tag must repeat it and publish its own evidence. The APK build
 packages GPL/Apache/BlueOak/CC texts, consolidated BSD notices and provenance for
 offline viewing, while release staging creates an exact-commit GPL source
 archive. Release verification

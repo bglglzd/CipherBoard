@@ -1,9 +1,12 @@
 # CipherBoard Security Checklist
 
-**Snapshot date:** 2026-07-13  
-**Branch:** `feature/secure-messaging-keyboard`  
+**Snapshot date:** 2026-07-13
+**Public release branch:** `main`
 **Upstream baseline:** HeliBoard `v4.0`, commit
 `bd48798b99cccc99704eebf2a9259c02dbd684d5`
+**Prior signed candidate:** pre-public local build; its evidence bundle is
+untracked and unpublished, so the final public tag must generate its own
+`BUILD_INFO.txt` and release assets
 
 This is a traceable implementation and release checklist. It is not a security
 certificate. Update an item's state only with evidence tied to the current
@@ -15,11 +18,14 @@ success. A bounded ASan/libFuzzer envelope campaign completed 601,574 inputs
 without a crash or timeout. Strict packageable dependency locking is checked in
 at `app/gradle.lockfile`. An offline OSV preflight scanned all 255 SBOM packages
 with the pinned official v2.4.0 scanner and fresh Maven/crates.io databases,
-returning zero findings. None of this is production-signed-APK, connected
-physical-device or GrapheneOS evidence. Targeted full-app Android instrumentation
-passes 7/7 on an API 36 x86_64 AOSP no-Play emulator, including three actual
-debug-only remote-process SIGKILL boundaries; its narrower gaps are recorded
-below.
+returning zero findings. A clean pre-public local signed-candidate pipeline then
+repeated these gates, signed with the pinned non-debug certificate, passed the
+scripted APK/signature/permission policy, and emitted its evidence package.
+That evidence is specific to that commit and must be regenerated after the
+public-source changes; it is not connected physical-device or GrapheneOS
+evidence. Targeted full-app Android instrumentation passes 7/7 on an API 36
+x86_64 AOSP no-Play emulator, including three actual debug-only remote-process
+SIGKILL boundaries; its narrower gaps are recorded below.
 
 ## State Definitions
 
@@ -48,7 +54,7 @@ still unverified.
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
 | GOV-01 | Source is based on official HeliBoard stable tag `v4.0` at the recorded commit | 5 | Verified | `git tag --points-at HEAD` and `git rev-parse HEAD` were checked before product changes |
-| GOV-02 | Product branch is `feature/secure-messaging-keyboard` | 4 | Verified | `git status --short --branch`, 2026-07-13 |
+| GOV-02 | Public release branch is `main`; artifacts identify an immutable source commit | 4 | Implemented | Branch publication/protection must be checked on the hosted repository; generated `BUILD_INFO.txt` records the source commit |
 | GOV-03 | Upstream tag/commit and modification relationship are recorded | 5 | Implemented | `UPSTREAM.md`; review before release |
 | GOV-04 | GPLv3 license, source obligations, and upstream notices are preserved | 5 | Implemented | Complete license texts/notices are retained, packaged for offline viewing, and included with the exact-commit source archive; final artifact review pending |
 | GOV-05 | Third-party versions, licenses, and notices are complete | 5, 30 | Implemented | GPL/Apache/BlueOak/CC texts, consolidated BSD notices, inventory/notices and nonempty offline-asset unit test exist; final resolved-graph/manual review pending |
@@ -61,11 +67,11 @@ still unverified.
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| NET-01 | Final merged manifest has no `android.permission.INTERNET` | 2, 19, 28 | Implemented | Source has no declaration; signed-APK `aapt`/`apkanalyzer` remains blocker |
-| NET-02 | No `ACCESS_NETWORK_STATE` or other network permission | 2, 19 | Implemented | Source has no declaration and CameraX video/media path is excluded; production APK inspection pending |
+| NET-01 | Final merged manifest has no `android.permission.INTERNET` | 2, 19, 28 | Verified | Source and the pre-public local signed candidate passed the independent-tool APK permission policy; repeat for the final public tag, with INTERNET remaining a hard blocker |
+| NET-02 | No `ACCESS_NETWORK_STATE` or other network permission | 2, 19 | Verified | Source and pre-public local signed-candidate permission dumps contain no network permission; repeat for the final public tag |
 | NET-03 | Runtime performs no network or localhost request | 2 | Implemented | Production-source scan found no client/call; denied-Network device traffic test pending |
-| NET-04 | No Firebase, FCM, Play Services, analytics, crash-reporting, advertising, or remote-config SDK | 2, 20, 28 | Implemented | No direct production dependency/source marker; SBOM/APK scan pending |
-| NET-05 | No WebView, dynamic code loading, downloaded model/dictionary/configuration, or proprietary cloud QR API | 2, 19, 27 | Implemented | Source uses local ZXing/CameraX and packaged assets; APK/runtime verification pending |
+| NET-04 | No Firebase, FCM, Play Services, analytics, crash-reporting, advertising, or remote-config SDK | 2, 20, 28 | Verified | Source, dependency and pre-public local signed-candidate APK policy scans passed; rerun against the final public artifact |
+| NET-05 | No WebView, dynamic code loading, downloaded model/dictionary/configuration, or proprietary cloud QR API | 2, 19, 27 | Implemented | Source uses local ZXing/CameraX and packaged assets; the pre-public local candidate's APK marker scan passed, while physical runtime verification remains pending |
 | NET-06 | App works on GrapheneOS without Sandboxed Google Play | 20, 31 | Pending | Physical-device acceptance evidence |
 | NET-07 | GrapheneOS Network denial is documented as defense in depth | 20 | Implemented | `RELEASE.md`, `THREAT_MODEL.md`; installation walkthrough review pending |
 
@@ -201,12 +207,12 @@ still unverified.
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| AND-01 | Manifest excludes Internet/network, Contacts, SMS, package-query, overlay, and Accessibility-service permissions | 19, 28 | Implemented | Source manifest and dependency graph contain no network permission path; production-signed APK dump pending |
-| AND-02 | Camera is the only planned dangerous runtime permission and is requested just in time | 19 | Implemented | Source manifest and explicit Scan-triggered permission launcher reviewed; merged manifest/device permission test pending |
-| AND-03 | Sensitive activities/services/providers are non-exported unless required and strictly validate callers/input | 27, 28 | Implemented | Secure components non-exported except launcher/process-text; settings/import dispatch are non-exported/removed; final merged review pending |
+| AND-01 | Manifest excludes Internet/network, Contacts, SMS, package-query, overlay, and Accessibility-service permissions | 19, 28 | Verified | The pre-public local signed candidate passed `aapt`/`apkanalyzer`/policy checks; repeat against the final public artifact |
+| AND-02 | Camera is the only planned dangerous runtime permission and is requested just in time | 19 | Implemented | Signed-candidate permission evidence and explicit Scan-triggered launcher are present; physical just-in-time grant/deny/revoke remains pending |
+| AND-03 | Sensitive activities/services/providers are non-exported unless required and strictly validate callers/input | 27, 28 | Implemented | Secure components are non-exported except launcher/process-text and the pre-public local candidate's APK exported-shape policy passed; deeper final intent validation remains pending |
 | AND-04 | Process-text component is exported only as Android requires and treats all input as hostile | 14, 27 | Implemented | Strict action/MIME/size/ASCII/envelope path and no result replacement; malicious-intent instrumentation pending |
 | AND-05 | PendingIntents, if any, are immutable/mutable only as necessary and explicit | 27 | Pending | Static manifest/source scan |
-| AND-06 | Cleartext traffic is disabled even though no network capability exists | 27 | Implemented | Source manifest and network-security-config reviewed; merged APK pending |
+| AND-06 | Cleartext traffic is disabled even though no network capability exists | 27 | Verified | Source policy and pre-public local signed-candidate merged-APK policy passed; repeat for the final public artifact |
 | AND-07 | No deep link, path traversal, unsafe file provider, ZIP extraction, or broad package visibility surface | 27 | Pending | Static and hostile-intent tests |
 | AND-08 | Native libraries use supported ABI set and release hardening | 27, 30 | Pending | ELF inspection for `arm64-v8a` and test `x86_64` |
 
@@ -225,25 +231,25 @@ still unverified.
 | TOOL-01 | Gradle lint and unit tests pass | 27 | Implemented | Full debug unit tasks and release lint for `app`/`crypto-core`/`pairing`/`secure-storage` pass after API 23 compatibility fixes; rerun/archive for exact release commit |
 | TOOL-02 | Kotlin formatting/static analysis pass | 27 | Implemented | Fork-wide changed-Kotlin format gate and Android lint pass; independent detekt-equivalent review remains desirable |
 | TOOL-03 | `cargo fmt --check`, clippy with warnings denied, and Rust tests pass | 27 | Implemented | Current work session reported fmt/clippy and 27 native tests passing; rerun/archive on clean release commit |
-| TOOL-04 | Dependency audit/locking/SBOM checks pass or exceptions are risk-accepted with expiry | 27 | Verified | Preflight PASS: pinned official OSV-Scanner v2.4.0 hash, fresh offline Maven/crates.io DBs, all 255 SBOM packages, exit 0/zero findings; clean final release must repeat and review `VULNERABILITY_SCAN.json` |
+| TOOL-04 | Dependency audit/locking/SBOM checks pass or exceptions are risk-accepted with expiry | 27 | Verified | Pre-public local signed candidate PASS: pinned official OSV-Scanner v2.4.0 hash, fresh offline Maven/crates.io DBs, all 255 SBOM packages, exit 0/zero findings; final public tag must repeat and review its own `VULNERABILITY_SCAN.json` |
 | TOOL-05 | Secret scan and plaintext sentinel scan pass | 23, 27 | Implemented | Fail-closed source/network/telemetry/secret scanner passes; runtime/build-output plaintext sentinel evidence remains pending |
 
 ## 14. Release Artifact and Signing
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| REL-01 | Debug and release scripts are deterministic, fail closed, and do not print signing secrets | 29 | Implemented | Scripts run full unit/lint/Rust/source/style gates and recheck clean HEAD before signing/publication; exact clean release run pending |
-| REL-02 | Release key is generated/stored outside Git with no password in repository or console output | 29 | Pending | Redacted location/permissions check |
+| REL-01 | Debug and release scripts are deterministic, fail closed, and do not print signing secrets | 29 | Verified | A clean pre-public local signed candidate completed the full scripted pipeline; final public tag must repeat it |
+| REL-02 | Release key is generated/stored outside Git with no password in repository or console output | 29 | Verified | The candidate build consumed pre-existing external signing material after local access checks; no secret value is retained as evidence or in Git |
 | REL-03 | Signing key backup/continuity warning is documented; existing key is never overwritten | 29 | Implemented | `RELEASE.md` documents backup/continuity and scripts only consume existing external material; final operator walkthrough pending |
-| REL-04 | Release APK is not debug-signed, debuggable, or test-only | 28 | Pending | `apksigner`, manifest, signing certificate evidence |
-| REL-05 | `apksigner verify --verbose` succeeds | 28, 31 | Pending | Exact `dist` APK verification log |
-| REL-06 | `aapt` and `apkanalyzer` permission lists contain no forbidden permission | 28, 31 | Pending | Exact `dist` APK dumps; INTERNET is a hard blocker |
-| REL-07 | Exported components and intent filters pass final APK review | 27, 28 | Pending | Merged manifest/APK report |
-| REL-08 | APK scan finds no Firebase, analytics, crash, ad, Play Services, test keys, or dynamic loading | 28 | Pending | Class/resource/native scan report |
-| REL-09 | `dist/` contains both APKs, release SHA-256, SBOM, vulnerability report, artifact hashes, notices, source archive, and complete build info | 30 | Pending | Staging generates `VULNERABILITY_SCAN.json`, `RELEASE_ARTIFACTS.sha256`, exact-commit source and other named outputs; final inventory pending |
-| REL-10 | Build info records commit, upstream, toolchain, SDK/NDK/Rust/crypto versions, ABI, digest, cert, and permissions without secrets | 30 | Pending | `dist/BUILD_INFO.txt` review |
+| REL-04 | Release APK is not debug-signed, debuggable, or test-only | 28 | Verified | The pre-public local signed candidate passed certificate and merged-manifest policy; repeat for the public release tag |
+| REL-05 | `apksigner verify --verbose` succeeds | 28, 31 | Verified | Candidate pipeline passed `apksigner` verification with the pinned release certificate; regenerate evidence for the final public artifact |
+| REL-06 | `aapt` and `apkanalyzer` permission lists contain no forbidden permission | 28, 31 | Verified | Candidate pipeline passed both permission views with no INTERNET; repeat remains an unconditional publication blocker |
+| REL-07 | Exported components and intent filters pass final APK review | 27, 28 | Verified | Candidate scripted merged-manifest/exported-shape policy passed; repeat and manually review the final public artifact |
+| REL-08 | APK scan finds no Firebase, analytics, crash, ad, Play Services, test keys, or dynamic loading | 28 | Verified | Candidate APK policy scan passed; repeat for the final public artifact |
+| REL-09 | `dist/` contains both APKs, release SHA-256, SBOM, vulnerability report, artifact hashes, notices, source archive, and complete build info | 30 | Verified | The pre-public local candidate evidence bundle contains the required outputs but is untracked/unpublished; regenerate them for the final public tag |
+| REL-10 | Build info records commit, upstream, toolchain, SDK/NDK/Rust/crypto versions, ABI, digest, cert, and permissions without secrets | 30 | Verified | The pre-public local candidate generated the required non-secret provenance; the final public tag must publish its own `BUILD_INFO.txt` |
 | REL-11 | Release APK installs and launches, and CipherBoard can be enabled as an IME | 31 | Pending | `adb install` and device acceptance log |
-| REL-12 | Release SHA-256 and certificate fingerprint are independently recomputed | 28, 30 | Implemented | Verifier enforces the reviewed public `SIGNING_CERTIFICATE_SHA256` pin; independent exact-final recomputation remains pending |
+| REL-12 | Release SHA-256 and certificate fingerprint are independently recomputed | 28, 30 | Verified | Candidate pipeline recomputed both and enforced the reviewed public `SIGNING_CERTIFICATE_SHA256` pin; repeat against the final public artifact |
 
 ## 15. UX, Localization, and User Guidance
 
@@ -259,9 +265,11 @@ still unverified.
 
 ## Release Gate
 
-Release is blocked if any acceptance-critical item remains `Pending` or merely
-`Implemented`. The previous broad instrumentation/process-kill evidence blocker
-is closed for the seven recorded API 36 AOSP tests; the narrower untested
+Publication is blocked if any artifact-critical item remains `Pending` or merely
+`Implemented`. A locally signed candidate does not waive this rule for a changed
+commit: every artifact gate must be repeated and tied to the final tag's
+`BUILD_INFO.txt`. The previous broad instrumentation/process-kill evidence
+blocker is closed for the seven recorded API 36 AOSP tests; the narrower untested
 SQLite-statement, real host-ack and complete IME/composer/camera paths are not
 represented as passed. Rows explicitly requiring independent audit or physical
 GrapheneOS/StrongBox/TEE/camera evidence are residual assurance prerequisites

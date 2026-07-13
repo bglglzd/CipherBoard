@@ -1,0 +1,9 @@
+# Security-sensitive changes require explicit maintainer review.
+* @bglglzd
+
+/app/ @bglglzd
+/crypto-core/ @bglglzd
+/pairing/ @bglglzd
+/secure-storage/ @bglglzd
+/scripts/ @bglglzd
+/.github/ @bglglzd
