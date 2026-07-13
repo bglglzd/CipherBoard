@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cipherboard-crypto = { path = "../native" }
-jni = { version = "=0.21.1", default-features = false }
+jni = { version = "=0.22.4", default-features = false }
 minicbor = { version = "=0.25.1", features = ["std"] }
 zeroize = "=1.8.2"
 
