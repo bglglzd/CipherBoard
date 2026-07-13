@@ -1,5 +1,12 @@
 import com.android.build.api.variant.ApplicationVariant
+import com.android.build.api.artifact.SingleArtifact
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+val cipherboardApplicationId = providers.gradleProperty("cipherboard.applicationId").get()
+val cipherboardProductName = providers.gradleProperty("cipherboard.productName").get()
+val cipherboardVersionCode = providers.gradleProperty("cipherboard.versionCode").get().toInt()
+val cipherboardVersionName = providers.gradleProperty("cipherboard.versionName").get()
+val cipherboardArtifactName = providers.gradleProperty("cipherboard.artifactName").get()
 
 plugins {
     id("com.android.application")
@@ -12,14 +19,16 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "helium314.keyboard"
-        minSdk = 21
+        applicationId = cipherboardApplicationId
+        minSdk = 23
         targetSdk = 36
-        versionCode = 4005
-        versionName = "4.0"
+        versionCode = cipherboardVersionCode
+        versionName = cipherboardVersionName
+        resValue("string", "english_ime_name", cipherboardProductName)
+        buildConfigField("String", "PRODUCT_NAME", "\"$cipherboardProductName\"")
         ndk {
             abiFilters.clear()
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
         proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
@@ -32,6 +41,7 @@ android {
             isJniDebuggable = false
         }
         create("nouserlib") { // same as release, but does not allow the user to provide a library
+            matchingFallbacks += listOf("release")
             isMinifyEnabled = true
             isShrinkResources = false
             isDebuggable = false
@@ -45,10 +55,12 @@ android {
             applicationIdSuffix = ".debug"
         }
         create("runTests") { // build variant for running tests on CI that skips tests known to fail
+            matchingFallbacks += listOf("debug")
             isMinifyEnabled = false
             isJniDebuggable = false
         }
         create("debugNoMinify") { // for faster builds in IDE
+            matchingFallbacks += listOf("debug")
             isDebuggable = true
             isMinifyEnabled = false
             isJniDebuggable = false
@@ -67,7 +79,7 @@ android {
             }
             variant.outputs.forEach { output ->
                 if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                    output.outputFileName = "HeliBoard_${defaultConfig.versionName}-${variant.buildType}.apk"
+                    output.outputFileName = "$cipherboardArtifactName-${defaultConfig.versionName}-${variant.buildType}.apk"
                 }
             }
         }
@@ -124,7 +136,47 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
+        val variantName = variant.name
+        val variantTaskName = variantName.replaceFirstChar { it.uppercase() }
+        val verifyTask = tasks.register("verify${variantTaskName}ForbiddenPermissions") {
+            group = "verification"
+            description = "Fails when the $variantName merged manifest requests a forbidden permission."
+            inputs.file(mergedManifest)
+            doLast {
+                val manifestText = mergedManifest.get().asFile.readText()
+                val requestedPermissions = Regex(
+                    """<uses-permission(?:-sdk-\d+)?[^>]*android:name\s*=\s*\"([^\"]+)\""""
+                ).findAll(manifestText).map { it.groupValues[1] }.toSet()
+                val forbiddenPermissions = setOf(
+                    "android.permission.INTERNET",
+                    "android.permission.ACCESS_NETWORK_STATE",
+                    "android.permission.READ_CONTACTS",
+                    "android.permission.WRITE_CONTACTS",
+                    "android.permission.READ_SMS",
+                    "android.permission.RECEIVE_SMS",
+                    "android.permission.SEND_SMS",
+                    "android.permission.QUERY_ALL_PACKAGES",
+                    "android.permission.SYSTEM_ALERT_WINDOW",
+                    "android.permission.BIND_ACCESSIBILITY_SERVICE",
+                )
+                val violations = requestedPermissions.intersect(forbiddenPermissions)
+                check(violations.isEmpty()) {
+                    "Forbidden permissions in $variantName merged manifest: ${violations.sorted().joinToString()}"
+                }
+            }
+        }
+        tasks.named("check").configure { dependsOn(verifyTask) }
+    }
+}
+
 dependencies {
+    implementation(project(":crypto-core"))
+    implementation(project(":pairing"))
+    implementation(project(":secure-storage"))
+
     // androidx
     implementation("androidx.core:core-ktx:1.17.0") // 1.18.0 requires minSdk 23
     implementation("androidx.recyclerview:recyclerview:1.4.0")

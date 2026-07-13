@@ -1,2 +1,5 @@
 include ':app'
+include ':crypto-core'
+include ':pairing'
+include ':secure-storage'
 include ':tools:make-emoji-keys'

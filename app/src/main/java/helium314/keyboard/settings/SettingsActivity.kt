@@ -29,31 +29,19 @@ import androidx.compose.ui.res.stringResource
 import helium314.keyboard.compat.locale
 import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet
-import helium314.keyboard.latin.BuildConfig
 import helium314.keyboard.latin.InputAttributes
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.common.FileUtils
-import helium314.keyboard.latin.define.DebugFlags
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.BackButton
-import helium314.keyboard.latin.utils.DeviceProtectedUtils
 import helium314.keyboard.latin.utils.ExecutorUtils
-import helium314.keyboard.latin.utils.GestureDataGatheringSettings
-import helium314.keyboard.latin.utils.JniUtils
 import helium314.keyboard.latin.utils.Theme
 import helium314.keyboard.latin.utils.UncachedInputMethodManagerUtils
 import helium314.keyboard.latin.utils.cleanUnusedMainDicts
 import helium314.keyboard.latin.utils.prefs
-import helium314.keyboard.settings.dialogs.ConfirmationDialog
 import helium314.keyboard.settings.dialogs.NewDictionaryDialog
-import helium314.keyboard.settings.screens.gesturedata.END_DATE_EPOCH_MILLIS
-import helium314.keyboard.settings.screens.gesturedata.TWO_WEEKS_IN_MILLIS
 import kotlinx.coroutines.flow.MutableStateFlow
-import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileInputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 // todo: with compose, app startup is slower and UI needs some "warmup" time to be snappy
 //  maybe baseline profiles help?
@@ -67,7 +55,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
     fun prefChanged() = prefChanged.value++
     private val dictUriFlow = MutableStateFlow<Uri?>(null)
     private val cachedDictionaryFile by lazy { File(this.cacheDir.path + File.separator + "temp_dict") }
-    private val crashReportFiles = MutableStateFlow<List<File>>(emptyList())
     private var paused = true
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -78,7 +65,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
             Settings.getInstance().loadSettings(this, resources.configuration.locale(), inputAttributes)
         }
         ExecutorUtils.getBackgroundExecutor(ExecutorUtils.KEYBOARD).execute { cleanUnusedMainDicts(this) }
-        crashReportFiles.value = findCrashReports(!BuildConfig.DEBUG && !DebugFlags.DEBUG_ENABLED)
         val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         if (!UncachedInputMethodManagerUtils.isThisImeCurrent(this, imm))
             KeyboardIconsSet.instance.loadIcons(this) // otherwise we may crash when displaying toolbar keys
@@ -93,8 +79,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
             Theme {
                 Surface {
                     val dictUri by dictUriFlow.collectAsState()
-                    val crashReports by crashReportFiles.collectAsState()
-                    val crashFilePicker = filePicker { saveCrashReports(it) }
                     var showWelcomeWizard by rememberSaveable { mutableStateOf(
                         !UncachedInputMethodManagerUtils.isThisImeCurrent(this, imm)
                                 || !UncachedInputMethodManagerUtils.isThisImeEnabled(this, imm)
@@ -109,7 +93,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
                                         BackButton { this@SettingsActivity.finish() }
                                     },
                                 )
-                                settingsContainer[Settings.PREF_USE_CONTACTS]!!.Preference()
                                 settingsContainer[Settings.PREF_USE_APPS]!!.Preference()
                                 settingsContainer[Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE]!!.Preference()
                                 settingsContainer[Settings.PREF_SPELLCHECK_SUGGEST]!!.Preference()
@@ -119,24 +102,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
                         SettingsNavHost(onClickBack = { this.finish() })
                         if (showWelcomeWizard) {
                             WelcomeWizard(close = { showWelcomeWizard = false }, finish = this::finish)
-                        } else if (crashReports.isNotEmpty()) {
-                            ConfirmationDialog(
-                                cancelButtonText = "ignore",
-                                onDismissRequest = { crashReportFiles.value = emptyList() },
-                                neutralButtonText = "delete",
-                                onNeutral = { crashReports.forEach { it.delete() }; crashReportFiles.value = emptyList() },
-                                confirmButtonText = "get",
-                                onConfirmed = {
-                                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
-                                    intent.addCategory(Intent.CATEGORY_OPENABLE)
-                                    intent.putExtra(Intent.EXTRA_TITLE, "crash_reports.zip")
-                                    intent.type = "application/zip"
-                                    crashFilePicker.launch(intent)
-                                },
-                                content = { Text("Crash report files found") },
-                            )
-                        } else if (JniUtils.sHaveGestureLib && System.currentTimeMillis() < END_DATE_EPOCH_MILLIS + TWO_WEEKS_IN_MILLIS) {
-                            GestureDataGatheringSettings.GestureDataPromotionReminderDialog()
                         }
                     }
                     if (dictUri != null) {
@@ -190,39 +155,6 @@ open class SettingsActivity : ComponentActivity(), SharedPreferences.OnSharedPre
         forceTheme = theme
         forceNight = night
         KeyboardSwitcher.getInstance().setThemeNeedsReload()
-    }
-
-    private fun findCrashReports(onlyUnprotected: Boolean): List<File> {
-        val unprotected = DeviceProtectedUtils.getFilesDir(this)?.listFiles().orEmpty()
-        if (onlyUnprotected)
-            return unprotected.filter { it.name.startsWith("crash_report") }
-
-        val dir = getExternalFilesDir(null)
-        val allFiles = dir?.listFiles()?.toList().orEmpty() + unprotected
-        return allFiles.filter { it.name.startsWith("crash_report") }
-    }
-
-    private fun saveCrashReports(uri: Uri) {
-        val files = findCrashReports(false)
-        if (files.isEmpty()) return
-        runCatching {
-            contentResolver.openOutputStream(uri)?.use {
-                val bos = BufferedOutputStream(it)
-                val z = ZipOutputStream(bos)
-                for (file in files) {
-                    val f = FileInputStream(file)
-                    z.putNextEntry(ZipEntry(file.name))
-                    FileUtils.copyStreamToOtherStream(f, z)
-                    f.close()
-                    z.closeEntry()
-                }
-                z.close()
-                bos.close()
-                for (file in files) {
-                    file.delete()
-                }
-            }
-        }
     }
 
     companion object {

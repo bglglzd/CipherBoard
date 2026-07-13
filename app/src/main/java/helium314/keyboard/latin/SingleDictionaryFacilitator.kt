@@ -100,11 +100,11 @@ class SingleDictionaryFacilitator(private val dict: Dictionary) : DictionaryFaci
 
     override fun getCurrentLocale(): Locale = mainLocale
 
-    override fun usesSameSettings(locales: List<Locale>, contacts: Boolean, apps: Boolean, personalization: Boolean): Boolean {
+    override fun usesSameSettings(locales: List<Locale>, apps: Boolean, personalization: Boolean): Boolean {
         return locales.singleOrNull() == mainLocale
     }
 
-    override fun resetDictionaries(context: Context, newLocale: Locale, useContactsDict: Boolean, useAppsDict: Boolean,
+    override fun resetDictionaries(context: Context, newLocale: Locale, useAppsDict: Boolean,
                                    usePersonalizedDicts: Boolean, forceReloadMainDictionary: Boolean, dictNamePrefix: String, listener: DictionaryInitializationListener?
     ) { }
 

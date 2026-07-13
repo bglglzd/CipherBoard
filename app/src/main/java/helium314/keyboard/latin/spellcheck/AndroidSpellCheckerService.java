@@ -83,7 +83,6 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
         mRecommendedThreshold = Float.parseFloat(getString(R.string.spellchecker_recommended_threshold_value));
         final SharedPreferences prefs = KtxKt.prefs(this);
         prefs.registerOnSharedPreferenceChangeListener(this);
-        onSharedPreferenceChanged(prefs, Settings.PREF_USE_CONTACTS);
         onSharedPreferenceChanged(prefs, Settings.PREF_USE_APPS);
         final boolean blockOffensive = prefs.getBoolean(Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE, Defaults.PREF_BLOCK_POTENTIALLY_OFFENSIVE);
         mSettingsValuesForSuggestion = new SettingsValuesForSuggestion(blockOffensive, false);
@@ -96,10 +95,6 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
     @Override
     public void onSharedPreferenceChanged(final SharedPreferences prefs, final String key) {
         if (key != null) switch (key) {
-        case Settings.PREF_USE_CONTACTS -> {
-            final boolean useContactsDictionary = prefs.getBoolean(Settings.PREF_USE_CONTACTS, Defaults.PREF_USE_CONTACTS);
-            mDictionaryFacilitatorCache.setUseContactsDictionary(useContactsDictionary);
-        }
         case Settings.PREF_USE_APPS -> {
             final boolean useAppsDictionary = prefs.getBoolean(Settings.PREF_USE_APPS, Defaults.PREF_USE_APPS);
             mDictionaryFacilitatorCache.setUseAppsDictionary(useAppsDictionary);

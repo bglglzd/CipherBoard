@@ -38,7 +38,7 @@ class ClipboardHistoryEntry(
 
     fun getContentUri(context: Context) = filename?.let { FileProvider.getUriForFile(
         context,
-        context.getString(R.string.clipboard_provider_authority),
+        BuildConfig.APPLICATION_ID + ".clipprovider",
         File(ClipboardDao.clipFilesDir, it)
     ) }
 

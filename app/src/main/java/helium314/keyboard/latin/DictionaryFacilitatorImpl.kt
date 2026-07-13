@@ -5,7 +5,6 @@
  */
 package helium314.keyboard.latin
 
-import android.Manifest
 import android.content.Context
 import android.provider.UserDictionary
 import android.util.LruCache
@@ -21,13 +20,11 @@ import helium314.keyboard.latin.common.decapitalize
 import helium314.keyboard.latin.common.mightBeEmoji
 import helium314.keyboard.latin.common.splitOnWhitespace
 import helium314.keyboard.latin.dictionary.AppsBinaryDictionary
-import helium314.keyboard.latin.dictionary.ContactsBinaryDictionary
 import helium314.keyboard.latin.dictionary.Dictionary
 import helium314.keyboard.latin.dictionary.DictionaryFactory
 import helium314.keyboard.latin.dictionary.DictionaryStats
 import helium314.keyboard.latin.dictionary.ExpandableBinaryDictionary
 import helium314.keyboard.latin.dictionary.UserBinaryDictionary
-import helium314.keyboard.latin.permissions.PermissionsUtil
 import helium314.keyboard.latin.personalization.UserHistoryDictionary
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.settings.SettingsValuesForSuggestion
@@ -114,10 +111,9 @@ class DictionaryFacilitatorImpl : DictionaryFacilitator {
         return currentlyPreferredDictionaryGroup.locale
     }
 
-    override fun usesSameSettings(locales: List<Locale>, contacts: Boolean, apps: Boolean, personalization: Boolean): Boolean {
+    override fun usesSameSettings(locales: List<Locale>, apps: Boolean, personalization: Boolean): Boolean {
         val dictGroup = dictionaryGroups[0] // settings are the same for all groups
-        return contacts == dictGroup.hasDict(Dictionary.TYPE_CONTACTS)
-                && apps == dictGroup.hasDict(Dictionary.TYPE_APPS)
+        return apps == dictGroup.hasDict(Dictionary.TYPE_APPS)
                 && personalization == dictGroup.hasDict(Dictionary.TYPE_USER_HISTORY)
                 && locales.size == dictionaryGroups.size
                 && locales.none { findDictionaryGroupWithLocale(dictionaryGroups, it) == null }
@@ -128,7 +124,6 @@ class DictionaryFacilitatorImpl : DictionaryFacilitator {
     override fun resetDictionaries(
         context: Context,
         newLocale: Locale,
-        useContactsDict: Boolean,
         useAppsDict: Boolean,
         usePersonalizedDicts: Boolean,
         forceReloadMainDictionary: Boolean,
@@ -143,8 +138,6 @@ class DictionaryFacilitatorImpl : DictionaryFacilitator {
             Dictionary.TYPE_USER,
             if (useAppsDict) Dictionary.TYPE_APPS else null,
             if (usePersonalizedDicts) Dictionary.TYPE_USER_HISTORY else null,
-            if (useContactsDict && PermissionsUtil.checkAllPermissionsGranted(context, Manifest.permission.READ_CONTACTS))
-                Dictionary.TYPE_CONTACTS else null
         )
 
         val (newDictionaryGroups, existingDictsToCleanup) =
@@ -628,7 +621,6 @@ class DictionaryFacilitatorImpl : DictionaryFacilitator {
                 return when (dictType) {
                     Dictionary.TYPE_USER_HISTORY -> UserHistoryDictionary.getDictionary(context, locale, dictFile, dictNamePrefix)
                     Dictionary.TYPE_USER -> UserBinaryDictionary.getDictionary(context, locale, dictFile, dictNamePrefix)
-                    Dictionary.TYPE_CONTACTS -> ContactsBinaryDictionary.getDictionary(context, locale, dictFile, dictNamePrefix)
                     Dictionary.TYPE_APPS -> AppsBinaryDictionary.getDictionary(context, locale, dictFile, dictNamePrefix)
                     else -> throw IllegalArgumentException("unknown dictionary type $dictType")
                 }
@@ -715,13 +707,6 @@ private class DictionaryGroup(
 
         // and from personal dictionary
         getSubDict(Dictionary.TYPE_USER)?.removeUnigramEntryDynamically(word)
-
-        val contactsDict = getSubDict(Dictionary.TYPE_CONTACTS)
-        if (contactsDict != null && contactsDict.isInDictionary(word)) {
-            contactsDict.removeUnigramEntryDynamically(word) // will be gone until next reload of dict
-            addToBlacklist(word)
-            return
-        }
 
         val appsDict = getSubDict(Dictionary.TYPE_APPS)
         if (appsDict != null && appsDict.isInDictionary(word)) {

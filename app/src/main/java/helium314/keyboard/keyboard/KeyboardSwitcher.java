@@ -9,7 +9,6 @@ package helium314.keyboard.keyboard;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
@@ -18,13 +17,11 @@ import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.AnimationUtils;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodSubtype;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -75,7 +72,6 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     private FrameLayout mStripContainer;
     private ClipboardHistoryView mClipboardHistoryView;
     private TextView mFakeToastView;
-    private ImageView mBackgroundGatheringIndicator;
     private LatinIME mLatinIME;
     private RichInputMethodManager mRichImm;
     private boolean mIsHardwareAcceleratedDrawingEnabled;
@@ -533,7 +529,6 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
             SettingsKt.setFloatingKeyboardEnabled(mThemeContext, enabled);
         if (enabled) FloatingKeyboardUtils.setFloating(mCurrentInputView);
         else FloatingKeyboardUtils.disableFloating(mCurrentInputView);
-        setBackgroundGatheringIndicatorPosition();
     }
 
     public void toggleSplitKeyboardMode() {
@@ -609,27 +604,6 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
             mFakeToastView.startAnimation(AnimationUtils.loadAnimation(mLatinIME, R.anim.fade_out));
             mFakeToastView.setVisibility(View.GONE);
         }, timeMillis);
-    }
-
-    public void setBackgroundGatheringIndicator(boolean enabled, boolean hasData, boolean saving) {
-        if (mCurrentInputView == null) return;
-        mBackgroundGatheringIndicator.setVisibility(enabled ? View.VISIBLE : View.GONE);
-        if (!enabled) return;
-        mBackgroundGatheringIndicator.setImageResource(hasData ? R.drawable.btn_keyboard_key_action_normal_lxx_base : R.drawable.ring);
-        setBackgroundGatheringIndicatorPosition();
-        if (!saving) return;
-        mBackgroundGatheringIndicator.setImageTintList(ColorStateList.valueOf(0xff00a000));
-        mBackgroundGatheringIndicator.postDelayed(() -> mBackgroundGatheringIndicator.setImageTintList(ColorStateList.valueOf(0xffa00000)), 1500);
-    }
-
-    private void setBackgroundGatheringIndicatorPosition() {
-        if (mBackgroundGatheringIndicator == null || mBackgroundGatheringIndicator.getVisibility() != View.VISIBLE) return;
-        if (mBackgroundGatheringIndicator.getLayoutParams() instanceof ViewGroup.MarginLayoutParams margin) {
-            Keyboard kb = mKeyboardView.getKeyboard();
-            if (kb != null)
-                margin.topMargin = kb.mOccupiedHeight - KtxKt.dpToPx(16, mCurrentInputView.getResources());
-            mBackgroundGatheringIndicator.setLayoutParams(mBackgroundGatheringIndicator.getLayoutParams());
-        }
     }
 
     // Implements {@link KeyboardState.SwitchActions}.
@@ -771,8 +745,6 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
         mClipboardStripScrollView = mCurrentInputView.findViewById(R.id.clipboard_strip_scroll_view);
         mSuggestionStripView = mCurrentInputView.findViewById(R.id.suggestion_strip_view);
         mStripContainer = mCurrentInputView.findViewById(R.id.strip_container);
-        mBackgroundGatheringIndicator = mCurrentInputView.findViewById(R.id.backgroundGatheringIndicator);
-
         prefs.registerOnSharedPreferenceChangeListener(mSuggestionStripView);
         prefs.registerOnSharedPreferenceChangeListener(mClipboardHistoryView);
         PointerTracker.switchTo(mKeyboardView);

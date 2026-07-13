@@ -27,7 +27,6 @@ import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.utils.LayoutType
 import helium314.keyboard.latin.utils.LayoutUtilsCustom
-import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.getActivity
 import helium314.keyboard.latin.utils.getStringResourceOrName
@@ -107,12 +106,9 @@ fun LayoutEditDialog(
             errorJob?.cancel()
             if (!valid) {
                 errorJob = scope.launch {
-                    val message = Log.getLog(10)
-                        .lastOrNull { it.tag == "LayoutUtilsCustom" }?.message
-                        ?.split("\n")?.take(2)?.joinToString("\n")
                     delay(3000)
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(ctx, ctx.getString(R.string.layout_error, message), Toast.LENGTH_LONG).show()
+                        Toast.makeText(ctx, ctx.getString(R.string.layout_error, ""), Toast.LENGTH_LONG).show()
                     }
                 }
             }

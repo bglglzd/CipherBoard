@@ -12,6 +12,10 @@ import android.os.Build;
 
 import java.io.File;
 
+/**
+ * Explicit device-protected storage for ordinary IME settings needed before first unlock.
+ * Secure identity, contact, pairing, and ratchet state must never use this utility.
+ */
 public final class DeviceProtectedUtils {
 
     static final String TAG = DeviceProtectedUtils.class.getSimpleName();
