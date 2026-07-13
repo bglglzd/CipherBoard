@@ -202,6 +202,35 @@ Network permission for CipherBoard as defense in depth.
 Updates must be signed by the same release key and use a greater version code.
 Test upgrade behavior without restoring or rolling back ratchet state.
 
+Publish stable user builds as normal GitHub Releases, not pre-releases. A
+release intended for Obtainium must contain exactly one installable production
+APK named `CipherBoard-<version>-release.apk`; debug and unsigned APKs must not
+be attached. The supported Obtainium source is:
+
+```text
+https://github.com/bglglzd/CipherBoard
+```
+
+Leave pre-releases disabled. An optional APK link filter is:
+
+```regex
+^CipherBoard-[0-9]+\.[0-9]+\.[0-9]+-release\.apk$
+```
+
+CipherBoard itself must remain offline and must not gain `INTERNET`, package-
+installer, or self-update permissions. Obtainium is an independent networked
+installer and therefore a separate trust boundary. Android can still require
+user confirmation for the first installation or an update depending on OS
+policy and installer ownership.
+
+Document upgrades as install-in-place operations. Users must not uninstall the
+old version first: uninstalling removes the application data containing the
+Vault, local identity, contacts, and ratchet state. Android must validate the
+same package name and signing certificate before accepting an update. A signer
+mismatch is a stop condition, never a reason to uninstall and bypass the
+platform warning. The user-facing procedure is in
+[`docs/GRAPHENEOS.md`](docs/GRAPHENEOS.md).
+
 ## High-risk Use
 
 Do not describe this release as independently audited unless such an audit has

@@ -35,7 +35,7 @@ HeliBoard release and is not endorsed or supported by the HeliBoard project.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.1.0` |
+| Maturity | Pre-1.0; current version `0.1.1` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
@@ -122,14 +122,14 @@ project and assume it is CipherBoard.
 Verify the release checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.1.0-release.apk.sha256
+sha256sum --check CipherBoard-0.1.1-release.apk.sha256
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.1.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.1.0-release.apk.sha256
+(Get-FileHash .\CipherBoard-0.1.1-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.1.1-release.apk.sha256
 ```
 
 If Android Build Tools are installed, also verify the APK signature and compare
@@ -138,17 +138,31 @@ the reported SHA-256 certificate digest with
 digest through a channel you trust independently of the APK download.
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.1.0-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.1.1-release.apk
 ```
 
 Install or update the verified APK:
 
 ```sh
-adb install -r CipherBoard-0.1.0-release.apk
+adb install -r CipherBoard-0.1.1-release.apk
 ```
 
 Debug APKs are developer artifacts signed with a public debug key. Do not use
 them for real secrets.
+
+To receive stable updates without giving CipherBoard network access, add
+`https://github.com/bglglzd/CipherBoard` to Obtainium and leave pre-releases
+disabled. CipherBoard does not contact GitHub or update itself; the external
+installer is a separate trust boundary and is the only component that needs
+network access. Android may require confirmation for the first install or an
+update, depending on OS policy and which installer owns the existing install.
+
+Do not uninstall CipherBoard before updating. Install the new APK over the
+existing application so Android can verify signing-certificate continuity and
+the Vault, identity, contacts, and ratchet state remain in application data. If
+Android reports a signer mismatch, stop and investigate instead of uninstalling
+to bypass the warning. See the complete [GrapheneOS installation and update
+guide](docs/GRAPHENEOS.md).
 
 ### 2. Enable CipherBoard
 
@@ -203,15 +217,26 @@ CipherBoard - офлайн-клавиатура для обмена зашифр
 
 1. Установите только проверенный release APK из этого репозитория и сверьте
    SHA-256 и fingerprint сертификата подписи.
-2. Включите CipherBoard в системных настройках клавиатур. На GrapheneOS
+2. Для обновлений без выдачи CipherBoard сетевого доступа добавьте
+   `https://github.com/bglglzd/CipherBoard` в Obtainium и отключите получение
+   pre-release. Не удаляйте приложение перед обновлением: установите новую
+   версию поверх старой, чтобы сохранить Vault, identity, контакты и состояние
+   ratchet.
+3. Включите CipherBoard в системных настройках клавиатур. На GrapheneOS
    дополнительно запретите приложению Network.
-3. Создайте локальную identity и разблокируйте Vault.
-4. Выполните взаимное физическое QR-сопряжение двух устройств.
-5. Полностью сравните Safety Number на обоих экранах и только после этого
+4. Создайте локальную identity и разблокируйте Vault.
+5. Выполните взаимное физическое QR-сопряжение двух устройств.
+6. Полностью сравните Safety Number на обоих экранах и только после этого
    подтвердите контакт.
-6. Для отправки нажмите кнопку со щитом, выберите контакт, введите сообщение и
+7. Для отправки нажмите кнопку со щитом, выберите контакт, введите сообщение и
    зашифруйте его. Во внешнем поле должен появиться только `CB1:`-шифротекст.
-7. Для чтения выделите шифротекст и выберите **Расшифровать в CipherBoard**.
+8. Для чтения выделите шифротекст и выберите **Расшифровать в CipherBoard**.
+
+CipherBoard не проверяет обновления самостоятельно и по-прежнему не имеет
+разрешения `android.permission.INTERNET`. Сеть использует только выбранный вами
+внешний установщик. Android может потребовать подтверждение первой установки
+или обновления. Подробности приведены в [инструкции для
+GrapheneOS](docs/GRAPHENEOS.md).
 
 Приложение не считается независимо аудированным. Оно не защищает от полного
 компрометационного доступа к разблокированному устройству, вредоносной
@@ -260,6 +285,8 @@ Architecture and review documents:
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) - threats, assumptions, and limitations
 - [`SECURITY_CHECKLIST.md`](SECURITY_CHECKLIST.md) - requirement traceability
 - [`TEST_PLAN.md`](TEST_PLAN.md) - test matrix and acceptance evidence
+- [`docs/GRAPHENEOS.md`](docs/GRAPHENEOS.md) - GrapheneOS installation and
+  external update guide
 - [`UPSTREAM.md`](UPSTREAM.md) - exact HeliBoard provenance
 - [`LICENSES.md`](LICENSES.md) and
   [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) - licensing inventory
