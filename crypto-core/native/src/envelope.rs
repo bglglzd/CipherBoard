@@ -241,10 +241,7 @@ pub fn decode_transport_part(text: &str) -> Result<EnvelopePart> {
 
 fn decode_part_binary(binary: &[u8]) -> Result<EnvelopePart> {
     let mut decoder = Decoder::new(binary);
-    let fields = decoder
-        .map()
-        .map_err(|_| ErrorCode::InvalidEncoding)?
-        .ok_or_else(|| CoreError::new(ErrorCode::InvalidEncoding))?;
+    let fields = read_canonical_map_len(&mut decoder, binary)?;
     if fields > MAX_MAP_FIELDS {
         return Err(ErrorCode::SizeLimit.into());
     }
@@ -261,30 +258,37 @@ fn decode_part_binary(binary: &[u8]) -> Result<EnvelopePart> {
     let mut part_number = None;
     let mut total_parts = None;
     let mut capabilities = None;
+    let mut previous_field = None;
 
     for _ in 0..fields {
-        let field = decoder.u64().map_err(|_| ErrorCode::InvalidEncoding)?;
+        let field = read_canonical_unsigned(&mut decoder, binary)?;
         if seen.contains(&field) {
             return Err(ErrorCode::DuplicateField.into());
         }
+        // Deterministic CBOR orders unsigned integer keys numerically: their
+        // canonical encodings grow by length and then lexicographically.
+        if previous_field.is_some_and(|previous| field < previous) {
+            return Err(ErrorCode::InvalidEncoding.into());
+        }
         seen.push(field);
+        previous_field = Some(field);
         match field {
-            0 => version = Some(decoder.u8().map_err(|_| ErrorCode::InvalidEncoding)?),
-            1 => message_type = Some(decoder.u8().map_err(|_| ErrorCode::InvalidEncoding)?),
-            2 => routing_tag = Some(read_fixed::<16>(&mut decoder)?),
-            3 => message_id = Some(read_fixed::<16>(&mut decoder)?),
-            4 => olm_type = Some(decoder.u8().map_err(|_| ErrorCode::InvalidEncoding)?),
+            0 => version = Some(read_canonical_u8(&mut decoder, binary)?),
+            1 => message_type = Some(read_canonical_u8(&mut decoder, binary)?),
+            2 => routing_tag = Some(read_fixed::<16>(&mut decoder, binary)?),
+            3 => message_id = Some(read_fixed::<16>(&mut decoder, binary)?),
+            4 => olm_type = Some(read_canonical_u8(&mut decoder, binary)?),
             5 => {
-                let bytes = decoder.bytes().map_err(|_| ErrorCode::InvalidEncoding)?;
+                let bytes = read_canonical_bytes(&mut decoder, binary)?;
                 if bytes.len() > MAX_MESSAGE_BYTES {
                     return Err(ErrorCode::SizeLimit.into());
                 }
                 payload = Some(bytes.to_vec());
             }
-            6 => part_number = Some(decoder.u16().map_err(|_| ErrorCode::InvalidEncoding)?),
-            7 => total_parts = Some(decoder.u16().map_err(|_| ErrorCode::InvalidEncoding)?),
-            8 => capabilities = Some(decoder.u32().map_err(|_| ErrorCode::InvalidEncoding)?),
-            OPTIONAL_FIELD_START.. => skip_bounded_optional(&mut decoder)?,
+            6 => part_number = Some(read_canonical_u16(&mut decoder, binary)?),
+            7 => total_parts = Some(read_canonical_u16(&mut decoder, binary)?),
+            8 => capabilities = Some(read_canonical_u32(&mut decoder, binary)?),
+            OPTIONAL_FIELD_START.. => skip_bounded_optional(&mut decoder, binary)?,
             _ => return Err(ErrorCode::UnknownMandatoryField.into()),
         }
     }
@@ -319,12 +323,85 @@ fn decode_part_binary(binary: &[u8]) -> Result<EnvelopePart> {
     })
 }
 
-fn read_fixed<const N: usize>(decoder: &mut Decoder<'_>) -> Result<[u8; N]> {
-    let bytes = decoder.bytes().map_err(|_| ErrorCode::InvalidEncoding)?;
+fn ensure_canonical(binary: &[u8], start: usize, end: usize, canonical: &[u8]) -> Result<()> {
+    if binary.get(start..end) != Some(canonical) {
+        return Err(ErrorCode::InvalidEncoding.into());
+    }
+    Ok(())
+}
+
+fn read_canonical_map_len(decoder: &mut Decoder<'_>, binary: &[u8]) -> Result<u64> {
+    let start = decoder.position();
+    let fields = decoder
+        .map()
+        .map_err(|_| ErrorCode::InvalidEncoding)?
+        .ok_or_else(|| CoreError::new(ErrorCode::InvalidEncoding))?;
+    let mut encoder = Encoder::new(Vec::new());
+    encoder
+        .map(fields)
+        .map_err(|_| ErrorCode::InvalidEncoding)?;
+    ensure_canonical(binary, start, decoder.position(), &encoder.into_writer())?;
+    Ok(fields)
+}
+
+fn read_canonical_unsigned(decoder: &mut Decoder<'_>, binary: &[u8]) -> Result<u64> {
+    let start = decoder.position();
+    let value = decoder.u64().map_err(|_| ErrorCode::InvalidEncoding)?;
+    let mut encoder = Encoder::new(Vec::new());
+    encoder.u64(value).map_err(|_| ErrorCode::InvalidEncoding)?;
+    ensure_canonical(binary, start, decoder.position(), &encoder.into_writer())?;
+    Ok(value)
+}
+
+fn read_canonical_u8(decoder: &mut Decoder<'_>, binary: &[u8]) -> Result<u8> {
+    u8::try_from(read_canonical_unsigned(decoder, binary)?)
+        .map_err(|_| CoreError::new(ErrorCode::InvalidEncoding))
+}
+
+fn read_canonical_u16(decoder: &mut Decoder<'_>, binary: &[u8]) -> Result<u16> {
+    u16::try_from(read_canonical_unsigned(decoder, binary)?)
+        .map_err(|_| CoreError::new(ErrorCode::InvalidEncoding))
+}
+
+fn read_canonical_u32(decoder: &mut Decoder<'_>, binary: &[u8]) -> Result<u32> {
+    u32::try_from(read_canonical_unsigned(decoder, binary)?)
+        .map_err(|_| CoreError::new(ErrorCode::InvalidEncoding))
+}
+
+fn read_canonical_int(decoder: &mut Decoder<'_>, binary: &[u8]) -> Result<()> {
+    let start = decoder.position();
+    let value = decoder.int().map_err(|_| ErrorCode::InvalidEncoding)?;
+    let mut encoder = Encoder::new(Vec::new());
+    encoder.int(value).map_err(|_| ErrorCode::InvalidEncoding)?;
+    ensure_canonical(binary, start, decoder.position(), &encoder.into_writer())
+}
+
+fn read_canonical_bytes<'a>(decoder: &mut Decoder<'a>, binary: &'a [u8]) -> Result<&'a [u8]> {
+    let start = decoder.position();
+    let value = decoder.bytes().map_err(|_| ErrorCode::InvalidEncoding)?;
+    let mut encoder = Encoder::new(Vec::new());
+    encoder
+        .bytes(value)
+        .map_err(|_| ErrorCode::InvalidEncoding)?;
+    ensure_canonical(binary, start, decoder.position(), &encoder.into_writer())?;
+    Ok(value)
+}
+
+fn read_canonical_str<'a>(decoder: &mut Decoder<'a>, binary: &'a [u8]) -> Result<&'a str> {
+    let start = decoder.position();
+    let value = decoder.str().map_err(|_| ErrorCode::InvalidEncoding)?;
+    let mut encoder = Encoder::new(Vec::new());
+    encoder.str(value).map_err(|_| ErrorCode::InvalidEncoding)?;
+    ensure_canonical(binary, start, decoder.position(), &encoder.into_writer())?;
+    Ok(value)
+}
+
+fn read_fixed<'a, const N: usize>(decoder: &mut Decoder<'a>, binary: &'a [u8]) -> Result<[u8; N]> {
+    let bytes = read_canonical_bytes(decoder, binary)?;
     bytes.try_into().map_err(|_| ErrorCode::InvalidInput.into())
 }
 
-fn skip_bounded_optional(decoder: &mut Decoder<'_>) -> Result<()> {
+fn skip_bounded_optional<'a>(decoder: &mut Decoder<'a>, binary: &'a [u8]) -> Result<()> {
     match decoder.datatype().map_err(|_| ErrorCode::InvalidEncoding)? {
         Type::Bool => {
             decoder.bool().map_err(|_| ErrorCode::InvalidEncoding)?;
@@ -333,25 +410,18 @@ fn skip_bounded_optional(decoder: &mut Decoder<'_>) -> Result<()> {
             decoder.null().map_err(|_| ErrorCode::InvalidEncoding)?;
         }
         Type::U8 | Type::U16 | Type::U32 | Type::U64 => {
-            decoder.u64().map_err(|_| ErrorCode::InvalidEncoding)?;
+            read_canonical_unsigned(decoder, binary)?;
         }
         Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Int => {
-            decoder.int().map_err(|_| ErrorCode::InvalidEncoding)?;
+            read_canonical_int(decoder, binary)?;
         }
         Type::Bytes => {
-            if decoder
-                .bytes()
-                .map_err(|_| ErrorCode::InvalidEncoding)?
-                .len()
-                > MAX_OPTIONAL_VALUE_BYTES
-            {
+            if read_canonical_bytes(decoder, binary)?.len() > MAX_OPTIONAL_VALUE_BYTES {
                 return Err(ErrorCode::SizeLimit.into());
             }
         }
         Type::String => {
-            if decoder.str().map_err(|_| ErrorCode::InvalidEncoding)?.len()
-                > MAX_OPTIONAL_VALUE_BYTES
-            {
+            if read_canonical_str(decoder, binary)?.len() > MAX_OPTIONAL_VALUE_BYTES {
                 return Err(ErrorCode::SizeLimit.into());
             }
         }

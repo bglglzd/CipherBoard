@@ -233,6 +233,53 @@ fn replay_is_rejected_after_restart() {
 }
 
 #[test]
+fn failed_authenticated_decrypt_does_not_consume_durable_ratchet_state() {
+    let mut paired = pair();
+    let original = encrypt(
+        &mut paired.alice_state,
+        b"authenticated payload",
+        TransportMode::Universal,
+    );
+    let following = encrypt(
+        &mut paired.alice_state,
+        b"following payload",
+        TransportMode::Universal,
+    );
+
+    let decoded = decode_transport_part(&original[0]).expect("decode original");
+    let mut altered_payload = decoded.payload().to_vec();
+    let middle = altered_payload.len() / 2;
+    altered_payload[middle] ^= 1;
+    let tampered = encode_transport_parts(
+        *decoded.routing_tag(),
+        *decoded.message_id(),
+        decoded.olm_type(),
+        &altered_payload,
+        decoded.capabilities(),
+        TransportMode::Universal,
+    )
+    .expect("valid outer envelope");
+
+    let durable_before_failure = paired.bob_state.clone();
+    let attempt = CipherSession::deserialize_state(&durable_before_failure).expect("receiver");
+    assert!(attempt
+        .prepare_decrypt(tampered.iter().map(String::as_str))
+        .is_err());
+    assert_eq!(paired.bob_state, durable_before_failure);
+
+    // A failed private snapshot must not prevent later out-of-order delivery
+    // or consumption of the original ciphertext from durable state.
+    assert_eq!(
+        decrypt(&mut paired.bob_state, &following),
+        b"following payload"
+    );
+    assert_eq!(
+        decrypt(&mut paired.bob_state, &original),
+        b"authenticated payload"
+    );
+}
+
+#[test]
 fn outer_message_id_is_bound_inside_olm_payload() {
     let mut paired = pair();
     let parts = encrypt(
@@ -445,12 +492,180 @@ fn unknown_version_duplicate_and_unknown_mandatory_fields_fail() {
     );
 }
 
+#[test]
+fn bounded_optional_fields_are_forward_compatible() {
+    let accepted = complete_envelope_with(4, |encoder| {
+        encoder
+            .u16(128)
+            .and_then(|value| value.bool(true))
+            .expect("boolean optional");
+        encoder
+            .u16(129)
+            .and_then(|value| value.null())
+            .expect("null optional");
+        encoder
+            .u16(130)
+            .and_then(|value| value.i64(-42))
+            .expect("integer optional");
+        encoder
+            .u16(131)
+            .and_then(|value| value.str("future"))
+            .expect("text optional");
+    });
+    let decoded = decode_transport_part(&accepted).expect("known scalar optional fields");
+    assert_eq!(decoded.part_number(), 1);
+    assert_eq!(decoded.total_parts(), 1);
+    assert_eq!(decoded.payload(), b"payload");
+
+    let oversized_value = vec![0_u8; 1025];
+    let oversized = complete_envelope_with(1, |encoder| {
+        encoder
+            .u16(128)
+            .and_then(|value| value.bytes(&oversized_value))
+            .expect("oversized optional");
+    });
+    assert_eq!(
+        decode_transport_part(&oversized)
+            .err()
+            .expect("oversized optional must fail")
+            .code(),
+        ErrorCode::SizeLimit
+    );
+
+    let nested = complete_envelope_with(1, |encoder| {
+        encoder
+            .u16(128)
+            .and_then(|value| value.array(0))
+            .expect("nested optional");
+    });
+    assert_eq!(
+        decode_transport_part(&nested)
+            .err()
+            .expect("nested optional must fail")
+            .code(),
+        ErrorCode::InvalidEncoding
+    );
+}
+
+#[test]
+fn map_field_limit_is_checked_before_reading_entries() {
+    let mut encoder = Encoder::new(Vec::new());
+    encoder.map(33).expect("oversized map header");
+    let text = format!("CB1:{}", URL_SAFE_NO_PAD.encode(encoder.into_writer()));
+    assert_eq!(
+        decode_transport_part(&text)
+            .err()
+            .expect("oversized map must fail")
+            .code(),
+        ErrorCode::SizeLimit
+    );
+}
+
+#[test]
+fn transport_envelope_rejects_noncanonical_cbor() {
+    let canonical = complete_envelope_with(0, |_| {});
+    let mut binary = URL_SAFE_NO_PAD
+        .decode(canonical.strip_prefix("CB1:").expect("prefix"))
+        .expect("base64");
+
+    let mut non_shortest_map = binary.clone();
+    non_shortest_map.splice(0..1, [0xb8, 9]);
+    assert_invalid_transport_binary(&non_shortest_map, "non-shortest map length");
+
+    let mut non_shortest_key = binary.clone();
+    non_shortest_key.splice(1..2, [0x18, 0]);
+    assert_invalid_transport_binary(&non_shortest_key, "non-shortest map key");
+
+    let mut non_shortest_integer = binary.clone();
+    non_shortest_integer.splice(2..3, [0x18, 1]);
+    assert_invalid_transport_binary(&non_shortest_integer, "non-shortest integer");
+
+    // Swap the two complete one-byte key/value pairs `0: 1` and `1: 1`.
+    binary[1..5].rotate_left(2);
+    assert_invalid_transport_binary(&binary, "map key order");
+}
+
+#[test]
+fn optional_scalar_fields_must_also_be_canonical() {
+    let canonical = complete_envelope_with(1, |encoder| {
+        encoder
+            .u16(128)
+            .and_then(|value| value.str("x"))
+            .expect("optional text");
+    });
+    let mut binary = URL_SAFE_NO_PAD
+        .decode(canonical.strip_prefix("CB1:").expect("prefix"))
+        .expect("base64");
+    let text_header = binary.len() - 2;
+    assert_eq!(binary[text_header], 0x61);
+    binary.splice(text_header..=text_header, [0x78, 1]);
+    assert_invalid_transport_binary(&binary, "non-shortest optional text length");
+}
+
+fn assert_invalid_transport_binary(binary: &[u8], description: &str) {
+    let text = format!("CB1:{}", URL_SAFE_NO_PAD.encode(binary));
+    assert_eq!(
+        decode_transport_part(&text)
+            .err()
+            .unwrap_or_else(|| panic!("{description} must fail"))
+            .code(),
+        ErrorCode::InvalidEncoding,
+        "{description}"
+    );
+}
+
 fn custom_envelope(fields: &[(u8, u8)]) -> String {
     let mut encoder = Encoder::new(Vec::new());
     encoder.map(fields.len() as u64).expect("map");
     for (key, value) in fields {
         encoder.u8(*key).and_then(|e| e.u8(*value)).expect("field");
     }
+    format!("CB1:{}", URL_SAFE_NO_PAD.encode(encoder.into_writer()))
+}
+
+fn complete_envelope_with<F>(extra_fields: u64, encode_extra: F) -> String
+where
+    F: FnOnce(&mut Encoder<Vec<u8>>),
+{
+    let mut encoder = Encoder::new(Vec::new());
+    encoder.map(9 + extra_fields).expect("map");
+    encoder
+        .u8(0)
+        .and_then(|value| value.u8(1))
+        .expect("version");
+    encoder
+        .u8(1)
+        .and_then(|value| value.u8(1))
+        .expect("message type");
+    encoder
+        .u8(2)
+        .and_then(|value| value.bytes(&[1_u8; 16]))
+        .expect("routing tag");
+    encoder
+        .u8(3)
+        .and_then(|value| value.bytes(&[2_u8; 16]))
+        .expect("message ID");
+    encoder
+        .u8(4)
+        .and_then(|value| value.u8(1))
+        .expect("Olm type");
+    encoder
+        .u8(5)
+        .and_then(|value| value.bytes(b"payload"))
+        .expect("payload");
+    encoder
+        .u8(6)
+        .and_then(|value| value.u16(1))
+        .expect("part number");
+    encoder
+        .u8(7)
+        .and_then(|value| value.u16(1))
+        .expect("part count");
+    encoder
+        .u8(8)
+        .and_then(|value| value.u32(CAPS))
+        .expect("capabilities");
+    encode_extra(&mut encoder);
     format!("CB1:{}", URL_SAFE_NO_PAD.encode(encoder.into_writer()))
 }
 
