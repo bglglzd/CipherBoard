@@ -17,6 +17,9 @@ tools/*.txt
 *.sh
 !scripts/*.sh
 target
+/dist/
+__pycache__/
+*.pyc
 *.jks
 *.keystore
 signing.properties
