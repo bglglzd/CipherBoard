@@ -16,7 +16,7 @@ minicbor = { version = "=0.25.1", features = ["std"] }
 zeroize = "=1.8.2"
 
 [dev-dependencies]
-proptest = "=1.6.0"
+proptest = "=1.11.0"
 
 [profile.release]
 codegen-units = 1
