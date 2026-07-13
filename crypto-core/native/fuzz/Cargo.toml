@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 base64 = "=0.22.1"
-getrandom = "=0.2.16"
+getrandom = "=0.4.3"
 libfuzzer-sys = "=0.4.13"
 minicbor = { version = "=0.25.1", features = ["std"] }
 
