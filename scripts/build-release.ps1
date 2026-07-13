@@ -123,6 +123,18 @@ try {
         $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $StagedApk).Hash.ToLowerInvariant()
         [IO.File]::WriteAllText("$StagedApk.sha256", "$Hash  $([IO.Path]::GetFileName($StagedApk))`n", $Utf8NoBom)
         Copy-Item -LiteralPath (Join-Path $Root "THIRD_PARTY_NOTICES.md") -Destination (Join-Path $Staging "THIRD_PARTY_NOTICES.txt")
+        $LicenseFiles = @(
+            "LICENSE",
+            "LICENSE-Apache-2.0",
+            "LICENSE-BSD-3-Clause-NOTICES",
+            "LICENSE-BlueOak-1.0.0",
+            "LICENSE-CC-BY-SA-4.0",
+            "LICENSE-MIT",
+            "LICENSES.md"
+        )
+        foreach ($LicenseFile in $LicenseFiles) {
+            Copy-Item -LiteralPath (Join-Path $Root $LicenseFile) -Destination (Join-Path $Staging $LicenseFile)
+        }
         $SourceArchive = Join-Path $Staging "$Artifact-$Version-source.tar.gz"
         Invoke-Checked "git" @(
             "-C", $Root, "archive", "--format=tar.gz",

@@ -50,6 +50,7 @@
     <string name="cipherboard_licenses_notices">Уведомления сторонних проектов</string>
     <string name="cipherboard_licenses_upstream">Сведения об исходном HeliBoard</string>
     <string name="cipherboard_licenses_apache">Apache License 2.0</string>
+    <string name="cipherboard_licenses_mit">Уведомления лицензии MIT</string>
     <string name="cipherboard_licenses_blue_oak">Лицензия Blue Oak 1.0.0</string>
     <string name="cipherboard_licenses_bsd">Уведомления BSD-3-Clause</string>
     <string name="cipherboard_licenses_cc">Creative Commons BY-SA 4.0</string>

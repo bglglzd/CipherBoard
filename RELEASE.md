@@ -89,9 +89,10 @@ continuity event and must never be bundled into an unrelated release.
    documented process-text/viewer/clipboard/vault/SIGKILL scope; the final run
    must not describe untested SQLite-statement, real `commitText()` acknowledgement
    or full IME/composer/camera paths as covered. The release script must repeat
-   the pinned offline OSV gate and its exact-release report must be reviewed.
-   Preflight passed for 255 packages with zero findings; it does not substitute
-   for the clean final run.
+   the pinned offline OSV gate and its exact-run report must be reviewed. The
+   pre-public local signed candidate passed for all 255 packages with zero
+   findings; that unpublished result does not substitute for rerunning the
+   final public release tag.
 7. Record physical GrapheneOS, camera, StrongBox and TEE-fallback validation as
    residual assurance required before high-risk use. Missing physical evidence
    limits assurance but is not itself a demonstrated critical code defect.
@@ -133,6 +134,13 @@ dist/VULNERABILITY_SCAN.json
 dist/RELEASE_ARTIFACTS.sha256
 dist/BUILD_INFO.txt
 dist/THIRD_PARTY_NOTICES.txt
+dist/LICENSE
+dist/LICENSE-Apache-2.0
+dist/LICENSE-BSD-3-Clause-NOTICES
+dist/LICENSE-BlueOak-1.0.0
+dist/LICENSE-CC-BY-SA-4.0
+dist/LICENSE-MIT
+dist/LICENSES.md
 ```
 
 `SBOM.json` is CycloneDX 1.5 and is generated from the resolved Gradle release
@@ -141,6 +149,10 @@ graph is empty or any component lacks reviewed license metadata.
 `BUILD_INFO.txt` is generated only
 after signing and verification and records the required toolchain, upstream,
 APK hash, certificate and runtime-permission evidence.
+
+Artifact-specific claims must cite the `BUILD_INFO.txt`, APK hash file, and
+`RELEASE_ARTIFACTS.sha256` produced by the same clean run. Results from an older
+candidate must never be carried forward to a changed commit or tag.
 
 The vulnerability report is produced only after an official OSV-Scanner v2.4.0
 binary matches a pinned release SHA-256, both local Maven and crates.io databases
@@ -205,15 +217,19 @@ may the final report include this required, narrowly scoped statement:
 > аудированным до проверки внешним специалистом по прикладной криптографии и
 > Android security.
 
-At the 2026-07-13 source-verification snapshot, full app/library unit and module
-lint gates, 27 native Rust tests, and a 601,574-input ASan/libFuzzer envelope
-campaign pass. Release preflight also verified the pinned official OSV-Scanner
-v2.4.0, fresh offline Maven/crates.io databases and all 255 SBOM packages with
-exit 0 and zero findings. This is not yet an exact clean production-artifact
-result. Targeted API 36 x86_64 AOSP no-Play instrumentation passes 7/7 with zero
+At the 2026-07-13 verification snapshot, full app/library unit and module lint
+gates, 27 native Rust tests, and a 601,574-input ASan/libFuzzer envelope campaign
+pass. A clean pre-public local signed-candidate pipeline also verified the pinned
+official OSV-Scanner v2.4.0, fresh offline Maven/crates.io databases, all 255
+SBOM packages, release signing, the merged APK policy, and artifact hashes. Its
+local evidence bundle is neither tracked nor published and is not evidence for
+the rewritten public history. The final public tag must repeat the complete run
+and publish its own `BUILD_INFO.txt` and release assets.
+
+Targeted API 36 x86_64 AOSP no-Play instrumentation passes 7/7 with zero
 failures/skips, including two vault reopen tests and three actual debug-only
 remote-process SIGKILL boundaries. It does not cover failure inside individual
 SQLite statements, the ambiguous real `InputConnection.commitText()`
 acknowledgement window, full IME/composer/live-camera E2E, or physical platform
-validation. No final production-signed release is claimed, and physical
-validation remains a prerequisite before high-risk use.
+validation. No physical GrapheneOS acceptance or independent audit is claimed,
+and those remain prerequisites before high-risk use.

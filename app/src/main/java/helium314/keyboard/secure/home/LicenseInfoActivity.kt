@@ -62,6 +62,7 @@ private val licenseDocuments = listOf(
     LicenseDocument(R.string.cipherboard_licenses_notices, "licenses/THIRD_PARTY_NOTICES.md"),
     LicenseDocument(R.string.cipherboard_licenses_upstream, "licenses/UPSTREAM.md"),
     LicenseDocument(R.string.cipherboard_licenses_apache, "licenses/LICENSE-Apache-2.0"),
+    LicenseDocument(R.string.cipherboard_licenses_mit, "licenses/LICENSE-MIT"),
     LicenseDocument(R.string.cipherboard_licenses_blue_oak, "licenses/LICENSE-BlueOak-1.0.0"),
     LicenseDocument(R.string.cipherboard_licenses_bsd, "licenses/LICENSE-BSD-3-Clause-NOTICES"),
     LicenseDocument(R.string.cipherboard_licenses_cc, "licenses/LICENSE-CC-BY-SA-4.0"),

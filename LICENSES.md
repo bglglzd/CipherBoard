@@ -20,7 +20,9 @@ claim affiliation with HeliBoard.
 The complete Blue Oak Model License used by `minicbor` is retained in
 [`LICENSE-BlueOak-1.0.0`](LICENSE-BlueOak-1.0.0). Consolidated BSD-3-Clause
 notices for the applicable resolved components are retained in
-[`LICENSE-BSD-3-Clause-NOTICES`](LICENSE-BSD-3-Clause-NOTICES).
+[`LICENSE-BSD-3-Clause-NOTICES`](LICENSE-BSD-3-Clause-NOTICES). Exact MIT
+copyright and permission notices for the MIT-only resolved components are
+retained in [`LICENSE-MIT`](LICENSE-MIT).
 
 ## Android Runtime Dependencies
 
@@ -72,6 +74,9 @@ graphs are fixed by `crypto-core/native/Cargo.lock` and
 | matrix-pickle / derive | 0.2.3 | Apache-2.0 |
 | prost / derive | 0.14.4 | Apache-2.0 |
 | minicbor / derive | 0.25.1 / 0.15.3 | BlueOak-1.0.0 |
+| bytes | 1.12.1 | MIT |
+| combine | 4.6.7 | MIT |
+| generic-array | 0.14.7 | MIT |
 | jni | 0.21.1 | MIT OR Apache-2.0 |
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | getrandom | 0.2.16 | MIT OR Apache-2.0 |
@@ -84,12 +89,15 @@ graphs are fixed by `crypto-core/native/Cargo.lock` and
 | x25519-dalek | 2.0.1 | BSD-3-Clause |
 | subtle | 2.6.1 | BSD-3-Clause |
 
-The remaining locked runtime crates are the RustCrypto cipher/MAC/KDF stack,
-`rand`, `digest`, `signature`, `curve25519-dalek` support crates, Serde support,
-JNI support, proc-macro output and platform support. Cargo metadata reports
-MIT, Apache-2.0, compatible dual-license expressions, BSD, or BlueOak terms.
-No locked Cargo package lacks a license field. Exact names and checksums are in
-the lockfiles; notices requiring reproduction are in
+`cargo tree --target aarch64-linux-android --edges normal` and the target
+artifacts show that `bytes`, `combine`, and `generic-array` are the MIT-only
+crates linked into the Android JNI artifact. The remaining locked runtime
+crates are the RustCrypto cipher/MAC/KDF stack, `rand`, `digest`, `signature`,
+`curve25519-dalek` support crates, Serde support, JNI support, proc-macro
+output and platform support. Cargo metadata reports MIT, Apache-2.0,
+compatible dual-license expressions, BSD, or BlueOak terms. No locked Cargo
+package lacks a license field. Exact names and checksums are in the lockfiles;
+notices requiring reproduction are in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## Build and Test Dependencies
@@ -103,6 +111,7 @@ These are not intended to be packaged in the release APK:
 | cargo-fuzz | 0.13.2 | MIT OR Apache-2.0 |
 | libfuzzer-sys | 0.4.13 | MIT OR Apache-2.0 |
 | proptest | 1.6.0 | MIT OR Apache-2.0 |
+| winnow (host proc-macro graph) | 0.7.15 / 1.0.3 | MIT |
 | JUnit 4 | 4.13.2 | EPL-1.0 |
 | Mockito | 5.23.0 | MIT |
 | Robolectric | 4.16.1 | MIT |
@@ -130,12 +139,13 @@ whenever a lockfile, BOM, or direct dependency changes.
 
 ## Offline Distribution
 
-The APK build copies `LICENSE`, `LICENSE-Apache-2.0`,
+The APK build copies `LICENSE`, `LICENSE-Apache-2.0`, `LICENSE-MIT`,
 `LICENSE-BlueOak-1.0.0`, `LICENSE-BSD-3-Clause-NOTICES`,
 `LICENSE-CC-BY-SA-4.0`, this inventory, `THIRD_PARTY_NOTICES.md`, and
 `UPSTREAM.md` into generated `licenses/` assets. A non-exported local activity
 renders those packaged files without a network lookup, and a unit test requires
 every listed asset to exist and be nonempty. Release staging also creates
 `CipherBoard-<version>-source.tar.gz` from the exact clean Git commit and
-publishes `THIRD_PARTY_NOTICES.txt` beside the APK. The final archive, assets,
-notices, and resolved SBOM must still be inspected together before distribution.
+publishes the standalone license documents plus `THIRD_PARTY_NOTICES.txt`
+beside the APK. The final archive, assets, notices, and resolved SBOM must still
+be inspected together before distribution.

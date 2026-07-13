@@ -13,6 +13,7 @@ val prepareLicenseAssets by tasks.registering(Sync::class) {
     from(rootProject.files(
         "LICENSE",
         "LICENSE-Apache-2.0",
+        "LICENSE-MIT",
         "LICENSE-BlueOak-1.0.0",
         "LICENSE-BSD-3-Clause-NOTICES",
         "LICENSE-CC-BY-SA-4.0",

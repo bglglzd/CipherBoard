@@ -17,7 +17,7 @@ It does not remove or replace copyright headers in individual files.
   not an official HeliBoard release.
 
 Complete license texts and dependency notices are distributed as `LICENSE`,
-`LICENSE-Apache-2.0`, `LICENSE-BlueOak-1.0.0`,
+`LICENSE-Apache-2.0`, `LICENSE-MIT`, `LICENSE-BlueOak-1.0.0`,
 `LICENSE-BSD-3-Clause-NOTICES`, and `LICENSE-CC-BY-SA-4.0`. They are also
 readable without network access from CipherBoard's Licenses screen.
 
@@ -77,8 +77,17 @@ included in `LICENSE-BlueOak-1.0.0` and in the offline Licenses screen.
 
 ## Rust MIT/Apache Ecosystem
 
-The locked JNI, Serde, RustCrypto, random-number, parsing, platform and
-proc-macro support crates use MIT, Apache-2.0, or compatible dual-license
+The Android JNI artifact links three MIT-only crates: `bytes 1.12.1`,
+`combine 4.6.7`, and `generic-array 0.14.7`. Their exact upstream copyright
+and permission notices are reproduced in `LICENSE-MIT`.
+
+`winnow 0.7.15` and `winnow 1.0.3` are MIT-only components in the resolved host
+proc-macro build graph. They are not linked into the Android APK, but their MIT
+terms are also retained in `LICENSE-MIT` because they are part of the locked
+source build and generated SBOM.
+
+The other locked JNI, Serde, RustCrypto, random-number, parsing, platform and
+proc-macro support crates use Apache-2.0 or compatible dual-license
 expressions. This includes `jni`, `base64`, `getrandom`, `serde`, `serde_json`,
 `sha2`, `zeroize`, AEAD/AES/ChaCha/HMAC/HKDF support and their locked
 transitives. Exact package names, versions, source checksums and license fields

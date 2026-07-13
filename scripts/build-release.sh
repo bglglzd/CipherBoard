@@ -133,6 +133,16 @@ hash_line=$(sha256_file "$staged_apk")
 hash=${hash_line%% *}
 printf '%s  %s\n' "$hash" "$(basename "$staged_apk")" >"$staged_apk.sha256"
 cp -- "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$staging_dir/THIRD_PARTY_NOTICES.txt"
+for license_file in \
+    LICENSE \
+    LICENSE-Apache-2.0 \
+    LICENSE-BSD-3-Clause-NOTICES \
+    LICENSE-BlueOak-1.0.0 \
+    LICENSE-CC-BY-SA-4.0 \
+    LICENSE-MIT \
+    LICENSES.md; do
+    cp -- "$ROOT_DIR/$license_file" "$staging_dir/$license_file"
+done
 git -C "$ROOT_DIR" archive --format=tar.gz \
     --prefix="$artifact-$version-source/" \
     --output="$staging_dir/$artifact-$version-source.tar.gz" \

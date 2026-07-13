@@ -50,6 +50,7 @@
     <string name="cipherboard_licenses_notices">Third-party notices</string>
     <string name="cipherboard_licenses_upstream">HeliBoard upstream record</string>
     <string name="cipherboard_licenses_apache">Apache License 2.0</string>
+    <string name="cipherboard_licenses_mit">MIT license notices</string>
     <string name="cipherboard_licenses_blue_oak">Blue Oak Model License 1.0.0</string>
     <string name="cipherboard_licenses_bsd">BSD-3-Clause notices</string>
     <string name="cipherboard_licenses_cc">Creative Commons BY-SA 4.0</string>

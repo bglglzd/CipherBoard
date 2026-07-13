@@ -22,6 +22,7 @@ class OfflineLicenseAssetsTest {
             "THIRD_PARTY_NOTICES.md",
             "UPSTREAM.md",
             "LICENSE-Apache-2.0",
+            "LICENSE-MIT",
             "LICENSE-BlueOak-1.0.0",
             "LICENSE-BSD-3-Clause-NOTICES",
             "LICENSE-CC-BY-SA-4.0",
