@@ -180,8 +180,15 @@ jobs:
 
           if normalize_line_endings(committed) != normalize_line_endings(working):
               raise SystemExit("gradlew.bat changed beyond CRLF/LF normalization")
-          if path.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
-              raise SystemExit("gradlew.bat unexpectedly became executable")
+          git_mode = subprocess.check_output(
+              ["git", "ls-files", "--stage", "--", "gradlew.bat"],
+              text=True,
+          ).split(maxsplit=1)[0]
+          if git_mode not in {"100644", "100755"}:
+              raise SystemExit("gradlew.bat has an unexpected Git mode")
+          actual_executable = bool(path.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
+          if actual_executable != (git_mode == "100755"):
+              raise SystemExit("gradlew.bat executable mode differs from the Git index")
           PY
             echo 'Accepted CRLF/LF-only normalization of gradlew.bat.'
             dirty=
