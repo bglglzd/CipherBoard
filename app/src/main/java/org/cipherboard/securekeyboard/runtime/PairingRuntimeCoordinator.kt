@@ -25,7 +25,6 @@ import org.cipherboard.securestorage.PendingPairingType
 import org.cipherboard.securestorage.VersionedDomainRecord
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
-import java.time.Clock
 
 internal interface PairingCryptoOperations {
     fun createOffer(
@@ -166,6 +165,14 @@ internal fun interface PairingRandomSource {
     fun nextBytes(destination: ByteArray)
 }
 
+internal fun interface EpochMillisSource {
+    fun nowEpochMillis(): Long
+}
+
+internal object SystemEpochMillisSource : EpochMillisSource {
+    override fun nowEpochMillis(): Long = System.currentTimeMillis()
+}
+
 internal class SecurePairingRandomSource(
     private val random: SecureRandom = SecureRandom(),
 ) : PairingRandomSource {
@@ -175,7 +182,7 @@ internal class SecurePairingRandomSource(
 internal class PairingRuntimeCoordinator(
     private val crypto: PairingCryptoOperations,
     private val vault: PairingVaultOperations,
-    private val clock: Clock,
+    private val clock: EpochMillisSource,
     private val random: PairingRandomSource,
 ) {
     /**
@@ -1025,7 +1032,7 @@ internal class PairingRuntimeCoordinator(
             this,
         )
 
-    private fun nowMillis(): Long = clock.millis().also { require(it >= 0) }
+    private fun nowMillis(): Long = clock.nowEpochMillis().also { require(it >= 0) }
 
     private fun secondsToMillis(value: Long): Long = try {
         Math.multiplyExact(value, 1_000L)

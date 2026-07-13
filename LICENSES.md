@@ -44,7 +44,6 @@ resolved Android runtime graph can be inspected with:
 | AndroidX Compose BOM | 2025.11.01 | Apache-2.0 |
 | AndroidX Navigation Compose | 2.9.8 | Apache-2.0 |
 | kotlinx.serialization JSON | 1.11.0 | Apache-2.0 |
-| desugar_jdk_libs | 2.1.5 | Apache-2.0 with upstream OpenJDK notices |
 | ZXing Core | 3.5.4 | Apache-2.0 |
 | Reorderable | 3.1.0 | Apache-2.0 |
 | colorpicker-compose | 1.1.3 | Apache-2.0 |

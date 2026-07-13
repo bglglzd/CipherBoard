@@ -23,9 +23,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Clock
-import java.time.Instant
-import java.time.ZoneId
 
 class PairingRuntimeCoordinatorTest {
     @Test
@@ -137,7 +134,7 @@ class PairingRuntimeCoordinatorTest {
     fun expiredPendingOfferIsMarkedExpiredAndCannotComplete() {
         val fixture = Fixture(localFingerprint = ALICE_FINGERPRINT)
         fixture.coordinator.createOffer("Bob", 30, 0).close()
-        fixture.clock.current = Instant.ofEpochMilli(NOW_MILLIS + 301_000)
+        fixture.clock.currentMillis = NOW_MILLIS + 301_000
 
         val error = assertThrows(PairingRuntimeException::class.java) {
             fixture.coordinator.prepareResponse(PairingQrPayload.parse("CBR1:response"))
@@ -166,7 +163,7 @@ class PairingRuntimeCoordinatorTest {
     fun entryCleanupExpiresStaleOfferAndKeepsOnlyReplayTombstone() {
         val fixture = Fixture(localFingerprint = ALICE_FINGERPRINT)
         fixture.coordinator.createOffer("Bob", 30, 0).close()
-        fixture.clock.current = Instant.ofEpochMilli(NOW_MILLIS + 301_000)
+        fixture.clock.currentMillis = NOW_MILLIS + 301_000
 
         assertEquals(1, fixture.coordinator.cancelActivePairings())
         assertEquals(OneShotStatus.EXPIRED, fixture.vault.pending!!.oneShotStatus)
@@ -247,7 +244,7 @@ class PairingRuntimeCoordinatorTest {
     }
 
     private class Fixture(localFingerprint: ByteArray) {
-        val clock = MutableClock(Instant.ofEpochMilli(NOW_MILLIS))
+        val clock = MutableClock(NOW_MILLIS)
         val crypto = FakeCrypto(localFingerprint)
         val vault = FakeVault(owner(localFingerprint))
         private var randomCounter = 1
@@ -438,10 +435,8 @@ class PairingRuntimeCoordinatorTest {
         }
     }
 
-    private class MutableClock(var current: Instant) : Clock() {
-        override fun getZone(): ZoneId = ZoneId.of("UTC")
-        override fun withZone(zone: ZoneId): Clock = this
-        override fun instant(): Instant = current
+    private class MutableClock(var currentMillis: Long) : EpochMillisSource {
+        override fun nowEpochMillis(): Long = currentMillis
     }
 
     companion object {

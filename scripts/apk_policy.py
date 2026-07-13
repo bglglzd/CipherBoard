@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import posixpath
+import re
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
@@ -37,6 +38,18 @@ EXPECTED_PERMISSIONS = {
     "android.permission.VIBRATE",
     "android.permission.WRITE_USER_DICTIONARY",
 }
+
+EXPECTED_SECURITY_RESOURCES = {
+    "fullBackupContent": "@xml/backup_rules",
+    "dataExtractionRules": "@xml/data_extraction_rules",
+    "networkSecurityConfig": "@xml/network_security_config",
+}
+
+AAPT_SPEC_RESOURCE = re.compile(
+    r"^\s*spec resource\s+(?P<id>0x[0-9a-fA-F]{8})\s+"
+    r"(?P<package>[A-Za-z0-9_.]+):(?P<name>xml/[A-Za-z0-9_.]+):\s+flags=",
+    re.MULTILINE,
+)
 
 HOME_ACTIVITY = "helium314.keyboard.secure.home.CipherBoardHomeActivity"
 PROCESS_TEXT_ACTIVITY = "helium314.keyboard.secure.decrypt.ProcessTextDecryptActivity"
@@ -151,6 +164,57 @@ ARCHIVE_ENTRY_LIMIT = 20_000
 
 def android_attr(element: ET.Element, name: str) -> str | None:
     return element.get(ANDROID + name)
+
+
+def parse_aapt_security_resource_ids(
+    path: pathlib.Path,
+    expected_package: str | None = None,
+) -> dict[str, str]:
+    """Resolve reviewed XML resources from an unmodified `aapt dump resources` output."""
+    text = path.read_text(encoding="utf-8", errors="strict")
+    expected_names = {
+        value.removeprefix("@"): value for value in EXPECTED_SECURITY_RESOURCES.values()
+    }
+    resolved: dict[str, str] = {}
+    id_to_name: dict[str, str] = {}
+    for match in AAPT_SPEC_RESOURCE.finditer(text):
+        package_name = match.group("package")
+        resource_name = match.group("name")
+        if expected_package is not None and package_name != expected_package:
+            continue
+        resource_id = match.group("id").lower()
+        table_name = f"@{resource_name}"
+        previous_name = id_to_name.get(resource_id)
+        if previous_name is not None and previous_name != table_name:
+            raise ValueError(f"aapt resource ID {resource_id} maps to multiple XML names")
+        id_to_name[resource_id] = table_name
+        if resource_name not in expected_names:
+            continue
+        symbolic_name = expected_names[resource_name]
+        previous_id = resolved.get(symbolic_name)
+        if previous_id is not None and previous_id != resource_id:
+            raise ValueError(f"ambiguous aapt mapping for {symbolic_name}")
+        resolved[symbolic_name] = resource_id
+
+    missing = set(EXPECTED_SECURITY_RESOURCES.values()).difference(resolved)
+    if missing:
+        raise ValueError(
+            "reviewed resources missing from aapt table: " + ", ".join(sorted(missing))
+        )
+    return resolved
+
+
+def security_resource_reference_matches(
+    actual: str | None,
+    expected: str,
+    resolved_ids: dict[str, str] | None,
+) -> bool:
+    if actual == expected:
+        return True
+    if resolved_ids is None or expected not in resolved_ids:
+        return False
+    resource_id = resolved_ids[expected]
+    return actual in {f"@ref/{resource_id}", f"@{resource_id}"}
 
 
 def resolve_component_name(name: str, package_name: str) -> str:
@@ -270,6 +334,7 @@ def check_manifest(
     expected_package: str | None = None,
     expected_version_name: str | None = None,
     expected_version_code: str | None = None,
+    security_resource_ids: dict[str, str] | None = None,
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     tree = ET.parse(path)
@@ -312,13 +377,10 @@ def check_manifest(
         errors.append("android:allowBackup must be explicitly false")
     if android_attr(application, "usesCleartextTraffic") != "false":
         errors.append("android:usesCleartextTraffic must be explicitly false")
-    expected_security_resources = {
-        "fullBackupContent": "@xml/backup_rules",
-        "dataExtractionRules": "@xml/data_extraction_rules",
-        "networkSecurityConfig": "@xml/network_security_config",
-    }
-    for attribute, expected in expected_security_resources.items():
-        if android_attr(application, attribute) != expected:
+    for attribute, expected in EXPECTED_SECURITY_RESOURCES.items():
+        if not security_resource_reference_matches(
+            android_attr(application, attribute), expected, security_resource_ids
+        ):
             errors.append(f"android:{attribute} must reference {expected}")
     if mode == "release" and android_attr(application, "debuggable") == "true":
         errors.append("application is debuggable")
@@ -445,18 +507,28 @@ def main() -> int:
     parser.add_argument("--expected-version-name", required=True)
     parser.add_argument("--expected-version-code", required=True)
     parser.add_argument("--expected-abi", action="append", required=True)
+    parser.add_argument("--aapt-resources", required=True, type=pathlib.Path)
     args = parser.parse_args()
 
     try:
+        security_resource_ids = parse_aapt_security_resource_ids(
+            args.aapt_resources,
+            args.expected_package,
+        )
         manifest_errors, permissions = check_manifest(
             args.manifest,
             args.mode,
             args.expected_package,
             args.expected_version_name,
             args.expected_version_code,
+            security_resource_ids,
         )
-    except (OSError, ET.ParseError) as error:
-        print(f"APK policy failure: invalid decoded manifest ({error.__class__.__name__})", file=sys.stderr)
+    except (OSError, ET.ParseError, UnicodeError, ValueError) as error:
+        print(
+            f"APK policy failure: invalid manifest or aapt resource table "
+            f"({error.__class__.__name__}: {error})",
+            file=sys.stderr,
+        )
         return 1
     errors = manifest_errors + check_apk_bytes(args.apk, args.mode, set(args.expected_abi))
     if errors:

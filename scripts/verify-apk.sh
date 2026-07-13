@@ -49,6 +49,7 @@ trap cleanup EXIT HUP INT TERM
 "$aapt" dump permissions "$apk" >"$temp_dir/aapt-permissions.txt" || die "aapt permission dump failed"
 "$apkanalyzer" manifest permissions "$apk" >"$temp_dir/apkanalyzer-permissions.txt" || die "apkanalyzer permission dump failed"
 "$apkanalyzer" manifest print "$apk" >"$temp_dir/manifest.xml" || die "apkanalyzer manifest print failed"
+"$aapt" dump resources "$apk" >"$temp_dir/aapt-resources.txt" || die "aapt resource dump failed"
 "$apkanalyzer" dex packages "$apk" >"$temp_dir/dex-packages.txt" || die "apkanalyzer DEX package scan failed"
 if grep -F 'java.lang.System void load(java.lang.String)' "$temp_dir/dex-packages.txt" >/dev/null 2>&1; then
     die "arbitrary-path native code loading reference found in DEX"
@@ -86,6 +87,7 @@ fi
     --expected-package "$expected_package" \
     --expected-version-name "$version_name" \
     --expected-version-code "$version_code" \
+    --aapt-resources "$temp_dir/aapt-resources.txt" \
     "$@"
 "$zipalign" -c -P 16 -v 4 "$apk" >"$temp_dir/zipalign.txt" || die "APK zip alignment check failed"
 "$apksigner" verify --verbose --print-certs "$apk" >"$temp_dir/signature.txt" || die "APK signature verification failed"

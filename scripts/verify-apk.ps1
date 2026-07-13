@@ -5,6 +5,7 @@ param(
 
 . (Join-Path $PSScriptRoot "_Common.ps1")
 
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Apk = (Resolve-Path -LiteralPath $Apk).Path
 $Sdk = Get-SdkRoot
 $BuildTools = Get-ConfiguredBuildTools $Sdk $Root
@@ -22,6 +23,7 @@ try {
     $AaptPermissions = Join-Path $Temp "aapt-permissions.txt"
     $AnalyzerPermissions = Join-Path $Temp "apkanalyzer-permissions.txt"
     $Manifest = Join-Path $Temp "manifest.xml"
+    $Resources = Join-Path $Temp "aapt-resources.txt"
     $Signature = Join-Path $Temp "signature.txt"
 
     & $Aapt dump permissions $Apk 2>&1 | Set-Content -LiteralPath $AaptPermissions
@@ -30,6 +32,8 @@ try {
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer permission dump failed" }
     & $ApkAnalyzer manifest print $Apk 2>&1 | Set-Content -LiteralPath $Manifest -Encoding utf8
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer manifest print failed" }
+    & $Aapt dump resources $Apk 2>&1 | Set-Content -LiteralPath $Resources -Encoding utf8
+    if ($LASTEXITCODE -ne 0) { Fail "aapt resource dump failed" }
     $DexPackages = Join-Path $Temp "dex-packages.txt"
     & $ApkAnalyzer dex packages $Apk 2>&1 | Set-Content -LiteralPath $DexPackages
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer DEX package scan failed" }
@@ -60,6 +64,7 @@ try {
         "--expected-package", $ExpectedPackage,
         "--expected-version-name", $ExpectedVersionName,
         "--expected-version-code", $ExpectedVersionCode,
+        "--aapt-resources", $Resources,
         "--expected-abi", "arm64-v8a"
     )
     if ($DebugBuild) { $PolicyArgs += @("--expected-abi", "x86_64") }

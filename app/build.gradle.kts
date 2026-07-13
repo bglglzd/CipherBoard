@@ -50,7 +50,7 @@ android {
         buildConfigField("String", "PRODUCT_NAME", "\"$cipherboardProductName\"")
         ndk {
             abiFilters.clear()
-            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            abiFilters.add("arm64-v8a")
         }
         proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
@@ -78,15 +78,22 @@ android {
             }
         }
         debug {
-            // Keep framework instrumentation deterministic. Release remains fully minified.
-            isMinifyEnabled = false
+            // Shrink unused dependency code while keeping names and bytecode stable for tests.
+            isMinifyEnabled = true
             isJniDebuggable = false
             applicationIdSuffix = ".debug"
+            testProguardFile("proguard-test-rules.pro")
+            ndk {
+                abiFilters += "x86_64"
+            }
         }
         create("runTests") { // unminified build variant for CI instrumentation
             matchingFallbacks += listOf("debug")
             isMinifyEnabled = false
             isJniDebuggable = false
+            ndk {
+                abiFilters += "x86_64"
+            }
         }
         create("debugNoMinify") { // for faster builds in IDE
             matchingFallbacks += listOf("debug")
@@ -95,6 +102,9 @@ android {
             isJniDebuggable = false
             signingConfig = signingConfigs.getByName("debug")
             applicationIdSuffix = ".debug"
+            ndk {
+                abiFilters += "x86_64"
+            }
         }
 
         androidComponents.onVariants { variant: ApplicationVariant ->
@@ -147,7 +157,6 @@ android {
     }
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -229,7 +238,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     // compose
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // newer than 2025.11.01 contains androidx.compose.material:material-android:1.10.0, which requires minSdk 23
     // maybe it's possible to use tools:overrideLibrary="androidx.compose.material" as it's not used explicitly, but probably this is just going to crash
     implementation(platform("androidx.compose:compose-bom:2025.11.01"))
@@ -253,5 +261,6 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    androidTestImplementation("com.google.errorprone:error_prone_annotations:2.36.0")
     "debugImplementation"("androidx.concurrent:concurrent-futures-ktx:1.2.0")
 }

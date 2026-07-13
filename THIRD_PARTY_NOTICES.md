@@ -37,10 +37,9 @@ been independently audited or endorsed by Matrix.org.
 The release uses AndroidX (including Core, CameraX, Biometric, Compose,
 Navigation, RecyclerView, Autofill and ViewPager2), Kotlin, kotlinx libraries,
 ZXing, Dagger/AutoValue transitive annotations, Reorderable,
-colorpicker-compose and desugar_jdk_libs. These components are distributed
+colorpicker-compose. These components are distributed
 under Apache License 2.0 except for separately identified bundled or upstream
 portions. CameraX artifacts declare Apache-2.0 and BSD-3-Clause license metadata.
-desugar_jdk_libs retains applicable upstream OpenJDK notices.
 
 Exact direct versions are recorded in `LICENSES.md`; the resolved Gradle graph
 must be captured in the release SBOM.

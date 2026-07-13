@@ -36,7 +36,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BooleanSupplier;
 import kotlin.Unit;
 import kotlin.jvm.functions.Function1;
 import org.junit.Test;
@@ -280,13 +279,17 @@ public final class SecureSurfaceInstrumentationTest {
         return matches;
     }
 
-    private static void waitUntil(String message, BooleanSupplier condition) {
+    private static void waitUntil(String message, Condition condition) {
         long deadline = SystemClock.uptimeMillis() + ACTIVITY_TIMEOUT_MILLIS;
         while (!condition.getAsBoolean() && SystemClock.uptimeMillis() < deadline) {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             SystemClock.sleep(25);
         }
         assertTrue(message, condition.getAsBoolean());
+    }
+
+    private interface Condition {
+        boolean getAsBoolean();
     }
 
     private static void assertAllZero(byte[] bytes) {

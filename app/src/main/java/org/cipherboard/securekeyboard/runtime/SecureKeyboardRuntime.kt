@@ -26,7 +26,6 @@ import org.cipherboard.securestorage.VaultUnlockRequest
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.security.MessageDigest
-import java.time.Clock
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -44,7 +43,7 @@ class SecureKeyboardRuntime private constructor(
     private val keyManager: AndroidVaultKeyManager = AndroidVaultKeyManager(application),
     private val recordStore: VaultRecordStore = VaultRecordStore(application, lockController),
     private val contacts: ContactVaultRepository = ContactVaultRepository(recordStore),
-    private val clock: Clock = Clock.systemUTC(),
+    private val clock: EpochMillisSource = SystemEpochMillisSource,
 ) : Closeable {
     private val operationLock = ReentrantLock()
     private var keyInvalidationObserved = false
@@ -127,7 +126,7 @@ class SecureKeyboardRuntime private constructor(
                     accountState = accountBytes,
                     identityFingerprint = created.fingerprint,
                     protocolVersion = protocolVersion,
-                    createdAtEpochMillis = clock.millis(),
+                    createdAtEpochMillis = clock.nowEpochMillis(),
                 )
             }
             ownerState.use { state ->
@@ -305,7 +304,7 @@ class SecureKeyboardRuntime private constructor(
                         sessionError = false,
                         keyChanged = false,
                         lastActiveAtEpochMillis = maxOf(
-                            clock.millis(),
+                            clock.nowEpochMillis(),
                             it.value.lastActiveAtEpochMillis,
                         ),
                     )
@@ -342,7 +341,7 @@ class SecureKeyboardRuntime private constructor(
                             expectedRevision = contactRecord.revision,
                             expectedRatchetRevision = it.revision,
                             lastActiveAtEpochMillis = maxOf(
-                                clock.millis(),
+                                clock.nowEpochMillis(),
                                 contactRecord.value.lastActiveAtEpochMillis,
                             ),
                         )
@@ -409,7 +408,7 @@ class SecureKeyboardRuntime private constructor(
                                     contactId = contactId,
                                     expectedContactRevision = contactRevisionAndActivity.first,
                                     lastActiveAtEpochMillis = maxOf(
-                                        clock.millis(),
+                                        clock.nowEpochMillis(),
                                         contactRevisionAndActivity.second,
                                     ),
                                     expectedRatchetRevision = ratchet.revision,
@@ -520,7 +519,7 @@ class SecureKeyboardRuntime private constructor(
                                             contactId = contact.contactId,
                                             expectedContactRevision = contact.revision,
                                             lastActiveAtEpochMillis = maxOf(
-                                                clock.millis(),
+                                                clock.nowEpochMillis(),
                                                 contact.lastActiveAtEpochMillis,
                                             ),
                                             expectedRatchetRevision = ratchet.revision,
@@ -574,7 +573,7 @@ class SecureKeyboardRuntime private constructor(
     }
 
     private fun purgeExpiredPendingDisplays() {
-        val now = clock.millis().coerceAtLeast(0)
+        val now = clock.nowEpochMillis().coerceAtLeast(0)
         val cutoff = (now - PENDING_DISPLAY_CRASH_RECOVERY_MILLIS).coerceAtLeast(0)
         recordStore.purgePendingDisplaysCreatedAtOrBefore(cutoff)
     }
@@ -733,7 +732,7 @@ class SecureKeyboardRuntime private constructor(
     ): Throwable = mapLocalSessionFailure(
         error = error,
         lastActiveAtEpochMillis = lastActiveAtEpochMillis,
-        nowEpochMillis = clock.millis(),
+        nowEpochMillis = clock.nowEpochMillis(),
     ) { activity ->
         contacts.updateContactStatus(
             contactId = contactId,

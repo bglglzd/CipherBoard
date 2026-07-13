@@ -58,6 +58,16 @@ def valid_manifest(extra_component: str = "", application_attributes: str = "") 
 """
 
 
+def valid_aapt_resources(package_name: str = "org.cipherboard.securekeyboard") -> str:
+    return f"""
+      spec resource 0x7f130000 {package_name}:xml/backup_rules: flags=0x00000000
+      spec resource 0x7f130002 {package_name}:xml/data_extraction_rules: flags=0x00000000
+      spec resource 0x7f130009 {package_name}:xml/network_security_config: flags=0x00000000
+      config (default):
+        resource 0x7f130000 {package_name}:xml/backup_rules: t=0x03 d=0x0000057b
+    """
+
+
 class ManifestPolicyTest(unittest.TestCase):
     def check(self, xml: str, mode: str = "release") -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
@@ -141,6 +151,71 @@ class ManifestPolicyTest(unittest.TestCase):
         self.assertTrue(any("package mismatch" in error for error in errors))
         xml = valid_manifest().replace("@xml/backup_rules", "@xml/wrong")
         self.assertTrue(any("fullBackupContent" in error for error in self.check(xml)))
+
+    def test_numeric_security_references_require_exact_aapt_mapping(self) -> None:
+        numeric_manifest = (
+            valid_manifest()
+            .replace("@xml/backup_rules", "@ref/0x7f130000")
+            .replace("@xml/data_extraction_rules", "@ref/0x7f130002")
+            .replace("@xml/network_security_config", "@ref/0x7f130009")
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            manifest_path = root / "manifest.xml"
+            resources_path = root / "resources.txt"
+            manifest_path.write_text(numeric_manifest, encoding="utf-8")
+            resources_path.write_text(valid_aapt_resources(), encoding="utf-8")
+            resource_ids = apk_policy.parse_aapt_security_resource_ids(
+                resources_path,
+                "org.cipherboard.securekeyboard",
+            )
+            errors, _ = apk_policy.check_manifest(
+                manifest_path,
+                "release",
+                security_resource_ids=resource_ids,
+            )
+        self.assertEqual([], errors)
+
+    def test_numeric_security_reference_with_wrong_id_is_rejected(self) -> None:
+        numeric_manifest = valid_manifest().replace(
+            "@xml/backup_rules", "@ref/0x7f130009"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            manifest_path = root / "manifest.xml"
+            resources_path = root / "resources.txt"
+            manifest_path.write_text(numeric_manifest, encoding="utf-8")
+            resources_path.write_text(valid_aapt_resources(), encoding="utf-8")
+            resource_ids = apk_policy.parse_aapt_security_resource_ids(resources_path)
+            errors, _ = apk_policy.check_manifest(
+                manifest_path,
+                "release",
+                security_resource_ids=resource_ids,
+            )
+        self.assertTrue(any("fullBackupContent" in error for error in errors))
+
+    def test_aapt_mapping_must_be_complete_unambiguous_and_from_app_package(self) -> None:
+        cases = (
+            valid_aapt_resources().replace(
+                "spec resource 0x7f130009", "resource 0x7f130009"
+            ),
+            valid_aapt_resources()
+            + "spec resource 0x7f13000a org.cipherboard.securekeyboard:xml/backup_rules: flags=0x0\n",
+            valid_aapt_resources()
+            + "spec resource 0x7f130000 org.cipherboard.securekeyboard:xml/other: flags=0x0\n",
+            valid_aapt_resources("org.example.other"),
+        )
+        for resources in cases:
+            with self.subTest(
+                resources=resources[:80]
+            ), tempfile.TemporaryDirectory() as directory:
+                path = pathlib.Path(directory) / "resources.txt"
+                path.write_text(resources, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    apk_policy.parse_aapt_security_resource_ids(
+                        path,
+                        "org.cipherboard.securekeyboard",
+                    )
 
 
 class ArchivePolicyTest(unittest.TestCase):
