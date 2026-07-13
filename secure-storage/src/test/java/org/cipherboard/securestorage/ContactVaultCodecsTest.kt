@@ -31,7 +31,7 @@ class ContactVaultCodecsTest {
     }
 
     @Test
-    fun contactAndPendingPairingRoundTripUnicodeAndBinaryState() {
+    fun contactMetadataAndPendingPairingRoundTripUnicodeAndBinaryState() {
         contact().use { source ->
             val encoded = ContactEntryCodec.encode(source)
             try {
@@ -41,8 +41,11 @@ class ContactVaultCodecsTest {
                     assertArrayEquals(source.remoteIdentityFingerprint, decoded.remoteIdentityFingerprint)
                     assertArrayEquals(source.remoteSessionTag, decoded.remoteSessionTag)
                     assertEquals(source.verificationStatus, decoded.verificationStatus)
-                    assertArrayEquals(source.olmSessionState, decoded.olmSessionState)
-                    assertArrayEquals(source.replayState, decoded.replayState)
+                    assertEquals(source.safetyNumber, decoded.safetyNumber)
+                    assertEquals(source.safetyCode, decoded.safetyCode)
+                    assertEquals(source.requiresRepairing, decoded.requiresRepairing)
+                    assertEquals(source.sessionError, decoded.sessionError)
+                    assertEquals(source.keyChanged, decoded.keyChanged)
                 }
             } finally {
                 encoded.wipe()
@@ -121,6 +124,25 @@ class ContactVaultCodecsTest {
     }
 
     @Test
+    fun contactCodecRejectsPreMetadataOnlyVersion() {
+        contact().use { value ->
+            val encoded = ContactEntryCodec.encode(value)
+            val oldVersion = encoded.copyOf().apply {
+                this[4] = 0
+                this[5] = 1
+            }
+            try {
+                assertCodecError(DomainCodecError.UNSUPPORTED_VERSION) {
+                    ContactEntryCodec.decode(oldVersion).close()
+                }
+            } finally {
+                encoded.wipe()
+                oldVersion.wipe()
+            }
+        }
+    }
+
+    @Test
     fun arbitraryBoundedInputsNeverEscapeAsUnexpectedParserExceptions() {
         val random = Random(0x43425052L)
         repeat(2_000) {
@@ -153,8 +175,8 @@ class ContactVaultCodecsTest {
                 pairedAtEpochMillis = 0,
                 lastActiveAtEpochMillis = 0,
                 protocolVersion = 1,
-                olmSessionState = ByteArray(1),
-                replayState = ByteArray(0),
+                safetyNumber = "1234 5678",
+                safetyCode = "amber beacon",
                 requiresRepairing = true,
                 sessionError = false,
                 keyChanged = false,
@@ -211,8 +233,8 @@ class ContactVaultCodecsTest {
         pairedAtEpochMillis = 1_700_000_000_000,
         lastActiveAtEpochMillis = 1_700_000_000_100,
         protocolVersion = 1,
-        olmSessionState = ByteArray(333) { (it * 5).toByte() },
-        replayState = ByteArray(77) { (it * 9).toByte() },
+        safetyNumber = "12345 67890 12345 67890",
+        safetyCode = "amber beacon cedar delta",
         requiresRepairing = false,
         sessionError = false,
         keyChanged = false,

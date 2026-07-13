@@ -99,6 +99,9 @@ class ContactVaultRepositoryTest {
                         nowEpochMillis = NOW,
                         updatedOwnerAccount = updated,
                         contact = contact,
+                        expectedRatchetRevision = 0,
+                        ratchetSchemaVersion = 1,
+                        initialRatchetState = secret("conflicting-ratchet"),
                     ),
                 )
             }
@@ -110,6 +113,42 @@ class ContactVaultRepositoryTest {
             assertEquals(OneShotStatus.ACTIVE, it.value.oneShotStatus)
         }
         assertNull(repository.readContact(contactId))
+    }
+
+    @Test
+    fun initialRatchetConflictRollsBackOwnerPairingAndContact() {
+        stagePairing()
+        assertTrue(store.insertInitialRatchet(contactId, 1, secret("orphan-ratchet")))
+
+        owner(3).use { updated ->
+            contact().use { contact ->
+                assertFalse(
+                    repository.completePairing(
+                        pairingId,
+                        expectedPairingRevision = 1,
+                        expectedOwnerRevision = 2,
+                        expectedContactRevision = 0,
+                        nowEpochMillis = NOW,
+                        updatedOwnerAccount = updated,
+                        contact = contact,
+                        expectedRatchetRevision = 0,
+                        ratchetSchemaVersion = 1,
+                        initialRatchetState = secret("must-not-commit"),
+                    ),
+                )
+            }
+        }
+
+        repository.readOwnerAccount()!!.use { assertEquals(2, it.revision) }
+        repository.readPendingPairing(pairingId)!!.use {
+            assertEquals(1, it.revision)
+            assertEquals(OneShotStatus.ACTIVE, it.value.oneShotStatus)
+        }
+        assertNull(repository.readContact(contactId))
+        store.readRatchet(contactId)!!.use { ratchet ->
+            assertEquals(1, ratchet.revision)
+            ratchet.secret.consume { assertArrayEquals("orphan-ratchet".encodeToByteArray(), it) }
+        }
     }
 
     @Test
@@ -126,6 +165,9 @@ class ContactVaultRepositoryTest {
                         nowEpochMillis = NOW,
                         updatedOwnerAccount = updated,
                         contact = contact,
+                        expectedRatchetRevision = 0,
+                        ratchetSchemaVersion = 1,
+                        initialRatchetState = secret("initial-ratchet"),
                     ),
                 )
             }
@@ -134,10 +176,15 @@ class ContactVaultRepositoryTest {
         repository.readPendingPairing(pairingId)!!.use {
             assertEquals(2, it.revision)
             assertEquals(OneShotStatus.CONSUMED, it.value.oneShotStatus)
+            assertArrayEquals(byteArrayOf(0), it.value.payload)
         }
         repository.listContacts().useAll { contacts ->
             assertEquals(1, contacts.size)
             assertEquals("Боб 🔐", contacts.single().value.localName)
+        }
+        store.readRatchet(contactId)!!.use { ratchet ->
+            assertEquals(1, ratchet.revision)
+            ratchet.secret.consume { assertArrayEquals("initial-ratchet".encodeToByteArray(), it) }
         }
         assertTrue(repository.renameContact(contactId, 1, "Боб локально"))
         assertFalse(repository.renameContact(contactId, 1, "stale"))
@@ -152,16 +199,13 @@ class ContactVaultRepositoryTest {
                 lastActiveAtEpochMillis = NOW + 1,
             ),
         )
-        assertTrue(repository.destroyContactSession(contactId, 3, NOW + 2))
+        assertTrue(repository.destroyContactSession(contactId, 3, 1, NOW + 2))
         repository.readContact(contactId)!!.use {
             assertEquals(4, it.revision)
             assertEquals(ContactVerificationStatus.PAIRING_REQUIRED, it.value.verificationStatus)
             assertTrue(it.value.requiresRepairing)
-            assertEquals(0, it.value.olmSessionState.size)
-            assertEquals(0, it.value.replayState.size)
         }
 
-        assertTrue(store.insertInitialRatchet(contactId, 1, OwnedSecret("ratchet".encodeToByteArray())))
         assertTrue(repository.deleteContact(contactId, 4))
         assertNull(repository.readContact(contactId))
         assertNull(store.readRatchet(contactId))
@@ -181,6 +225,9 @@ class ContactVaultRepositoryTest {
                         NOW + 301_000,
                         updated,
                         contact,
+                        0,
+                        1,
+                        secret("expired-ratchet"),
                     ),
                 )
             }
@@ -192,7 +239,66 @@ class ContactVaultRepositoryTest {
 
         assertTrue(repository.expirePendingPairing(pairingId, 1, NOW + 301_000))
         assertFalse(repository.cancelPendingPairing(pairingId, 2))
+        repository.readPendingPairing(pairingId)!!.use {
+            assertEquals(OneShotStatus.EXPIRED, it.value.oneShotStatus)
+            assertArrayEquals(byteArrayOf(0), it.value.payload)
+        }
         repository.listActivePendingPairings(NOW).useAll { assertTrue(it.isEmpty()) }
+    }
+
+    @Test
+    fun destroySessionPurgesState() {
+        stagePairing()
+        owner(3).use { updated ->
+            contact().use { contact ->
+                assertTrue(
+                    repository.completePairing(
+                        pairingId,
+                        1,
+                        2,
+                        0,
+                        NOW,
+                        updated,
+                        contact,
+                        0,
+                        1,
+                        secret("state-1"),
+                    ),
+                )
+            }
+        }
+        val outboundId = ByteArray(16) { 0x41 }
+        store.commitOutbound(
+            contactId,
+            1,
+            1,
+            secret("state-2"),
+            outboundId,
+            "CB1:pending".encodeToByteArray(),
+        )
+        val inboundId = ByteArray(16) { 0x42 }
+        assertEquals(
+            AtomicInboundResult.COMMITTED,
+            store.commitInbound(
+                contactId,
+                2,
+                1,
+                secret("state-3"),
+                inboundId,
+                secret("temporary display"),
+            ),
+        )
+
+        assertTrue(repository.destroyContactSession(contactId, 1, 3, NOW + 1))
+
+        repository.readContact(contactId)!!.use {
+            assertEquals(2, it.revision)
+            assertEquals(ContactVerificationStatus.PAIRING_REQUIRED, it.value.verificationStatus)
+        }
+        assertNull(store.readRatchet(contactId))
+        assertTrue(store.listPendingOutbound().isEmpty())
+        assertNull(store.readPendingDisplay(inboundId))
+        assertFalse(store.isReplay(contactId, inboundId))
     }
 
     @Test
@@ -201,8 +307,9 @@ class ContactVaultRepositoryTest {
         val sessionMarker = "PRIVATE-SESSION-STATE-2841".encodeToByteArray()
         stagePairing()
         owner(3).use { updated ->
-            contact(localName, sessionMarker).use { contact ->
-                assertTrue(repository.completePairing(pairingId, 1, 2, 0, NOW, updated, contact))
+            contact(localName).use { contact ->
+                val ratchet = OwnedSecret(sessionMarker.copyOf())
+                assertTrue(repository.completePairing(pairingId, 1, 2, 0, NOW, updated, contact, 0, 1, ratchet))
             }
         }
 
@@ -249,10 +356,7 @@ class ContactVaultRepositoryTest {
         payload = ByteArray(96) { (it + 3).toByte() },
     )
 
-    private fun contact(
-        localName: String = "Боб 🔐",
-        sessionState: ByteArray = ByteArray(256) { (it + 6).toByte() },
-    ) = ContactVaultEntry(
+    private fun contact(localName: String = "Боб 🔐") = ContactVaultEntry(
         internalId = contactId,
         localName = localName,
         remoteIdentityFingerprint = ByteArray(32) { (it + 4).toByte() },
@@ -261,12 +365,14 @@ class ContactVaultRepositoryTest {
         pairedAtEpochMillis = NOW,
         lastActiveAtEpochMillis = NOW,
         protocolVersion = 1,
-        olmSessionState = sessionState,
-        replayState = ByteArray(64) { (it + 7).toByte() },
+        safetyNumber = "12345 67890 12345 67890",
+        safetyCode = "amber beacon cedar delta",
         requiresRepairing = false,
         sessionError = false,
         keyChanged = false,
     )
+
+    private fun secret(value: String) = OwnedSecret(value.encodeToByteArray())
 
     private inline fun <T : AutoCloseable, R> List<T>.useAll(block: (List<T>) -> R): R = try {
         block(this)

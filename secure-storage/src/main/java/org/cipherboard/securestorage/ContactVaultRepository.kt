@@ -22,7 +22,7 @@ class ContactVaultRepository(
 
     fun readOwnerAccount(): VersionedDomainRecord<OwnerIdentityAccountState>? =
         records.readDomainRecord(RecordKind.OWNER_ACCOUNT, OWNER_ACCOUNT_KEY)?.use { stored ->
-            validateSchema(stored)
+            validateSchema(stored, OWNER_SCHEMA_VERSION)
             val value = stored.secret.consume(OwnerAccountCodec::decode)
             VersionedDomainRecord(stored.revision, value)
         }
@@ -58,7 +58,7 @@ class ContactVaultRepository(
                         RecordKind.PENDING_PAIRING,
                         pairingKey(pending.pairingId),
                         OWNER_ACCOUNT_KEY,
-                        SCHEMA_VERSION,
+                        PAIRING_SCHEMA_VERSION,
                         expectedRevision = 0,
                         plaintext = pairing,
                     ),
@@ -72,7 +72,7 @@ class ContactVaultRepository(
 
     fun readPendingPairing(pairingId: ByteArray): VersionedDomainRecord<PendingPairingState>? =
         records.readDomainRecord(RecordKind.PENDING_PAIRING, pairingKey(pairingId))?.use { stored ->
-            validateSchema(stored)
+            validateSchema(stored, PAIRING_SCHEMA_VERSION)
             val value = stored.secret.consume(PendingPairingCodec::decode)
             if (!value.pairingId.contentEquals(pairingId)) {
                 value.close()
@@ -100,7 +100,7 @@ class ContactVaultRepository(
             for (record in stored) {
                 if (decoded.size == limit) break
                 record.use {
-                    validateSchema(it)
+                    validateSchema(it, PAIRING_SCHEMA_VERSION)
                     val value = it.secret.consume(PendingPairingCodec::decode)
                     if (it.recordKey != pairingKey(value.pairingId)) {
                         value.close()
@@ -141,7 +141,8 @@ class ContactVaultRepository(
 
     /**
      * Consumes one pending pairing and commits the resulting account and contact/session together.
-     * A stale revision, expired offer or already-consumed offer leaves all three records unchanged.
+     * A stale revision, expired offer or already-consumed offer leaves all four records unchanged.
+     * The ratchet is never copied into [ContactVaultEntry].
      */
     fun completePairing(
         pairingId: ByteArray,
@@ -151,10 +152,25 @@ class ContactVaultRepository(
         nowEpochMillis: Long,
         updatedOwnerAccount: OwnerIdentityAccountState,
         contact: ContactVaultEntry,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        initialRatchetState: OwnedSecret,
+        allowIdentityReplacement: Boolean = false,
     ): Boolean {
         require(expectedPairingRevision > 0 && expectedOwnerRevision > 0)
-        require(expectedContactRevision >= 0 && nowEpochMillis >= 0)
-        require(contact.olmSessionState.isNotEmpty())
+        require(expectedContactRevision >= 0 && expectedRatchetRevision >= 0 && nowEpochMillis >= 0)
+        require(ratchetSchemaVersion > 0)
+        require(expectedContactRevision > 0 || expectedRatchetRevision == 0L)
+        if (expectedContactRevision > 0) {
+            val existing = readContact(contact.internalId) ?: return false
+            existing.use {
+                if (it.revision != expectedContactRevision) return false
+                val identityChanged = !it.value.remoteIdentityFingerprint.contentEquals(
+                    contact.remoteIdentityFingerprint,
+                )
+                if (identityChanged && !allowIdentityReplacement) return false
+            }
+        }
         val pendingRecord = readPendingPairing(pairingId) ?: return false
         pendingRecord.use { versioned ->
             if (versioned.revision != expectedPairingRevision ||
@@ -165,14 +181,22 @@ class ContactVaultRepository(
             }
             val consumed = versioned.value.copyWithStatus(OneShotStatus.CONSUMED)
             consumed.use {
-                return commitCompletedPairing(
-                    expectedOwnerRevision,
-                    expectedContactRevision,
-                    updatedOwnerAccount,
-                    contact,
-                    expectedPairingRevision,
-                    consumed,
-                )
+                val ratchet = initialRatchetState.take()
+                return try {
+                    commitCompletedPairing(
+                        expectedOwnerRevision,
+                        expectedContactRevision,
+                        updatedOwnerAccount,
+                        contact,
+                        expectedPairingRevision,
+                        consumed,
+                        expectedRatchetRevision,
+                        ratchetSchemaVersion,
+                        ratchet,
+                    )
+                } finally {
+                    ratchet.wipe()
+                }
             }
         }
     }
@@ -198,7 +222,7 @@ class ContactVaultRepository(
 
     fun readContact(contactId: ByteArray): VersionedDomainRecord<ContactVaultEntry>? =
         records.readDomainRecord(RecordKind.CONTACT, contactKey(contactId))?.use { stored ->
-            validateSchema(stored)
+            validateSchema(stored, CONTACT_SCHEMA_VERSION)
             val value = stored.secret.consume(ContactEntryCodec::decode)
             if (!value.internalId.contentEquals(contactId)) {
                 value.close()
@@ -214,7 +238,7 @@ class ContactVaultRepository(
         try {
             stored.forEach { record ->
                 record.use {
-                    validateSchema(it)
+                    validateSchema(it, CONTACT_SCHEMA_VERSION)
                     val value = it.secret.consume(ContactEntryCodec::decode)
                     if (it.recordKey != contactKey(value.internalId)) {
                         value.close()
@@ -253,39 +277,35 @@ class ContactVaultRepository(
         )
     }
 
-    fun updateContactSession(
-        contactId: ByteArray,
-        expectedRevision: Long,
-        olmSessionState: ByteArray,
-        replayState: ByteArray,
-        lastActiveAtEpochMillis: Long,
-    ): Boolean {
-        require(olmSessionState.isNotEmpty())
-        return updateContact(contactId, expectedRevision) {
-            it.copyWith(
-                olmSessionState = olmSessionState,
-                replayState = replayState,
-                lastActiveAtEpochMillis = lastActiveAtEpochMillis,
-                requiresRepairing = false,
-                sessionError = false,
-            )
-        }
-    }
-
     fun destroyContactSession(
         contactId: ByteArray,
         expectedRevision: Long,
+        expectedRatchetRevision: Long,
         lastActiveAtEpochMillis: Long,
-    ): Boolean = updateContact(contactId, expectedRevision) {
-        it.copyWith(
-            verificationStatus = ContactVerificationStatus.PAIRING_REQUIRED,
-            olmSessionState = EMPTY_SECRET,
-            replayState = EMPTY_SECRET,
-            requiresRepairing = true,
-            sessionError = false,
-            keyChanged = false,
-            lastActiveAtEpochMillis = lastActiveAtEpochMillis,
-        )
+    ): Boolean {
+        require(expectedRevision > 0 && expectedRatchetRevision > 0)
+        val current = readContact(contactId) ?: return false
+        current.use {
+            if (it.revision != expectedRevision) return false
+            val changed = it.value.copyWith(
+                verificationStatus = ContactVerificationStatus.PAIRING_REQUIRED,
+                requiresRepairing = true,
+                sessionError = false,
+                keyChanged = false,
+                lastActiveAtEpochMillis = lastActiveAtEpochMillis,
+            )
+            changed.use { value ->
+                val encoded = ContactEntryCodec.encode(value)
+                return try {
+                    records.applyDomainMutations(
+                        listOf(contactMutation(contactId, expectedRevision, encoded)),
+                        RatchetMutation.Delete(contactId, expectedRatchetRevision),
+                    )
+                } finally {
+                    encoded.wipe()
+                }
+            }
+        }
     }
 
     /** Deletes contact metadata, session state, pending message records and replay markers. */
@@ -310,6 +330,9 @@ class ContactVaultRepository(
         contact: ContactVaultEntry,
         expectedPairingRevision: Long,
         consumedPairing: PendingPairingState,
+        expectedRatchetRevision: Long,
+        ratchetSchemaVersion: Int,
+        initialRatchetState: ByteArray,
     ): Boolean {
         val owner = OwnerAccountCodec.encode(updatedOwnerAccount)
         val pairing = PendingPairingCodec.encode(consumedPairing)
@@ -322,11 +345,18 @@ class ContactVaultRepository(
                         RecordKind.PENDING_PAIRING,
                         pairingKey(consumedPairing.pairingId),
                         OWNER_ACCOUNT_KEY,
-                        SCHEMA_VERSION,
+                        PAIRING_SCHEMA_VERSION,
                         expectedPairingRevision,
                         pairing,
                     ),
                     contactMutation(contact.internalId, expectedContactRevision, encodedContact),
+                ),
+                RatchetMutation.Put(
+                    contactId = contact.internalId,
+                    expectedRevision = expectedRatchetRevision,
+                    schemaVersion = ratchetSchemaVersion,
+                    plaintext = initialRatchetState,
+                    purgePreviousSessionArtifacts = expectedContactRevision > 0,
                 ),
             )
         } finally {
@@ -356,7 +386,7 @@ class ContactVaultRepository(
                                 RecordKind.PENDING_PAIRING,
                                 pairingKey(pairingId),
                                 OWNER_ACCOUNT_KEY,
-                                SCHEMA_VERSION,
+                                PAIRING_SCHEMA_VERSION,
                                 expectedRevision,
                                 encoded,
                             ),
@@ -396,7 +426,7 @@ class ContactVaultRepository(
         RecordKind.OWNER_ACCOUNT,
         OWNER_ACCOUNT_KEY,
         OWNER_ACCOUNT_KEY,
-        SCHEMA_VERSION,
+        OWNER_SCHEMA_VERSION,
         expectedRevision,
         state,
     )
@@ -406,13 +436,13 @@ class ContactVaultRepository(
             RecordKind.CONTACT,
             contactKey(contactId),
             IdentifierCodec.contactKey(contactId),
-            SCHEMA_VERSION,
+            CONTACT_SCHEMA_VERSION,
             expectedRevision,
             value,
         )
 
-    private fun validateSchema(stored: DomainStoredSecret) {
-        if (stored.schemaVersion != SCHEMA_VERSION) {
+    private fun validateSchema(stored: DomainStoredSecret, expectedVersion: Int) {
+        if (stored.schemaVersion != expectedVersion) {
             throw DomainCodecException(DomainCodecError.UNSUPPORTED_VERSION)
         }
     }
@@ -427,11 +457,12 @@ class ContactVaultRepository(
     }
 
     companion object {
-        private const val SCHEMA_VERSION = 1
+        private const val OWNER_SCHEMA_VERSION = 1
+        private const val PAIRING_SCHEMA_VERSION = 1
+        private const val CONTACT_SCHEMA_VERSION = 2
         private const val MAX_CONTACT_RESULTS = 1_024
         private const val MAX_PENDING_RESULTS = 256
         private const val MAX_PENDING_SCAN_RESULTS = 1_024
         private val OWNER_ACCOUNT_KEY = IdentifierCodec.singletonKey("owner-account")
-        private val EMPTY_SECRET = ByteArray(0)
     }
 }

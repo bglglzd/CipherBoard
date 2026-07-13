@@ -62,8 +62,8 @@ internal object OwnerAccountCodec {
 
 internal object ContactEntryCodec {
     private const val MAGIC = 0x43424354 // CBCT
-    private const val VERSION = 1
-    private const val MAX_RECORD_BYTES = 3 * 1024 * 1024
+    private const val VERSION = 2
+    private const val MAX_RECORD_BYTES = 4 * 1024
 
     private val internalId = BinaryFieldSpec(
         1,
@@ -89,19 +89,20 @@ internal object ContactEntryCodec {
     private val pairedAt = BinaryFieldSpec(6, BinaryFieldType.U64, maxBytes = Long.SIZE_BYTES)
     private val lastActiveAt = BinaryFieldSpec(7, BinaryFieldType.U64, maxBytes = Long.SIZE_BYTES)
     private val protocolVersion = BinaryFieldSpec(8, BinaryFieldType.U32, maxBytes = Int.SIZE_BYTES)
-    private val sessionState = BinaryFieldSpec(
-        9,
-        BinaryFieldType.BYTES,
-        maxBytes = ContactVaultEntry.MAX_SESSION_BYTES,
-    )
-    private val replayState = BinaryFieldSpec(
-        10,
-        BinaryFieldType.BYTES,
-        maxBytes = ContactVaultEntry.MAX_REPLAY_STATE_BYTES,
-    )
+    // IDs 9 and 10 belonged to the removed duplicate session/replay state in v1.
     private val requiresRepairing = BinaryFieldSpec(11, BinaryFieldType.BOOLEAN, maxBytes = 1)
     private val sessionError = BinaryFieldSpec(12, BinaryFieldType.BOOLEAN, maxBytes = 1)
     private val keyChanged = BinaryFieldSpec(13, BinaryFieldType.BOOLEAN, maxBytes = 1)
+    private val safetyNumber = BinaryFieldSpec(
+        14,
+        BinaryFieldType.UTF8,
+        maxBytes = ContactVaultEntry.MAX_SAFETY_NUMBER_ASCII_BYTES,
+    )
+    private val safetyCode = BinaryFieldSpec(
+        15,
+        BinaryFieldType.UTF8,
+        maxBytes = ContactVaultEntry.MAX_SAFETY_CODE_ASCII_BYTES,
+    )
     private val specs = listOf(
         internalId,
         localName,
@@ -111,11 +112,11 @@ internal object ContactEntryCodec {
         pairedAt,
         lastActiveAt,
         protocolVersion,
-        sessionState,
-        replayState,
         requiresRepairing,
         sessionError,
         keyChanged,
+        safetyNumber,
+        safetyCode,
     )
 
     fun encode(value: ContactVaultEntry): ByteArray {
@@ -128,11 +129,11 @@ internal object ContactEntryCodec {
             StrictBinaryCodec.u64(pairedAt, value.pairedAtEpochMillis),
             StrictBinaryCodec.u64(lastActiveAt, value.lastActiveAtEpochMillis),
             StrictBinaryCodec.u32(protocolVersion, value.protocolVersion),
-            StrictBinaryCodec.bytes(sessionState, value.olmSessionState),
-            StrictBinaryCodec.bytes(replayState, value.replayState),
             StrictBinaryCodec.bool(requiresRepairing, value.requiresRepairing),
             StrictBinaryCodec.bool(sessionError, value.sessionError),
             StrictBinaryCodec.bool(keyChanged, value.keyChanged),
+            StrictBinaryCodec.utf8(safetyNumber, value.safetyNumber),
+            StrictBinaryCodec.utf8(safetyCode, value.safetyCode),
         )
         return try {
             StrictBinaryCodec.encode(MAGIC, VERSION, MAX_RECORD_BYTES, fields)
@@ -146,8 +147,6 @@ internal object ContactEntryCodec {
             val id = fields.takeBytes(internalId.id)
             val fingerprint = fields.takeBytes(identityFingerprint.id)
             val tag = fields.takeBytes(sessionTag.id)
-            val session = fields.takeBytes(sessionState.id)
-            val replay = fields.takeBytes(replayState.id)
             try {
                 constructDomainValue {
                     ContactVaultEntry(
@@ -159,8 +158,8 @@ internal object ContactEntryCodec {
                         fields.u64(pairedAt.id),
                         fields.u64(lastActiveAt.id),
                         fields.u32(protocolVersion.id),
-                        session,
-                        replay,
+                        fields.utf8(safetyNumber.id),
+                        fields.utf8(safetyCode.id),
                         fields.bool(requiresRepairing.id),
                         fields.bool(sessionError.id),
                         fields.bool(keyChanged.id),
@@ -170,8 +169,6 @@ internal object ContactEntryCodec {
                 id.wipe()
                 fingerprint.wipe()
                 tag.wipe()
-                session.wipe()
-                replay.wipe()
             }
         }
 }

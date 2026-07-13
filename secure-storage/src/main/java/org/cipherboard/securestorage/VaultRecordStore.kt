@@ -65,6 +65,24 @@ internal sealed interface DomainMutation {
     ) : DomainMutation
 }
 
+internal sealed interface RatchetMutation {
+    val contactId: ByteArray
+    val expectedRevision: Long
+
+    class Put(
+        override val contactId: ByteArray,
+        override val expectedRevision: Long,
+        val schemaVersion: Int,
+        val plaintext: ByteArray,
+        val purgePreviousSessionArtifacts: Boolean,
+    ) : RatchetMutation
+
+    class Delete(
+        override val contactId: ByteArray,
+        override val expectedRevision: Long,
+    ) : RatchetMutation
+}
+
 /**
  * All values in encrypted_records are AES-256-GCM records. The only plaintext indices are hashes
  * of caller-provided random IDs and timestamps. Contact names and cryptographic state are never
@@ -353,8 +371,11 @@ class VaultRecordStore(
         }
     }
 
-    /** Applies all optimistic mutations in one SQLite transaction or rolls all of them back. */
-    internal fun applyDomainMutations(mutations: List<DomainMutation>): Boolean {
+    /** Applies domain mutations and an optional ratchet mutation in one SQLite transaction. */
+    internal fun applyDomainMutations(
+        mutations: List<DomainMutation>,
+        ratchetMutation: RatchetMutation? = null,
+    ): Boolean {
         require(mutations.isNotEmpty() && mutations.size <= MAX_DOMAIN_MUTATIONS)
         mutations.forEach {
             when (it) {
@@ -370,8 +391,21 @@ class VaultRecordStore(
                 }
             }
         }
+        ratchetMutation?.let { mutation ->
+            require(mutation.contactId.isNotEmpty())
+            when (mutation) {
+                is RatchetMutation.Put -> require(
+                    mutation.expectedRevision >= 0 &&
+                        mutation.schemaVersion > 0 &&
+                        mutation.plaintext.isNotEmpty(),
+                )
+                is RatchetMutation.Delete -> require(mutation.expectedRevision > 0)
+            }
+        }
         return vault.withDek { dek ->
             val encrypted = ArrayList<Pair<DomainMutation, EncryptedRecord?>>(mutations.size)
+            var encryptedRatchet: EncryptedRecord? = null
+            val ratchetOwnerKey = ratchetMutation?.let { IdentifierCodec.contactKey(it.contactId) }
             try {
                 mutations.forEach { mutation ->
                     val record = if (mutation is DomainMutation.Put) {
@@ -388,6 +422,16 @@ class VaultRecordStore(
                         null
                     }
                     encrypted += mutation to record
+                }
+                encryptedRatchet = (ratchetMutation as? RatchetMutation.Put)?.let { mutation ->
+                    recordCrypto.encrypt(
+                        dek = dek,
+                        kind = RecordKind.RATCHET,
+                        recordKey = checkNotNull(ratchetOwnerKey),
+                        schemaVersion = mutation.schemaVersion,
+                        revision = Math.addExact(mutation.expectedRevision, 1),
+                        plaintext = mutation.plaintext,
+                    )
                 }
                 try {
                     inTransaction(helper.writableDatabase) { db ->
@@ -426,6 +470,42 @@ class VaultRecordStore(
                                 }
                             }
                         }
+                        ratchetMutation?.let { mutation ->
+                            val ownerKey = checkNotNull(ratchetOwnerKey)
+                            when (mutation) {
+                                is RatchetMutation.Put -> {
+                                    val record = checkNotNull(encryptedRatchet)
+                                    val applied = if (mutation.expectedRevision == 0L) {
+                                        insertRecord(
+                                            db,
+                                            RecordKind.RATCHET,
+                                            ownerKey,
+                                            ownerKey,
+                                            record,
+                                        )
+                                    } else {
+                                        updateRatchet(db, ownerKey, mutation.expectedRevision, record)
+                                    }
+                                    if (!applied) throw AbortDomainMutation()
+                                    if (mutation.purgePreviousSessionArtifacts) {
+                                        purgeSessionArtifacts(db, ownerKey)
+                                    }
+                                }
+                                is RatchetMutation.Delete -> {
+                                    val deleted = db.delete(
+                                        TABLE_RECORDS,
+                                        "kind=? AND record_key=? AND revision=?",
+                                        arrayOf(
+                                            RecordKind.RATCHET.toString(),
+                                            ownerKey,
+                                            mutation.expectedRevision.toString(),
+                                        ),
+                                    ) == 1
+                                    if (!deleted) throw AbortDomainMutation()
+                                    purgeSessionArtifacts(db, ownerKey)
+                                }
+                            }
+                        }
                     }
                     true
                 } catch (_: AbortDomainMutation) {
@@ -433,6 +513,7 @@ class VaultRecordStore(
                 }
             } finally {
                 encrypted.forEach { it.second?.wipe() }
+                encryptedRatchet?.wipe()
             }
         }
     }
@@ -567,6 +648,19 @@ class VaultRecordStore(
             put("received_at", System.currentTimeMillis())
         }
         return db.insertWithOnConflict(TABLE_REPLAY, null, values, SQLiteDatabase.CONFLICT_IGNORE) != -1L
+    }
+
+    private fun purgeSessionArtifacts(db: SQLiteDatabase, ownerKey: String) {
+        db.delete(
+            TABLE_RECORDS,
+            "owner_key=? AND kind IN (?,?)",
+            arrayOf(
+                ownerKey,
+                RecordKind.PENDING_OUTBOUND.toString(),
+                RecordKind.PENDING_DISPLAY.toString(),
+            ),
+        )
+        db.delete(TABLE_REPLAY, "owner_key=?", arrayOf(ownerKey))
     }
 
     private inline fun <T> inTransaction(db: SQLiteDatabase, block: (SQLiteDatabase) -> T): T {

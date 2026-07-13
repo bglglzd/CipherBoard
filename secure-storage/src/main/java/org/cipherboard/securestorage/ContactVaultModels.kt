@@ -96,8 +96,8 @@ class ContactVaultEntry(
     val pairedAtEpochMillis: Long,
     val lastActiveAtEpochMillis: Long,
     val protocolVersion: Int,
-    olmSessionState: ByteArray,
-    replayState: ByteArray,
+    val safetyNumber: String,
+    val safetyCode: String,
     val requiresRepairing: Boolean,
     val sessionError: Boolean,
     val keyChanged: Boolean,
@@ -110,8 +110,8 @@ class ContactVaultEntry(
         require(remoteSessionTag.size in MIN_TAG_BYTES..MAX_TAG_BYTES)
         require(pairedAtEpochMillis >= 0 && lastActiveAtEpochMillis >= pairedAtEpochMillis)
         require(protocolVersion in 1..OwnerIdentityAccountState.MAX_PROTOCOL_VERSION)
-        require(olmSessionState.size <= MAX_SESSION_BYTES)
-        require(replayState.size <= MAX_REPLAY_STATE_BYTES)
+        validateSafetyNumber(safetyNumber)
+        validateSafetyCode(safetyCode)
         require(keyChanged == (verificationStatus == ContactVerificationStatus.KEY_CHANGED))
         require(sessionError == (verificationStatus == ContactVerificationStatus.SESSION_ERROR))
         require(
@@ -119,21 +119,16 @@ class ContactVaultEntry(
                 verificationStatus == ContactVerificationStatus.PAIRING_REQUIRED ||
                 verificationStatus == ContactVerificationStatus.SESSION_ERROR),
         )
-        require(olmSessionState.isNotEmpty() || verificationStatus == ContactVerificationStatus.PAIRING_REQUIRED)
     }
 
     val internalId = internalId.copyOf()
     val remoteIdentityFingerprint = remoteIdentityFingerprint.copyOf()
     val remoteSessionTag = remoteSessionTag.copyOf()
-    val olmSessionState = olmSessionState.copyOf()
-    val replayState = replayState.copyOf()
 
     override fun close() {
         internalId.wipe()
         remoteIdentityFingerprint.wipe()
         remoteSessionTag.wipe()
-        olmSessionState.wipe()
-        replayState.wipe()
     }
 
     override fun toString() = "ContactVaultEntry(status=$verificationStatus,protocolVersion=$protocolVersion)"
@@ -141,8 +136,8 @@ class ContactVaultEntry(
     internal fun copyWith(
         localName: String = this.localName,
         verificationStatus: ContactVerificationStatus = this.verificationStatus,
-        olmSessionState: ByteArray = this.olmSessionState,
-        replayState: ByteArray = this.replayState,
+        safetyNumber: String = this.safetyNumber,
+        safetyCode: String = this.safetyCode,
         requiresRepairing: Boolean = this.requiresRepairing,
         sessionError: Boolean = this.sessionError,
         keyChanged: Boolean = this.keyChanged,
@@ -156,8 +151,8 @@ class ContactVaultEntry(
         pairedAtEpochMillis,
         lastActiveAtEpochMillis,
         protocolVersion,
-        olmSessionState,
-        replayState,
+        safetyNumber,
+        safetyCode,
         requiresRepairing,
         sessionError,
         keyChanged,
@@ -170,11 +165,25 @@ class ContactVaultEntry(
         const val MAX_TAG_BYTES = 64
         const val MAX_LOCAL_NAME_UTF8_BYTES = 512
         const val MAX_LOCAL_NAME_CODE_POINTS = 128
-        const val MAX_SESSION_BYTES = 2 * 1024 * 1024
-        const val MAX_REPLAY_STATE_BYTES = 256 * 1024
+        const val MAX_SAFETY_NUMBER_ASCII_BYTES = 96
+        const val MAX_SAFETY_CODE_ASCII_BYTES = 128
 
         internal fun validateLocalName(name: String) {
             OwnerIdentityAccountState.validateLocalName(name)
+        }
+
+        private fun validateSafetyNumber(value: String) {
+            require(value.length in 1..MAX_SAFETY_NUMBER_ASCII_BYTES)
+            require(value.first().isDigit() && value.last().isDigit())
+            require(value.all { it in '0'..'9' || it == ' ' })
+            require("  " !in value)
+        }
+
+        private fun validateSafetyCode(value: String) {
+            require(value.length in 1..MAX_SAFETY_CODE_ASCII_BYTES)
+            require(value.first() != ' ' && value.last() != ' ')
+            require(value.all { it.code in 0x21..0x7e || it == ' ' })
+            require("  " !in value)
         }
     }
 }
@@ -222,7 +231,8 @@ class PendingPairingState(
         transcriptHash,
         status,
         protocolVersion,
-        payload,
+        // Keep a one-shot tombstone, never a duplicate initial session, after terminal transition.
+        if (status == OneShotStatus.ACTIVE) payload else TERMINAL_TOMBSTONE,
     )
 
     companion object {
@@ -231,6 +241,7 @@ class PendingPairingState(
         const val MIN_HASH_BYTES = 32
         const val MAX_HASH_BYTES = 64
         const val MAX_PAYLOAD_BYTES = 512 * 1024
+        private val TERMINAL_TOMBSTONE = byteArrayOf(0)
     }
 }
 
