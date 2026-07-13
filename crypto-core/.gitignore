@@ -1,0 +1,6 @@
+/.gradle/
+/.kotlin/
+/build/
+/jni/target/
+/native/target/
+/src/main/jniLibs/**/*.so

@@ -1,0 +1,35 @@
+[package]
+name = "cipherboard-crypto-jni"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+name = "cipherboard_crypto_jni"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cipherboard-crypto = { path = "../native" }
+jni = { version = "=0.21.1", default-features = false }
+minicbor = { version = "=0.25.1", features = ["std"] }
+zeroize = "=1.8.2"
+
+[dev-dependencies]
+proptest = "=1.6.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"

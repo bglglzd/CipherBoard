@@ -10,6 +10,11 @@ impl SecretBytes {
         Self(bytes)
     }
 
+    /// Take ownership of a sensitive buffer without copying it.
+    pub fn from_owned(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
     pub fn expose(&self) -> &[u8] {
         &self.0
     }

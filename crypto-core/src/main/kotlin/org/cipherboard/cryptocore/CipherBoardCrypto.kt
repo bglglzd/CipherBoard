@@ -1,0 +1,259 @@
+package org.cipherboard.cryptocore
+
+class CipherBoardCrypto {
+    fun protocolVersions(): ProtocolVersions = invoke(OP_PROTOCOL, request(1)) { payload ->
+        payload.array(2)
+        val result = ProtocolVersions(payload.uint().toInt(), payload.uint().toInt())
+        payload.finish()
+        result
+    }
+
+    fun createAccount(): AccountCreated = invoke(OP_CREATE_ACCOUNT, request(1)) { payload ->
+        payload.array(4)
+        val state = payload.bytes(MAX_ACCOUNT_STATE)
+        try {
+            val identity = payload.identity()
+            val fingerprint = payload.bytes(32)
+            payload.finish()
+            AccountCreated(OwnedSecret.takeOwnership(state), identity, fingerprint)
+        } catch (error: Throwable) {
+            state.fill(0)
+            throw error
+        }
+    }
+
+    fun createOffer(
+        accountState: OwnedSecret,
+        nowEpochSeconds: Long,
+        ttlSeconds: Long,
+        capabilities: Long,
+    ): OfferCreated {
+        val request = CborWriter().use { writer ->
+            writer.array(5).uint(WIRE_VERSION.toLong())
+            accountState.use(writer::bytes)
+            writer.uint(nowEpochSeconds).uint(ttlSeconds).uint(capabilities)
+            writer.finish()
+        }
+        return invoke(OP_CREATE_OFFER, request) { payload ->
+            payload.array(2)
+            val state = payload.bytes(MAX_ACCOUNT_STATE)
+            try {
+                val qr = payload.bytes(MAX_PAIRING)
+                payload.finish()
+                OfferCreated(OwnedSecret.takeOwnership(state), qr)
+            } catch (error: Throwable) {
+                state.fill(0)
+                throw error
+            }
+        }
+    }
+
+    fun respondToOffer(
+        accountState: OwnedSecret,
+        offerQr: ByteArray,
+        nowEpochSeconds: Long,
+        capabilities: Long,
+    ): PairingResponseCreated {
+        val request = CborWriter().use { writer ->
+            writer.array(5).uint(WIRE_VERSION.toLong())
+            accountState.use(writer::bytes)
+            writer.bytes(offerQr).uint(nowEpochSeconds).uint(capabilities)
+            writer.finish()
+        }
+        return invoke(OP_RESPOND_OFFER, request) { payload ->
+            payload.array(7)
+            val session = payload.bytes(MAX_SESSION_STATE)
+            try {
+                val responseQr = payload.bytes(MAX_PAIRING)
+                val safety = payload.safetyCode()
+                val remote = payload.identity()
+                payload.finish()
+                PairingResponseCreated(
+                    OwnedSecret.takeOwnership(session),
+                    responseQr,
+                    safety,
+                    remote,
+                )
+            } catch (error: Throwable) {
+                session.fill(0)
+                throw error
+            }
+        }
+    }
+
+    fun completePairing(
+        accountState: OwnedSecret,
+        offerQr: ByteArray,
+        responseQr: ByteArray,
+        nowEpochSeconds: Long,
+    ): PairingCompleted {
+        val request = CborWriter().use { writer ->
+            writer.array(5).uint(WIRE_VERSION.toLong())
+            accountState.use(writer::bytes)
+            writer.bytes(offerQr).bytes(responseQr).uint(nowEpochSeconds)
+            writer.finish()
+        }
+        return invoke(OP_COMPLETE_PAIRING, request) { payload ->
+            payload.array(8)
+            val updatedAccount = payload.bytes(MAX_ACCOUNT_STATE)
+            val session = payload.bytes(MAX_SESSION_STATE)
+            try {
+                require(payload.bytes(0).isEmpty())
+                val safety = payload.safetyCode()
+                val remote = payload.identity()
+                payload.finish()
+                PairingCompleted(
+                    OwnedSecret.takeOwnership(updatedAccount),
+                    OwnedSecret.takeOwnership(session),
+                    safety,
+                    remote,
+                )
+            } catch (error: Throwable) {
+                updatedAccount.fill(0)
+                session.fill(0)
+                throw error
+            }
+        }
+    }
+
+    fun encrypt(
+        sessionState: OwnedSecret,
+        plaintext: OwnedSecret,
+        capabilities: Long,
+        mode: TransportMode,
+    ): EncryptionPrepared {
+        val request = CborWriter(initialCapacity = plaintext.size + 256).use { writer ->
+            writer.array(5).uint(WIRE_VERSION.toLong())
+            sessionState.use(writer::bytes)
+            plaintext.use(writer::bytes)
+            writer.uint(capabilities).uint(mode.wireValue.toLong())
+            writer.finish()
+        }
+        return invoke(OP_ENCRYPT, request) { payload ->
+            payload.array(3)
+            val nextState = payload.bytes(MAX_SESSION_STATE)
+            try {
+                val messageId = payload.bytes(16)
+                val count = payload.arrayLength()
+                require(count in 1..MAX_PARTS)
+                val parts = List(count) { payload.ascii(MAX_PART) }
+                payload.finish()
+                EncryptionPrepared(OwnedSecret.takeOwnership(nextState), messageId, parts)
+            } catch (error: Throwable) {
+                nextState.fill(0)
+                throw error
+            }
+        }
+    }
+
+    fun decrypt(sessionState: OwnedSecret, parts: List<String>): DecryptionPrepared {
+        require(parts.size in 1..MAX_PARTS)
+        val request = CborWriter().use { writer ->
+            writer.array(3).uint(WIRE_VERSION.toLong())
+            sessionState.use(writer::bytes)
+            writer.array(parts.size)
+            parts.forEach(writer::ascii)
+            writer.finish()
+        }
+        return invoke(OP_DECRYPT, request) { payload ->
+            payload.array(3)
+            val nextState = payload.bytes(MAX_SESSION_STATE)
+            var plaintext: ByteArray? = null
+            try {
+                val messageId = payload.bytes(16)
+                plaintext = payload.bytes(MAX_PLAINTEXT)
+                payload.finish()
+                DecryptionPrepared(
+                    OwnedSecret.takeOwnership(nextState),
+                    messageId,
+                    OwnedSecret.takeOwnership(plaintext),
+                )
+            } catch (error: Throwable) {
+                nextState.fill(0)
+                plaintext?.fill(0)
+                throw error
+            }
+        }
+    }
+
+    fun parseEnvelope(part: String): EnvelopeMetadata {
+        val request = CborWriter().use { writer ->
+            writer.array(2).uint(WIRE_VERSION.toLong()).ascii(part).finish()
+        }
+        return invoke(OP_PARSE_ENVELOPE, request) { payload ->
+            payload.array(7)
+            val result = EnvelopeMetadata(
+                routingTag = payload.bytes(16),
+                messageId = payload.bytes(16),
+                partNumber = payload.uint().toInt(),
+                totalParts = payload.uint().toInt(),
+                capabilities = payload.uint(),
+                olmType = payload.uint().toInt(),
+                payloadBytes = payload.uint(),
+            )
+            payload.finish()
+            result
+        }
+    }
+
+    private fun <T> invoke(operation: Int, request: ByteArray, decode: (CborReader) -> T): T {
+        val response = try {
+            NativeBridge.nativeInvoke(operation, request)
+        } finally {
+            request.fill(0)
+        }
+        var payloadBytes: ByteArray? = null
+        try {
+            val responseReader = CborReader(response)
+            responseReader.array(3)
+            require(responseReader.uint() == WIRE_VERSION.toLong())
+            val status = responseReader.uint()
+            payloadBytes = responseReader.bytes(MAX_WIRE_BYTES)
+            responseReader.finish()
+            if (status != 0L) throw CryptoCoreException(status.toInt())
+            return decode(CborReader(payloadBytes))
+        } finally {
+            response.fill(0)
+            payloadBytes?.fill(0)
+        }
+    }
+
+    private fun request(fields: Int): ByteArray = CborWriter().use { writer ->
+        writer.array(fields).uint(WIRE_VERSION.toLong()).finish()
+    }
+
+    private fun CborReader.identity(): PublicIdentity =
+        PublicIdentity(bytes(32), bytes(32))
+
+    private fun CborReader.safetyCode(): SafetyCode = SafetyCode(
+        hash = bytes(32),
+        decimalGroups = ascii(96),
+        wordCode = ascii(128),
+    )
+
+    private companion object {
+        const val OP_PROTOCOL = 0
+        const val OP_CREATE_ACCOUNT = 1
+        const val OP_CREATE_OFFER = 2
+        const val OP_RESPOND_OFFER = 3
+        const val OP_COMPLETE_PAIRING = 4
+        const val OP_ENCRYPT = 5
+        const val OP_DECRYPT = 6
+        const val OP_PARSE_ENVELOPE = 7
+
+        const val MAX_ACCOUNT_STATE = 1024 * 1024
+        const val MAX_SESSION_STATE = 4 * 1024 * 1024
+        const val MAX_PLAINTEXT = 192 * 1024
+        const val MAX_PAIRING = 32 * 1024
+        const val MAX_PART = 32 * 1024
+        const val MAX_PARTS = 128
+    }
+}
+
+internal object NativeBridge {
+    init {
+        System.loadLibrary("cipherboard_crypto_jni")
+    }
+
+    external fun nativeInvoke(operation: Int, request: ByteArray): ByteArray
+}

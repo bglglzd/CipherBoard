@@ -10,7 +10,7 @@ use crate::{
     CipherAccount, CipherSession, CoreError, ErrorCode, PublicIdentity, Result, PROTOCOL_VERSION,
 };
 
-const OFFER_PREFIX: &str = "CBP1:";
+const OFFER_PREFIX: &str = "CBO1:";
 const RESPONSE_PREFIX: &str = "CBR1:";
 const OFFER_BODY_FIELDS: u64 = 9;
 const OFFER_FIELDS: u64 = 10;
