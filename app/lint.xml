@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      Upstream ships many community locales with intentionally partial TalkBack
+      coverage. CipherBoard separately tests parity for its required EN/RU strings.
+    -->
+    <issue id="MissingTranslation" severity="ignore" />
+</lint>

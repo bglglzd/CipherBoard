@@ -7,6 +7,7 @@ import helium314.keyboard.latin.common.Links
 import helium314.keyboard.latin.common.LocaleUtils.constructLocale
 import helium314.keyboard.latin.utils.getKnownDictionariesForLocale
 import org.junit.runner.RunWith
+import org.junit.Assume.assumeTrue
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.net.HttpURLConnection
@@ -69,6 +70,10 @@ class XLinkTest { // Without the X, SubtypeTests fail with ClassCastException. W
     }
 
     private fun checkLink(link: String) {
+        assumeTrue(
+            "External link checks are opt-in for deterministic offline builds",
+            System.getenv("CIPHERBOARD_RUN_NETWORK_TESTS") == "1"
+        )
         if (link.contains("wiki/"))
             return checkWikiLink(link)
         val url = URL(link)
