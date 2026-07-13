@@ -6,22 +6,39 @@
 -->
 
 <resources xmlns:android="http://schemas.android.com/apk/res/android">
-    <style name="platformActivityTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <style name="CipherBoardPlatformActivityThemeBase" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:colorAccent">@color/accent</item>
 
         <item name="android:statusBarColor">@color/action_bar_color</item>
         <item name="android:navigationBarColor">@color/navigation_bar_color</item>
+        <item name="android:windowBackground">@color/setup_background</item>
         <item name="android:colorBackground">@color/setup_background</item>
         <item name="android:colorForeground">@color/foreground</item>
+        <item name="android:textColor">@color/foreground</item>
+        <item name="android:textColorPrimary">@color/foreground</item>
+        <item name="android:textColorSecondary">@color/foreground_weak</item>
+        <item name="android:textColorHint">@color/foreground_weak</item>
+        <item name="android:radioButtonStyle">@style/CipherBoardRadioButtonStyle</item>
         <item name="android:alertDialogTheme">@style/AlertDialogTheme</item>
     </style>
 
-    <style name="AlertDialogTheme" parent="@android:style/Theme.Material.Dialog.Alert">
+    <style name="platformActivityTheme" parent="@style/CipherBoardPlatformActivityThemeBase" />
+
+    <style name="CipherBoardRadioButtonStyle" parent="@android:style/Widget.Material.CompoundButton.RadioButton">
+        <item name="android:textColor">@color/foreground</item>
+    </style>
+
+    <style name="CipherBoardAlertDialogThemeBase" parent="@android:style/Theme.Material.Dialog.Alert">
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:background">@color/action_bar_color</item>
+        <item name="android:colorBackground">@color/setup_background</item>
         <item name="android:textColor">@color/foreground</item>
         <item name="android:textColorPrimary">@color/foreground</item>
+        <item name="android:textColorSecondary">@color/foreground_weak</item>
+        <item name="android:textColorHint">@color/foreground_weak</item>
         <item name="android:textColorAlertDialogListItem">@color/foreground</item>
         <item name="android:colorForeground">@color/foreground</item>
     </style>
+
+    <style name="AlertDialogTheme" parent="@style/CipherBoardAlertDialogThemeBase" />
 </resources>
