@@ -1,6 +1,6 @@
 # CipherBoard Security Checklist
 
-**Snapshot date:** 2026-07-13
+**Snapshot date:** 2026-07-14
 **Public release branch:** `main`
 **Upstream baseline:** HeliBoard `v4.0`, commit
 `bd48798b99cccc99704eebf2a9259c02dbd684d5`
@@ -46,7 +46,7 @@ residual validation prerequisites before high-risk reliance. Their pending
 status limits assurance but is not, by itself, a demonstrated critical code
 defect. The previous broad full-app/process-kill evidence blocker is closed only
 for the seven demonstrated AOSP tests; in-transaction failpoints, the real
-`commitText()` acknowledgement window and complete IME/composer/camera E2E are
+`commitText()` acknowledgement window and complete IME/private-panel/camera E2E are
 still unverified.
 
 ## 1. Provenance, Governance, and Documentation
@@ -59,7 +59,7 @@ still unverified.
 | GOV-04 | GPLv3 license, source obligations, and upstream notices are preserved | 5 | Implemented | Complete license texts/notices are retained, packaged for offline viewing, and included with the exact-commit source archive; final artifact review pending |
 | GOV-05 | Third-party versions, licenses, and notices are complete | 5, 30 | Implemented | GPL/Apache/BlueOak/CC texts, consolidated BSD notices, inventory/notices and nonempty offline-asset unit test exist; final resolved-graph/manual review pending |
 | GOV-06 | Threat model accurately states scope and residual risk | 3 | Implemented | `THREAT_MODEL.md`; independent security review pending |
-| GOV-07 | Architecture, crypto protocol, build, release, and test documents match code | 6, 30 | Implemented | 2026-07-13 source/document audit; repeat at release candidate |
+| GOV-07 | Architecture, crypto protocol, build, release, and test documents match code | 6, 30 | Implemented | 2026-07-14 embedded-Private-mode documentation audit; repeat at release candidate |
 | GOV-08 | UI/README contain no absolute-security or independent-audit claims | 3, 33 | Implemented | Security UI and docs state limitations/no independent audit; final resource scan pending |
 | GOV-09 | No passwords, private keys, signing files, or credentials are tracked | 4, 29 | Pending | Secret scan plus Git history review |
 
@@ -74,6 +74,7 @@ still unverified.
 | NET-05 | No WebView, dynamic code loading, downloaded model/dictionary/configuration, or proprietary cloud QR API | 2, 19, 27 | Implemented | Source uses local ZXing/CameraX and packaged assets; the pre-public local candidate's APK marker scan passed, while physical runtime verification remains pending |
 | NET-06 | App works on GrapheneOS without Sandboxed Google Play | 20, 31 | Pending | Physical-device acceptance evidence |
 | NET-07 | GrapheneOS Network denial is documented as defense in depth | 20 | Implemented | `RELEASE.md`, `THREAT_MODEL.md`; installation walkthrough review pending |
+| NET-08 | Update checks/install are external; CipherBoard has no in-app updater, `INTERNET`, or `REQUEST_INSTALL_PACKAGES` | 2, 20, 28 | Implemented | README/release notes document Obtainium as a separate trust boundary; final manifest and update-over-existing-install test pending |
 
 ## 3. Cryptographic Library and FFI
 
@@ -135,7 +136,7 @@ still unverified.
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
 | RAT-01 | Send transaction atomically commits advanced state plus exact pending ciphertext before host commit | 17 | Implemented | Targeted API 36 PASS: remote-process SIGKILL before outbound commit and after commit/before handoff; revision and exact pending ciphertext are asserted after reopen; individual SQLite-statement crash points remain |
-| RAT-02 | Recovery reuses pending ciphertext and never encrypts again from stale state | 17 | Implemented | SIGKILL/reopen confirms the exact persisted pending ciphertext; a kill immediately around real host `commitText()` acknowledgement remains untested |
+| RAT-02 | `READY` ciphertext is claimed once; the record becomes `COMMIT_UNCERTAIN` before host commit and uncertain delivery never auto-retries | 17 | Implemented | Versioned codec/store/bridge tests cover the durable transition and no-auto-retry policy; a kill immediately around real host `commitText()` acknowledgement remains untested |
 | RAT-03 | Receive transaction commits advanced state plus encrypted pending display before showing plaintext | 17 | Implemented | Targeted API 36 PASS: post-inbound-commit remote SIGKILL/reopen asserts revision, replay marker and pending display; individual SQLite-statement failpoints remain |
 | RAT-04 | Pending display is removed on close with no retained message key/plaintext history | 17, 18 | Implemented | Pre-render abandon retains encrypted recovery; render acknowledgement then close deletes it; lifecycle/process-death test pending |
 | RAT-05 | Replay is rejected across process/device restart | 7.3, 17, 25 | Implemented | Serialized/native restore coverage plus actual post-inbound-commit SIGKILL/reopen preserves the SQLite replay marker; full device reboot/long-run matrix pending |
@@ -160,20 +161,23 @@ still unverified.
 | STO-10 | v1 has no identity, ratchet, secret, message-key, or plaintext-history export/restore | 16, 18 | Implemented | No export/restore surface found; final intent/UI/APK review pending |
 | STO-11 | Database corruption is detected without plaintext fallback or silent identity reset | 25 | Implemented | AEAD/strict codec failures exist; full DB/WAL corruption matrix pending |
 
-## 9. Secure Composer and Keyboard
+## 9. Private Mode and Keyboard
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
 | IME-01 | Ordinary HeliBoard English/Russian/emoji/symbol/Unicode input remains functional | 5, 26, 31 | Pending | Debug app survives the fixed locale change before IME selection; actual ordinary-keyboard regression/instrumentation suite remains |
-| IME-02 | Shield action opens an explicit CipherBoard-owned secure composer | 11 | Implemented | Toolbar/LatinIME launches non-exported activity; UI instrumentation pending |
-| IME-03 | Plaintext never reaches host `InputConnection`, composing region, or key events | 11, 31 | Implemented | Separate CipherBoard-owned editor and unit-tested scoped handoff exist; hostile host `EditText` instrumentation remains required |
-| IME-04 | Only ciphertext is committed with `commitText()` after explicit encryption | 11 | Implemented | One-shot exact pending handoff is bound to originating host package/UID/editor/connection and consumed by `LatinIME`; framework capture test pending |
-| IME-05 | Plaintext composer clears after successful transaction/commit attempt and on close/lock/background | 11, 15 | Implemented | Editor clears after durable encrypt and on stop/destroy; lifecycle/memory test pending |
-| IME-06 | Secure mode disables personalized learning, user dictionary, input history, drafts, and clipboard history | 11, 23 | Implemented | Central secure marker disables learning/suggestions/history and blocks copy/cut/paste/share/voice/IME-picker paths; preference-enabled device sentinel test pending |
+| IME-02 | Shield action toggles a CipherBoard-owned Private panel above the keys without navigating away from the host | 11 | Implemented | Embedded controller/layout and emulator visual inspection show an in-IME panel; complete UI instrumentation pending |
+| IME-03 | Software-key plaintext stays in the local draft and never reaches host `InputConnection`, composing region, or simulated key events | 11, 31 | Implemented | Bounded local connection, early routing gates and exact-token host scope have unit/source coverage; hostile host `EditText` instrumentation remains required; hardware keyboards are explicitly unsupported for Private drafts |
+| IME-04 | Only exact persisted ciphertext is committed with `commitText()` after explicit encryption | 11 | Implemented | One-shot pending handoff is bound to originating host package/UID/editor and exact `InputBinding.connectionToken`; framework capture test pending |
+| IME-05 | Plaintext remains visible after successful ciphertext insertion and clears on explicit clear/close, host-field change, lock, screen-off, or IME destruction | 11, 15 | Implemented | Embedded controller owns and wipes the bounded draft; lifecycle/heap/field-switch instrumentation pending |
+| IME-06 | Private mode disables personalized learning, user dictionary, input history, persistent drafts, and clipboard history | 11, 23 | Implemented | Central secure marker disables learning/suggestions/history and blocks copy/cut/paste/share/voice/IME-picker paths; preference-enabled device sentinel test pending |
 | IME-07 | Plaintext is absent from saved state, long-lived ViewModels, intents, preferences, files, cache, and database | 11, 23 | Implemented | No-save/no-ViewModel/no-plaintext-extra/persistence path by source; sentinel scan pending |
-| IME-08 | Secure composer shows contact verification, vault state, size estimates, clear/close/encrypt controls | 11 | Implemented | Controls/statuses present; UI/accessibility test pending |
-| IME-09 | Password fields show an explicit warning; no automatic encryption/commit occurs | 26 | Implemented | LatinIME passes boolean and composer requires acknowledgement; instrumentation pending |
+| IME-08 | Embedded Private panel shows contact verification, vault state, size estimates, clear/close/encrypt controls | 11 | Implemented | Controls/statuses present even without paired contacts; UI/accessibility test pending |
+| IME-09 | Password fields show an explicit warning; no automatic encryption/commit occurs | 26 | Implemented | Embedded controller requires acknowledgement; instrumentation pending |
 | IME-10 | Layout handles large fonts, landscape, light/dark theme, optional dynamic color, English/Russian strings, and RTL rendering | 21, 22 | Pending | Screenshot/accessibility/localization matrix |
+| IME-11 | Exact host binding token scopes the Private panel; only one metadata-matching token rebind is allowed after non-exported Vault unlock | 11, 17 | Implemented | `EmbeddedHostScope` unit coverage exists; Android reconnect/field-collision instrumentation pending |
+| IME-12 | Private panel uses `FLAG_SECURE`; its RAM/UI clearing is documented as best effort, not guaranteed zeroization | 15, 24 | Implemented | Emulator capture was black and documentation states JVM/UI limits; physical screenshot/heap evidence pending |
+| IME-13 | Physical keyboard bypass is not treated as protected Private input | 11, 26 | Implemented | UI/docs instruct use of on-screen keys; host-level physical-key sentinel and GrapheneOS device test pending |
 
 ## 10. Decryption and Protected Viewer
 
@@ -207,7 +211,7 @@ still unverified.
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| AND-01 | Manifest excludes Internet/network, Contacts, SMS, package-query, overlay, and Accessibility-service permissions | 19, 28 | Verified | The pre-public local signed candidate passed `aapt`/`apkanalyzer`/policy checks; repeat against the final public artifact |
+| AND-01 | Manifest excludes Internet/network, package installation, Contacts, SMS, package-query, overlay, and Accessibility-service permissions | 19, 28 | Verified | The pre-public local signed candidate passed `aapt`/`apkanalyzer`/policy checks; repeat `INTERNET` and `REQUEST_INSTALL_PACKAGES` checks against the final public artifact |
 | AND-02 | Camera is the only planned dangerous runtime permission and is requested just in time | 19 | Implemented | Signed-candidate permission evidence and explicit Scan-triggered launcher are present; physical just-in-time grant/deny/revoke remains pending |
 | AND-03 | Sensitive activities/services/providers are non-exported unless required and strictly validate callers/input | 27, 28 | Implemented | Secure components are non-exported except launcher/process-text and the pre-public local candidate's APK exported-shape policy passed; deeper final intent validation remains pending |
 | AND-04 | Process-text component is exported only as Android requires and treats all input as hostile | 14, 27 | Implemented | Strict action/MIME/size/ASCII/envelope path and no result replacement; malicious-intent instrumentation pending |
@@ -223,10 +227,10 @@ still unverified.
 | TST-01 | Alice/Bob pairing, Safety Number, bidirectional first messages, and 1000-message sequence pass | 25 | Implemented | 27-test native suite covers these paths and matching numeric/word comparison; Android integration pending |
 | TST-02 | Reorder, skip, replay, tamper, truncate, trailing data, wrong version/contact, concurrency pass | 25 | Implemented | Native regression coverage reported; complete concurrency/Android report pending |
 | TST-03 | Empty, long, Unicode, maximum multipart, and over-limit cases pass | 25 | Implemented | Native boundary coverage includes the 48-byte SMS/153-character limit; Android product intentionally rejects empty compose and UI/device matrix remains |
-| TST-04 | Crash matrix and restart replay tests pass | 17, 25 | Implemented | Targeted 3-boundary actual-SIGKILL matrix and 2 close/reopen atomicity tests pass; individual SQLite statements and ambiguous real `commitText()` acknowledgement remain uncovered |
+| TST-04 | Crash matrix, restart replay, and outbound delivery-state tests pass | 17, 25 | Implemented | Targeted 3-boundary actual-SIGKILL matrix, 2 close/reopen atomicity tests and v0.2 `READY`/`COMMIT_UNCERTAIN` unit cases exist; individual SQLite statements and ambiguous real `commitText()` acknowledgement remain uncovered |
 | TST-05 | Delete, re-pair, identity change, DB corruption, Keystore invalidation, StrongBox/TEE fallback pass | 25 | Pending | Storage/device report |
 | TST-06 | Parser property tests and fuzzing complete without panic or unbounded allocation | 25 | Implemented | Reproducible three-seed cargo-fuzz target completed 601,574 ASan inputs in 31 seconds with zero crashes/timeouts; broader pairing/JNI campaigns pending |
-| TST-07 | IME regression, secure composer, process-text, selection, clipboard, lifecycle, and viewer Android tests pass | 26 | Implemented | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7 on API 36 AOSP: process-text/viewer/clipboard and vault fault scope; full IME/composer/live-camera E2E remains absent |
+| TST-07 | IME regression, embedded Private panel, process-text, selection, clipboard, lifecycle, and viewer Android tests pass | 26 | Implemented | Existing API 36 AOSP 7/7 covers process-text/viewer/clipboard and vault fault scope; local draft/routing unit tests pass, while full IME/private-panel/live-camera E2E remains absent |
 | TST-08 | Tests run on GrapheneOS without Google Play | 20, 26 | Pending | Device/build/version evidence |
 | TOOL-01 | Gradle lint and unit tests pass | 27 | Implemented | Full debug unit tasks and release lint for `app`/`crypto-core`/`pairing`/`secure-storage` pass after API 23 compatibility fixes; rerun/archive for exact release commit |
 | TOOL-02 | Kotlin formatting/static analysis pass | 27 | Implemented | Fork-wide changed-Kotlin format gate and Android lint pass; independent detekt-equivalent review remains desirable |
@@ -257,7 +261,7 @@ still unverified.
 | --- | --- | --- | --- | --- |
 | UX-01 | English and Russian resources cover all user-facing text, errors, plurals, and accessibility descriptions | 21, 22 | Implemented | English and per-app `ru-RU` Home hierarchies fit without overlap; Russian Home also fits landscape at `font_scale=1.3`; remaining screens, font 2.0 and RTL matrix pending |
 | UX-02 | Security screen states protections and all explicit limitations in plain language | 3, 21 | Implemented | English/Russian security screen covers stated threats and residual risks; device/UX review pending |
-| UX-03 | Contact/session states are distinct and understandable | 21 | Implemented | Verified/unverified/key-changed/pairing/session states are rendered in home, composer and contact details; localization/device UX review pending |
+| UX-03 | Contact/session states are distinct and understandable | 21 | Implemented | Verified/unverified/key-changed/pairing/session states are rendered in home, the Private panel and contact details; localization/device UX review pending |
 | UX-04 | No stack traces, raw crypto errors, or misleading assurances are shown | 3, 21 | Implemented | Secure UI maps fixed errors and states no independent audit; negative-path/string scan pending |
 | UX-05 | Installation guide covers trusted source, SHA-256, IME enablement, Network/Sensors denial, strong lock, locked bootloader, and Accessibility risk | 20 | Pending | GrapheneOS guide review |
 | UX-06 | Pair/send/decrypt/update/re-pair flows and no-history consequences are documented | 9, 18, 33 | Pending | End-to-end documentation test |
@@ -270,7 +274,7 @@ Publication is blocked if any artifact-critical item remains `Pending` or merely
 commit: every artifact gate must be repeated and tied to the final tag's
 `BUILD_INFO.txt`. The previous broad instrumentation/process-kill evidence
 blocker is closed for the seven recorded API 36 AOSP tests; the narrower untested
-SQLite-statement, real host-ack and complete IME/composer/camera paths are not
+SQLite-statement, real host-ack and complete IME/private-panel/camera paths are not
 represented as passed. Rows explicitly requiring independent audit or physical
 GrapheneOS/StrongBox/TEE/camera evidence are residual assurance prerequisites
 before high-risk use; their absence is not a known critical code defect.

@@ -1,6 +1,6 @@
 # CipherBoard Threat Model
 
-**Status:** design-time threat model, 2026-07-13  
+**Status:** design-time threat model, 2026-07-14
 **Scope:** CipherBoard v1: one-to-one offline pairing and encrypted text
 transport through untrusted applications  
 **Assurance:** no independent product security audit has been performed
@@ -18,8 +18,8 @@ retaining important residual risks.
 
 As of this snapshot, the source tree implements encrypted vault records,
 Keystore StrongBox-first generation with fallback and reported security level,
-atomic send/receive record transactions, a separate secure composer,
-selected-text/`ACTION_PROCESS_TEXT` decryption, a protected viewer, and an
+atomic send/receive record transactions, an embedded Private mode panel inside
+the IME, selected-text/`ACTION_PROCESS_TEXT` decryption, a protected viewer, and an
 offline QR codec/scanner. A non-exported protected two-QR activity now joins the
 native offer/response APIs to encrypted one-shot state for both roles and to
 contact creation only after explicit local Safety Number confirmation. Contact
@@ -33,10 +33,11 @@ process-text/viewer/clipboard/vault tests, including three real remote-process
 SIGKILL boundaries around outbound and inbound storage commits. It does not
 cover pairing-specific process death, crashes between individual SQLite
 statements, the real `InputConnection.commitText()` acknowledgement window, or
-a complete IME/composer/live-camera flow. Live two-device camera exchange and
+a complete IME/private-panel/live-camera flow. Live two-device camera exchange and
 GrapheneOS operation remain residual platform validation before high-risk use.
-Outbound recovery reuses a contact-bound exact pending ciphertext through a
-one-shot handoff scoped to the originating host/editor. Inbound recovery
+Outbound publication uses a contact-bound exact pending ciphertext, a one-shot
+handoff scoped to the originating host/editor and exact connection token, and
+a durable delivery-uncertain state that cannot auto-retry. Inbound recovery
 requires the exact ordered ciphertext digest and retains the encrypted pending
 display until the viewer has actually rendered it. Exact capability, routing,
 inner-binding and assembly-integrity decisions are recorded in
@@ -57,7 +58,7 @@ and the gate must be repeated for the final public tag.
 CipherBoard is a serverless Android input method and companion UI derived from
 HeliBoard. Two users establish a one-to-one cryptographic session by physically
 scanning each other's QR codes and comparing a Safety Number. The sender writes
-plaintext only in CipherBoard's protected composer. CipherBoard commits only an
+plaintext only in CipherBoard's embedded Private panel. CipherBoard commits only an
 ASCII ciphertext envelope to the host application. The recipient passes that
 ciphertext back to CipherBoard for decryption and views plaintext only in a
 protected CipherBoard window.
@@ -253,16 +254,21 @@ For send:
 2. Encrypt once and obtain the advanced state.
 3. In one durable database transaction, store the new state and an encrypted
    pending record containing the exact ciphertext/envelope.
-4. Commit the transaction before calling `InputConnection.commitText()`.
-5. Clear the plaintext composer after the commit attempt and retain/complete the
-   pending record according to a deterministic recovery policy.
+4. Commit the transaction with outbound state `READY` before publication.
+5. Validate the exact `InputBinding.connectionToken`, then atomically change the
+   outbound record to `COMMIT_UNCERTAIN` before calling
+   `InputConnection.commitText()`.
+6. Delete the pending record only after an accepted insertion. A false return,
+   exception, acknowledgement loss, or process death retains
+   `COMMIT_UNCERTAIN` and must not trigger automatic retry.
 
 Android `InputConnection` does not provide a durable, cross-process exactly-once
-acknowledgement that the host saved or sent text. A crash after state commit may
-therefore require reinserting the same pending ciphertext, never encrypting the
-plaintext again with rolled-back state. This can cause duplicate transport
-delivery; the receiver must classify it as replay rather than expose plaintext
-twice.
+acknowledgement that the host saved or sent text. `READY` may be claimed once
+before the Binder boundary, but `COMMIT_UNCERTAIN` is not automatically
+reinserted: the host may already contain the ciphertext even when CipherBoard
+did not receive a successful response. The user must inspect the transport.
+Receiver replay protection rejects a duplicated ciphertext but cannot remove
+duplicate text from the external application.
 
 For receive:
 
@@ -323,13 +329,14 @@ surface remains open for minimization and device testing.
 
 ## 11. Plaintext UI and IME Isolation
 
-Normal HeliBoard input remains normal keyboard input. Secure mode is a distinct
-state entered by an explicit shield action. It must warn before use in password
-fields and must never auto-commit ciphertext.
+Normal HeliBoard input remains normal keyboard input. Private mode is a distinct
+state entered by an explicit shield action and rendered as a panel above the
+same on-screen keys. It must warn before use in password fields and must never
+auto-commit ciphertext.
 
 In secure mode:
 
-- plaintext is entered only into CipherBoard-owned UI;
+- on-screen key input is routed to a bounded, process-local CipherBoard draft;
 - no plaintext is sent to the host `InputConnection`, including composing text
   and key-event simulation;
 - only ciphertext is passed with `commitText()` after explicit encryption;
@@ -341,11 +348,21 @@ In secure mode:
   clipboard history are disabled;
 - plaintext is excluded from `SavedStateHandle`, instance state, ViewModels
   that outlive the view, intents, files, databases, caches, and static fields;
-- plaintext fields and short-lived buffers are cleared on success, cancel,
-  timeout, backgrounding, lock, and view destruction.
+- the plaintext remains visible after a successful ciphertext insertion so the
+  sender can verify it, and is cleared on explicit clear/close, host-field or
+  connection-token change, screen lock, IME destruction, or secure lifecycle
+  exit;
+- the exact non-null `InputBinding.connectionToken` scopes the host. Only the
+  non-exported Vault-unlock return can perform one metadata-matching rebind;
+- the IME window uses `FLAG_SECURE` while the panel is active.
 
 Ordinary static Russian/English dictionaries may be used locally, but secure
 input must not train or update personalized data.
+
+Private mode does not control Android's physical-keyboard dispatch. The system
+or host view may receive hardware key events directly, bypassing CipherBoard's
+local draft connection. Users must enter Private drafts with the on-screen
+keyboard; hardware-keyboard entry is outside the confidentiality boundary.
 
 `ACTION_PROCESS_TEXT` is read-only from the source application's perspective.
 CipherBoard receives ciphertext, validates it, unlocks the vault, and displays
@@ -358,9 +375,10 @@ input; plaintext is never copied automatically.
 The plaintext viewer must use `FLAG_SECURE`, exclude its task from recent-app
 previews, disable sharing/copying/selection by default, suppress notifications,
 assistant/content-capture/autofill exposure, clear on background or screen off,
-and close after a configurable timeout. Replying opens an empty secure composer
-bound to the authenticated contact; plaintext is not transferred as an intent
-extra.
+and close after a configurable timeout. Replying opens an empty secure reply
+surface bound to the authenticated contact; plaintext is not transferred as an
+intent extra. This legacy reply path may use a protected CipherBoard activity;
+the shield action itself remains embedded in the IME.
 
 `FLAG_SECURE` blocks standard screenshots and display on many non-secure output
 surfaces, but it is not an absolute screen-content guarantee. It does not stop a
@@ -410,6 +428,11 @@ package-query, overlay, or Accessibility-service permission. Camera is requested
 only when the user explicitly starts local QR scanning. GrapheneOS Network
 denial is defense in depth and not a substitute for removing network permission
 and network-capable dependencies.
+
+CipherBoard also does not request `REQUEST_INSTALL_PACKAGES` and has no in-app
+update client. Update discovery/download belongs to an external installer such
+as Obtainium using GitHub Releases. That installer is a separate, networked
+trust boundary; CipherBoard itself remains offline.
 
 Rust dependencies are pinned and locked. Packageable Android dependency graphs
 are strictly locked in `app/gradle.lockfile`; final notice and production SBOM
@@ -466,9 +489,11 @@ errors fail closed. The application must not:
 - treat a database or Keystore failure as an empty new vault without explicit
   destructive confirmation.
 
-Recovery choices are limited to retrying the same pending ciphertext, deleting
-an unfinished pairing, locking the vault, deleting a contact/session, or
-explicit physical re-pairing.
+Recovery choices are limited to claiming an unattempted `READY` ciphertext once,
+showing an explicit delivery-unknown result for `COMMIT_UNCERTAIN`, deleting an
+unfinished pairing, locking the vault, deleting a contact/session, or explicit
+physical re-pairing. An uncertain outbound operation must not be retried
+automatically.
 
 ## 17. Required Validation and Audit Status
 

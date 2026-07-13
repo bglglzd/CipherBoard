@@ -4,6 +4,51 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.2.0] - 2026-07-14
+
+### Added
+
+- Embedded Private mode panel above the keyboard keys, opened and closed by the
+  shield action without navigating away from the host application.
+- A bounded, RAM-only local draft connection for on-screen key input, with
+  contact selection, Vault status, transport mode, size estimate, clear, close,
+  and encrypt controls inside the IME.
+- Exact `InputBinding.connectionToken` scoping for the host field, with one
+  explicitly bounded rebind after the Vault unlock activity returns.
+- Durable outbound delivery phases. A pending operation changes from `READY` to
+  `COMMIT_UNCERTAIN` before host `commitText()` and is never automatically
+  retried after the host acknowledgement boundary becomes ambiguous.
+- Legacy pending sends from `0.1.x` migrate as `COMMIT_UNCERTAIN`, because the
+  old record format cannot prove whether the host already accepted them.
+
+### Changed
+
+- Private plaintext remains visible in the embedded panel after ciphertext was
+  inserted, allowing the sender to check it. It is cleared on explicit clear or
+  close, when the host field changes, or when the secure lifecycle ends.
+- Software keys, text actions, gestures, and IME edit commands route to the
+  local Private draft. Personalized learning and clipboard-history paths remain
+  disabled while Private mode is active.
+- Inherited detailed HeliBoard input diagnostics are suppressed for the Private
+  editor even when debug mode is enabled, so words and n-gram context are not
+  written to logcat.
+- The IME window uses `FLAG_SECURE` in Private mode. The separate protected
+  viewer and read-only `ACTION_PROCESS_TEXT` decryption flow remain activities.
+- Stable update guidance continues to use an external installer such as
+  Obtainium. CipherBoard has no in-app updater and requests neither Internet nor
+  package-install permission.
+
+### Security Notes
+
+- Android can deliver a physical keyboard directly to the focused host
+  application. Hardware keyboards must not be used to enter a Private draft;
+  use CipherBoard's on-screen keys.
+- Mutable buffers and UI text are wiped on a best-effort basis. Android views,
+  Binder, JNI, and the JVM may create copies, so complete RAM erasure cannot be
+  guaranteed.
+- The complete product has not received an independent applied-cryptography or
+  Android security audit.
+
 ## [0.1.1] - 2026-07-13
 
 ### Fixed
@@ -58,5 +103,6 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.2.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.2.0
 [0.1.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.1.1
 [0.1.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.1.0
