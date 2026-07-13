@@ -74,6 +74,13 @@ jobs:
           test -x "$sdkmanager"
           "$sdkmanager" --install "ndk;${ANDROID_NDK}"
 
+      - name: Grant the runner access to KVM
+        run: |
+          test -c /dev/kvm
+          sudo setfacl -m "u:${USER}:rw" /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
       - name: Run connected tests
         uses: ReactiveCircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
         with:
