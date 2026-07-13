@@ -4,7 +4,7 @@ Status: normative design for CipherBoard v1. Statements marked **MUST** are
 release requirements, not claims about the current worktree. Implementation
 status is tracked separately in `SECURITY_CHECKLIST.md`.
 
-### Current implementation snapshot (2026-07-13)
+### Current implementation snapshot (2026-07-14)
 
 The worktree currently contains four physical Gradle modules: `:app`,
 `:crypto-core`, `:secure-storage`, and `:pairing`. `keyboard`, `secure-ui`, and
@@ -20,10 +20,10 @@ Implemented source paths include:
 - `SecureKeyboardRuntime`, which commits an advanced ratchet plus pending
   outbound ciphertext before publication and commits replay, advanced ratchet,
   and encrypted pending-display plaintext before returning it to the viewer;
-- a separate `FLAG_SECURE` composer activity with no-learning editor flags,
+- an embedded Private mode panel above the keyboard keys, backed by a bounded
+  process-local draft connection, with no-learning/clipboard-history gates,
   best-effort buffer clearing, contact/vault status, Universal/SMS selection,
-  and a one-shot process-local handoff of an exact persisted pending ciphertext
-  back to the originating host editor through the active IME;
+  and ciphertext-only publication through the active IME;
 - bounded selected-text and `ACTION_PROCESS_TEXT` parsing, authenticated vault
   unlock, a drawing-only protected viewer, timeout/background clearing, and
   secure reply by internal contact ID;
@@ -34,12 +34,14 @@ Implemented source paths include:
 - a non-exported contact-details UI for fingerprint/Safety Number display,
   rename, reverify, session destruction, deletion, and explicit re-pairing.
 
-Pending outbound records are contact-bound and can be retried without another
-ratchet step. The handoff capability is single-use and is bound to the pending
-operation, exact ciphertext, original host package/UID, input field metadata,
-selection and `InputConnection`/binder identity. The composer only encrypts,
-persists and arms this handoff; `LatinIME` performs `commitText()` after the
-original host editor is restored and then completes the pending record.
+Pending outbound records are contact-bound. A `READY` operation may be offered
+once without another ratchet step. Before the external Binder call it is
+durably changed to `COMMIT_UNCERTAIN`; this state is never automatically
+retried because the host may have accepted text even when its acknowledgement
+was lost. The handoff is bound to the pending operation, exact ciphertext,
+original host package/UID, input field metadata, selection and exact
+`InputBinding.connectionToken`. `LatinIME` performs the only permitted host
+`commitText()` and completes the pending record after an accepted insertion.
 Inbound recovery is bound to the digest of the complete ordered ciphertext;
 an abandoned pre-render lease retains the encrypted pending display for an
 exact retry, while a rendered/closed lease deletes it under no-history policy.
@@ -80,7 +82,7 @@ same boundary MUST be enforced as a package plus an API/friend test.
 | --- | --- | --- |
 | `app/` | Application wiring, manifest, launcher/settings shell, receivers, dependency injection, branding | all Android-facing modules, not secret internals |
 | `keyboard/` | Existing HeliBoard IME, layouts, dictionaries, emoji, toolbar, `InputConnection` gateway | `secure-ui` facade and narrow transport commit API |
-| `secure-ui/` | Onboarding, contacts UI, secure composer/viewer, vault prompts, lifecycle wiping | pairing, storage, envelope, crypto facades |
+| `secure-ui/` | Onboarding, contacts UI, embedded Private panel, protected viewer, vault prompts, lifecycle wiping | pairing, storage, envelope, crypto facades |
 | `crypto-core/` | Rust `vodozemac` wrapper, identity/account/session operations, zeroization, JNI error mapping | `vodozemac`; no Android UI or database |
 | `secure-storage/` | Keystore wrapping key, in-memory DEK lease, encrypted records, transactions, recovery | Android Keystore/SQLite and opaque crypto state |
 | `pairing/` | Offer/response state machine, signatures, expiry/single-use checks, transcript, verification status | crypto, storage, QR codec facade |
@@ -108,8 +110,9 @@ modules do not by themselves mean the logical boundaries above are complete.
   ratchet mutation, validates caller-supplied text before unbounded allocation
   or storage, never returns a result containing plaintext, and has no arbitrary
   deep-link route.
-- Viewer, composer, pairing, contact-details, vault-settings and
-  security-information activities are non-exported. Pairing repair navigation
+- Viewer, legacy secure-reply composer, pairing, contact-details, vault-settings
+  and security-information activities are non-exported. The shield does not
+  launch the legacy composer. Pairing repair navigation
   carries only a short-lived process-local token rather than a raw contact ID.
 - Boot and screen-state receivers perform only lock/migration bookkeeping.
   They never open the secure database before user unlock.
@@ -139,7 +142,7 @@ enabled built-in layouts, selected theme, keyboard geometry, and similarly
 non-secret IME preferences. Static dictionaries and layouts remain packaged in
 the APK. Secure plaintext, identities, contact names, fingerprints, QR state,
 session state, replay state, pending operations, custom diagnostics, clipboard
-history, and learned secure-composer words are forbidden in DE storage.
+history, and words entered in the Private panel are forbidden in DE storage.
 
 ### CE vault
 
@@ -219,42 +222,59 @@ best-effort basis; documentation MUST not claim more.
 
 ## 6. IME Plaintext Isolation
 
-Secure Composer is currently a separate CipherBoard activity and does not edit
-the host application's field. It owns a private `EditText`; the selected system
-IME, normally CipherBoard itself, provides its input. The view disables state
-saving, autofill, selection/copy/cut/share and personalized-learning flags, and
-is cleared on stop/destroy. No plaintext intent extra or persistent draft API
-exists. This source inspection is not yet the required sentinel test proving
-absence from IME learning, clipboard history, saved state, logs, or storage.
+The shield toggles an embedded Private mode panel inside CipherBoard's IME
+window. It does not launch the composer activity. While active, software-key
+events and IME text-edit commands are routed to a bounded local
+`EmbeddedSecureInputConnection`, not to the host application's connection. The
+panel displays the draft above the ordinary keys, contact/Vault state,
+transport selection and explicit Encrypt/Clear/Close actions. No plaintext
+intent extra, saved-state field or persistent draft API exists.
+
+The interactive draft is capped at 32,768 UTF-16 code units, below the protocol
+core's 192-KiB plaintext ceiling, to bound UI work and wiping latency. UTF-8
+encoding still applies the core byte limit before encryption.
+
+After an accepted ciphertext insertion, the plaintext remains in the panel so
+the sender can verify what was sent. It is wiped on explicit clear or close,
+host-field/token change, screen lock, IME destruction or the relevant secure
+lifecycle transition. Mutable buffers and UI text are cleared best effort;
+Android rendering, Binder and JVM copies prevent a complete RAM-erasure claim.
 
 ### 6.1 CipherBoard-owned editor boundary
 
-Composition occurs in a separate CipherBoard activity, so plaintext key events
-target its private editor rather than the host application's editor. The
-composer refuses plaintext entry unless CipherBoard is the current default IME
-and observes default-IME changes while open. CipherBoard-owned fields force
-`IME_FLAG_NO_PERSONALIZED_LEARNING` and no-suggestion semantics in the upstream
-`InputAttributes` path; the plaintext editor also disables state saving,
-autofill, content capture, Accessibility exposure and ordinary copy/cut/share.
-A password-field launch requires an explicit warning. Instrumented sentinel
-tests with upstream clipboard/learning preferences enabled remain required.
+`LatinIME`, `InputLogic`, `RichInputConnection`, gesture callbacks and toolbar
+edit commands select the local draft connection while Private mode is active.
+Private-mode `EditorInfo` forces `IME_FLAG_NO_PERSONALIZED_LEARNING` and
+no-suggestion semantics; user-dictionary writes, emoji recents, personalized
+history, clipboard history, paste and plaintext clipboard fallbacks are
+disabled. The IME window sets `FLAG_SECURE`. Password fields require an
+explicit warning before activation.
+
+The scope stores the exact non-null `InputBinding.connectionToken` as well as
+package/UID and editor metadata. Any field or token change closes the panel and
+wipes the draft. The Vault-unlock activity is non-exported and may cause Android
+to recreate the connection; one explicit, metadata-matching token rebind is
+allowed only for that unlock return.
+
+Android physical-keyboard dispatch is outside this software-key routing
+boundary and may deliver characters directly to the focused host view. Private
+drafts therefore MUST be entered with CipherBoard's on-screen keys; hardware
+keyboard use is unsupported and warned against.
 
 ### 6.2 One-shot host commit gate
 
 Encryption obtains the exact contact-bound `PendingOutbound` created in the
-same revision-checked storage operation. `SecureImeBridge` arms one in-memory
-capability containing its operation ID and exact `CB1` parts, scoped to the
-original host package and UID, editor/field identifiers, selection, private
-IME options and `InputConnection`/binder identity. The composer never receives
-or invokes the host connection; it clears and closes after durable encryption.
+same revision-checked storage operation. `SecureImeBridge` receives a one-shot
+process-local claim containing its operation ID and exact `CB1` parts, scoped
+to the active embedded host scope, including the exact connection token.
 
-When the original host editor is restored, `LatinIME` consumes the capability
-once, revalidates the editor scope, and performs one `commitText()` containing
-only the stored ciphertext. On success it deletes the pending record. On scope
-mismatch or failure, no arbitrary text is authorized and the contact-filtered
-pending operation remains available for exact retry without another encryption
-step. Unit tests cover one-shot consumption and host/editor mismatch; a
-recording-host framework instrumentation test remains a release gate.
+After revalidating that scope, the bridge atomically marks the durable record
+`COMMIT_UNCERTAIN` and only then invokes the host `commitText()` once with the
+stored ciphertext. On accepted insertion it deletes the pending record. A false
+return, exception or process death after the state transition leaves an
+explicit uncertain record: it is shown as delivery-unknown and MUST NOT be
+automatically retried. The draft stays visible after success; clearing it is a
+separate explicit/lifecycle operation and is never part of publication.
 
 ## 7. Atomic Ratchet Operations
 
@@ -264,9 +284,9 @@ output bytes; Kotlin MUST not publish the output first.
 
 ### 7.1 Send
 
-The current store represents readiness by one contact-bound encrypted
-pending-outbound record and deletes it only after a successful scoped
-`commitText()` attempt. The inner message has no sender sequence; the persisted
+The store represents publication with a contact-bound encrypted
+pending-outbound record whose delivery state is `READY` or
+`COMMIT_UNCERTAIN`. The inner message has no sender sequence; the persisted
 ratchet revision supplies local concurrency control.
 
 1. Lock the contact and load session revision `n`.
@@ -274,20 +294,23 @@ ratchet revision supplies local concurrency control.
 3. Build and fragment the exact `CB1` wire representation.
 4. In one database transaction, store session revision `n+1` and an encrypted
    pending record containing contact ID and the exact ciphertext.
-5. Only after commit, mint the scoped commit capability and send the exact wire
-   bytes to the current host editor.
-6. If `InputConnection.commitText()` returns true, delete the pending record.
-   On false or scope mismatch, retain it for the contact-filtered retry action.
+5. Only after commit and exact connection-token validation, claim the `READY`
+   operation once.
+6. Atomically change it to `COMMIT_UNCERTAIN` before crossing the host Binder
+   boundary.
+7. Call `InputConnection.commitText()` once with the exact stored ciphertext.
+8. If it returns true, delete the pending record. On a false return, exception,
+   process death or acknowledgement loss, retain `COMMIT_UNCERTAIN` and do not
+   retry automatically.
 
 A crash before step 4 leaves revision `n` and no externally visible
-ciphertext. A crash after step 4 can be recovered from the already encrypted
-bytes without calling `encrypt()` again; the composer exposes the exact retry
-for the selected contact. A crash after the host accepted text but before
-pending deletion is inherently
-ambiguous because Android provides no transactional acknowledgement across
-application processes; the current record has no explicit "insertion status
-unknown" state. Receiver replay protection limits disclosure from a duplicate,
-but duplicate transport text can remain.
+ciphertext. A crash after step 4 but before step 6 leaves `READY`, which can be
+claimed once without another encryption step. From step 6 onward, delivery is
+inherently ambiguous because Android provides no transactional acknowledgement
+across application processes. The durable `COMMIT_UNCERTAIN` state prevents an
+automatic duplicate; the user must inspect the host transport before deciding
+what to do. Receiver replay protection still rejects delivery of the same
+ciphertext twice, but cannot remove duplicated transport text.
 
 ### 7.2 Receive
 
@@ -366,9 +389,11 @@ still absent.
 
 ## 9. Secure UI Lifecycle
 
-Composer and viewer windows set `FLAG_SECURE` and are excluded from recents by
-the source manifest. The composer disables autofill and clears its editor on
-`onStop`; the viewer disables autofill/content capture and Android 13+ recents
+The IME window sets `FLAG_SECURE` while the embedded Private panel is active;
+the panel is not a separate task or activity and therefore has no recent-app
+entry. The process-text/viewer activity remains protected and excluded from
+recents by the source manifest. The viewer disables autofill/content capture
+and Android 13+ recents
 screenshots, clears on pause/stop/UI-hidden, and closes on a fixed 60-second
 backend timeout (bounded by the viewer to 10 seconds through five minutes).
 Viewer plaintext is drawn by a non-focusable, non-selectable view excluded from

@@ -1,8 +1,8 @@
 # CipherBoard Security Review Status
 
-**Review date:** 2026-07-13
+**Review date:** 2026-07-14
 
-**Reviewed tree:** current 2026-07-13 worktree. A clean pre-public local signed
+**Reviewed tree:** current 2026-07-14 worktree. A clean pre-public local signed
 candidate was verified separately, but its local evidence bundle is not tracked
 or published and must not be transferred to the rewritten public history.
 
@@ -79,6 +79,23 @@ physical-device or GrapheneOS evidence.
   window, so device-credential fallback is available only on API 30 and newer.
   Existing pre-release credential-window envelopes remain readable but no new
   positive-duration legacy key is generated.
+- The v0.2 source replaces shield-to-activity navigation with an embedded
+  Private mode panel. Software-key and IME edit paths target a bounded local
+  draft, the active host is scoped by exact `InputBinding.connectionToken`, and
+  personalized learning/clipboard-history paths are disabled. Detailed
+  inherited InputLogic diagnostics are unconditionally suppressed for the
+  secure editor, including chosen words, n-gram context and code points; a
+  policy regression test covers this gate. Visual emulator
+  inspection confirmed that the panel remains inside the IME bounds and a
+  `FLAG_SECURE` capture was black; full host-field/leakage instrumentation on the
+  exact release commit remains required.
+- Pending outbound records now have versioned `READY` and
+  `COMMIT_UNCERTAIN` states. The latter is durably set before host
+  `commitText()` and is excluded from automatic retry. Codec, store and bridge
+  unit tests exist. Legacy schema-1 pending sends fail safe to
+  `COMMIT_UNCERTAIN`, since their prior handoff state is unknowable. The real
+  Binder acknowledgement/process-death window remains an explicit platform
+  test gap.
 
 ## Implemented Controls
 
@@ -89,9 +106,9 @@ physical-device or GrapheneOS evidence.
 | Replay | 4096 IDs in serialized session plus per-contact 8192-marker SQLite bound committed with inbound state | inbound SIGKILL/reopen test passes; wider long-run/device restart matrix remains |
 | Storage | AES-256-GCM records with type/key/schema/revision AAD; random nonces; no-backup CE location | stolen-DB, WAL/SHM, corruption and backup/transfer device tests |
 | Keystore | non-exportable AES wrapping key; StrongBox-first; only reported TEE accepted as fallback; software/unknown rejected; user authentication | real StrongBox/TEE/invalidation/reboot tests |
-| Send atomicity | advanced ratchet plus contact-bound exact pending ciphertext commit before a one-shot host/editor-scoped IME handoff; exact retry without re-encrypt | real SIGKILL before commit and after commit/before handoff pass; in-transaction and real host-ack window remain |
+| Send atomicity | advanced ratchet plus contact-bound exact pending ciphertext commit; `READY` changes durably to `COMMIT_UNCERTAIN` before one exact-token-scoped host commit; uncertain delivery cannot auto-retry | existing SIGKILL commit-boundary tests and new codec/store/bridge unit coverage; individual SQLite statements and real host-ack window remain |
 | Receive atomicity | replay, advanced ratchet and encrypted pending display commit together; exact-ciphertext digest recovery; pre-render abandon retains record | real post-commit SIGKILL and close/reopen pass; in-transaction failpoints remain |
-| Composer | separate `FLAG_SECURE` activity, no saved view state/autofill/copy/cut/paste/share, no-learning/clipboard-history gates, background clearing | hostile `InputConnection`, clipboard/learning/log/storage sentinel suite |
+| Private panel | shield toggles an embedded `FLAG_SECURE` IME panel; bounded RAM draft; software keys/edit actions route locally; no saved state/copy/cut/paste/share/learning/clipboard history; exact connection-token scope and lifecycle clearing | complete hostile-host, field-switch, hardware-keyboard, clipboard/learning/log/storage sentinel and GrapheneOS suite |
 | Decrypt/viewer | hostile selected-text bounds, read-only process-text result, vault auth, drawing-only inaccessible text, `FLAG_SECURE`, recents/background/timeout cleanup, reply by contact ID | process-text/FLAG_SECURE/background wipe/zeroization and clipboard fallback pass on AOSP; a separate `FLAG_SECURE` test screencap is black, while secure-viewer screenshot/recents/Assistant/Accessibility/screen-lock evidence remains |
 | Pairing/contact | signed native offer/response; encrypted one-shot state; bounded orphan cleanup; explicit comparison; changed identity blocks use until verification | live two-device, camera permission, lifecycle, process-kill and hostile-QR instrumentation |
 | QR | local ZXing codec and lifecycle-bound CameraX scanner with bounded ASCII payloads; Camera requested only by the Scan actions | real permission grant/deny/revoke and two-device camera evidence |
@@ -116,11 +133,12 @@ seven demonstrated API 36 AOSP tests. Specifically:
 
 This evidence does not inject a crash between individual SQLite statements
 inside one transaction, kill immediately around acknowledgement from a real
-host `InputConnection.commitText()`, or exercise a complete IME/composer/live-
+host `InputConnection.commitText()`, or exercise a complete IME/private-panel/live-
 camera pairing flow. Android cannot know whether a host accepted `commitText()`
-immediately before process death; recovery may reinsert the exact ciphertext
-but must never re-encrypt from stale state, and the receiver rejects a duplicate
-as replay. These are explicit remaining coverage gaps, not claims of a test pass.
+immediately before process death. The v0.2 handoff marks the operation
+`COMMIT_UNCERTAIN` before that call and does not automatically reinsert it; the
+user must inspect the transport. The receiver rejects a duplicate as replay.
+These are explicit remaining coverage gaps, not claims of a test pass.
 
 ## Residual Validation Before High-risk Use
 
@@ -150,6 +168,10 @@ code vulnerability when no such defect has been demonstrated.
   viewer grammar and smaller IME selection cap need device UX coverage.
 - JVM/Android UI objects, public routing/fingerprint summaries and local names
   cannot be guaranteed to zeroize before garbage collection.
+- Android may route a physical keyboard directly to the focused host view,
+  bypassing the IME's local Private draft. Private input is supported only with
+  CipherBoard's on-screen keys; a physical-device warning/host sentinel remains
+  required.
 - The 601,574-input ASan/libFuzzer run covers the envelope parser only; pairing,
   inner and JNI codecs need additional targets and longer scheduled campaigns.
 - Restricted temporary password files avoid command-line disclosure, but
@@ -162,6 +184,9 @@ closed in the current tree. Import bounds signed expiry against receiver time;
 secure editor/IME actions block paste and clipboard-history paths; Rust release
 profiles unwind into the JNI `catch_unwind` boundary; and destructive vault
 reset is offered only after observed key invalidation with explicit confirmation.
+The earlier shield-to-activity overlap is also closed by the embedded Private
+panel, and the external acknowledgement ambiguity is represented durably as
+`COMMIT_UNCERTAIN` rather than an automatically retryable send.
 
 ## APK Policy Review
 
@@ -179,12 +204,17 @@ validation, absence of native defects, absence of obfuscated behavior, or
 plaintext non-disclosure. It is a release blocker plus manual review, not an
 audit.
 
+CipherBoard intentionally provides no in-app updater and requests neither
+`INTERNET` nor `REQUEST_INSTALL_PACKAGES`. Stable update discovery is delegated
+to an external installer such as Obtainium using GitHub Releases; that installer
+is a separate networked trust boundary.
+
 ## Required Work Before High-risk Use
 
 1. Repeat and archive the seven passing AOSP instrumentation tests on the exact
    release commit; add individual SQLite-statement failpoints, the real
    `InputConnection.commitText()` acknowledgement window, and complete
-   IME/composer/pairing-camera E2E coverage.
+   IME/private-panel/pairing-camera E2E coverage.
 2. Run the full Gradle/Rust/static/fuzz/crash/leakage suite and repeat the pinned
    offline OSV scan on a clean commit.
 3. Exercise physical GrapheneOS, live camera pairing, StrongBox/TEE,

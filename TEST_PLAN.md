@@ -10,8 +10,8 @@ release report.
 Each development phase is gated. A phase with a failing required test does not
 advance and no failed/ignored test is relabelled as accepted without a written
 risk decision. Release has no waiver for `android.permission.INTERNET`, debug
-signing, `debuggable=true`, an invalid signature, or plaintext crossing the IME
-boundary.
+signing, `debuggable=true`, an invalid signature, forbidden `INTERNET` or
+`REQUEST_INSTALL_PACKAGES`, or plaintext crossing the IME boundary.
 
 Tests use generated Alice/Bob fixtures and conspicuous random sentinels. They
 never use production identities, contact names, signing credentials, or message
@@ -37,7 +37,7 @@ hardware/device acceptance gate.
 
 ### 1.1 Current evidence snapshot (not an independent audit)
 
-As of 2026-07-13, stored/reported local evidence is:
+As of 2026-07-14, stored/reported local evidence is:
 
 | Scope | Result | Limitation |
 | --- | --- | --- |
@@ -48,8 +48,8 @@ As of 2026-07-13, stored/reported local evidence is:
 | dependency vulnerability scan | official SHA-pinned OSV-Scanner v2.4.0 scanned all 255 SBOM packages against fresh offline Maven/crates.io DBs; exit 0/zero findings, including the pre-public local signed-candidate run | repeat and archive against the final public release SBOM |
 | offline licenses | unit test requires GPL/Apache/BlueOak/BSD/CC/notices/provenance assets to exist and be nonempty | final APK asset/manual completeness review pending |
 | pairing/contact | state-machine tests cover one-shot state, bounded orphan cleanup, duplicate/expiry and blocking identity change | no live-camera/permission/pairing E2E or pairing-specific process-kill evidence |
-| pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass before outbound commit, after outbound commit/before handoff, and after inbound commit | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
-| Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/composer/live-camera E2E |
+| pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass; v0.2 unit tests cover `READY` -> `COMMIT_UNCERTAIN`, no automatic retry, exact host-token scope and local draft routing | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
+| Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/private-panel/live-camera E2E |
 | debug Home UI smoke | current APK installs/launches; English and per-app `ru-RU` Home controls do not overlap; Russian landscape fits at font scale 1.3; locale-change process remains alive after the receiver fix | Home only; no full screen/theme/font-2.0/RTL matrix and no ordinary IME input claim |
 | signed release candidate | a clean pre-public local pipeline produced a non-debug-signed APK and passed scripted signature, permission, APK-policy, SBOM/vulnerability, and artifact-hash gates | its evidence bundle is local, untracked, and unpublished; rebuild and publish new evidence for the final public tag; physical install acceptance is not claimed |
 | GrapheneOS/physical devices | not run | D01-D14 remain residual validation prerequisites before high-risk use, not demonstrated critical code defects |
@@ -99,14 +99,14 @@ The following table maps the 30 required cryptographic/storage scenarios.
 | C13 | Other contact | Swap routing tag, identities, session or contact lookup; error precedes display and does not try alternate sessions unboundedly | Rust/storage integration |
 | C14 | Concurrent send | Barrier-start N sends on one contact; per-contact lock/revision serializes them, all IDs/keys unique; stale revision aborts | JVM/Rust concurrency |
 | C15 | Crash before state save | Kill after native encrypt/decrypt but before DB commit; old revision remains and no output/display was published | Instrumented failpoint |
-| C16 | Crash after state save | Kill after transaction commit; restart recovers exact pending send/display and never calls Olm operation again | Instrumented failpoint |
-| C17 | Crash before ciphertext transfer | Kill after pending commit before `InputConnection`; restart offers exact stored bytes, no ratchet advance | Android process kill |
+| C16 | Crash after state save | Before publication boundary, restart recovers exact `READY` send/display state without another Olm operation; after `COMMIT_UNCERTAIN`, it reports delivery unknown and cannot auto-retry | Instrumented failpoint |
+| C17 | Crash before ciphertext transfer | Kill before and after the durable `COMMIT_UNCERTAIN` transition; `READY` remains single-claimable, while uncertain state is never automatically inserted | Android process kill |
 | C18 | Delete contact | Session/contact/pending records become inaccessible; ciphertext no longer decrypts; database contains no plaintext | Storage + device filesystem |
 | C19 | Re-pair | New IDs/nonces/one-time key/transcript/routing/session; old route fails; local name policy is explicit | Integration + UI |
 | C20 | Identity change | Reinstall/reset peer fixture yields `KEY_CHANGED`; send/decrypt blocked until new physical pairing | JVM + device lifecycle |
 | C21 | Unicode classes | Russian, English, combining marks, emoji/ZWJ, Arabic/RTL, CJK, math, newlines, NUL, bidi and zero-width code points round-trip byte-exactly | Parameterized/property + UI |
 | C22 | Empty message | Empty UTF-8 body is valid, encrypts/decrypts, displays empty-state without confusing it with failure | Rust + UI |
-| C23 | Very long message | Exactly the approved body limit succeeds if the selected profile fits and +1 byte fails before mutation; provisional Rust limit is 196,608 bytes | Boundary/property |
+| C23 | Very long message | Core accepts exactly 196,608 plaintext bytes and rejects +1 before mutation; embedded Private draft accepts at most 32,768 UTF-16 code units and rejects the next edit without unbounded UI/wipe work | Boundary/property + UI |
 | C24 | Maximum parts | Exactly 128 consistent parts reassemble out of order within aggregate limit | Parser/property |
 | C25 | Too many parts | Count 129, part 129, oversized aggregate, and fragmenter result >128 are rejected before allocation/decrypt | Parser/fuzz |
 | C26 | Replay after restart | Commit receive, kill process, reopen vault, redeliver; persisted ledger/ratchet reject it | Android/storage restart |
@@ -156,17 +156,19 @@ and durable-state checks after reopening the database.
 | After load/before encrypt | no change | nothing sent |
 | After encrypt/before transaction | revision unchanged; no pending | nothing sent |
 | During transaction before commit | full rollback | nothing sent |
-| Immediately after commit | revision +1 and exact encrypted pending-outbound row (logical `READY_TO_COMMIT`) | nothing sent yet |
-| After capability mint | same pending; capability gone on process death | nothing sent yet |
-| Before `commitText` | same pending | nothing sent |
-| Host returns false | same pending; one capability consumed | no accepted insertion |
-| Host accepts/before pending deletion | exact pending remains on recovery | host may contain exact ciphertext; retry may duplicate but never re-encrypt |
+| Immediately after commit | revision +1 and exact encrypted pending-outbound row in `READY` | nothing sent yet |
+| After one-shot claim | same `READY`; process-local claim consumed on death | nothing sent yet |
+| After durable publication transition/before `commitText` | exact pending is `COMMIT_UNCERTAIN` | insertion may or may not follow; never auto-retry |
+| Host returns false or throws | `COMMIT_UNCERTAIN` remains | host acceptance is unknown; never auto-retry |
+| Host accepts/before pending deletion | `COMMIT_UNCERTAIN` remains on recovery | host may contain exact ciphertext; report unknown instead of retrying |
 | After pending deletion | advanced state and no pending | exact ciphertext only |
 
 The host recording double returns configurable true/false, kills the process at
 method entry/return, and records every invoked `InputConnection` method. An
-ambiguous host acknowledgement is not described as exactly-once delivery;
-explicit retry uses identical bytes and receiver replay protection.
+ambiguous host acknowledgement is not described as exactly-once delivery. The
+test must prove `COMMIT_UNCERTAIN` cannot be claimed by automatic or ordinary
+retry APIs. A user can inspect the host field; receiver replay protection is a
+last line of defense, not permission to duplicate transport text.
 
 ### Receive failpoints
 
@@ -237,7 +239,7 @@ single-line, multiline, SMS-like, Telegram-like, RTL, and password
 `EditorInfo` configurations. Ordinary behavior may retain upstream features;
 secure-mode isolation must not weaken when those preferences are enabled.
 
-### 6.2 Secure composer and `InputConnection` defense
+### 6.2 Embedded Private panel and `InputConnection` defense
 
 Use a `RecordingInputConnection` that records arguments to every method,
 including `commitText`, `setComposingText`, `setComposingRegion`,
@@ -249,16 +251,28 @@ For a unique plaintext sentinel, exercise tap, long-press, suggestion, gesture,
 emoji, composition, space/enter, delete, language switch, orientation, editor
 restart, toolbar actions, app completion, and race entry/exit. Expected:
 
-- the sentinel appears only in the private composer view/memory lifetime;
+- the sentinel appears only in the embedded Private panel/view memory lifetime;
 - zero host-mutating calls contain plaintext or a derived composing fragment;
 - personal learning, emoji recents, user dictionary and clipboard history get
   no secure entry;
 - no surrounding host text is requested while composing;
-- only a one-use capability can call `commitText`, with exact persisted `CB1`;
-- false/stale editor/capability/token/bytes are rejected;
+- only a one-use claim can call `commitText`, with exact persisted `CB1`, after
+  the pending state became `COMMIT_UNCERTAIN`;
+- false/stale editor/claim/bytes and any mismatched
+  `InputBinding.connectionToken` are rejected;
 - no printable key-event or alternate `InputConnection` path bypasses the gate;
-- successful accepted insertion wipes composer and leaves only ciphertext; and
+- successful accepted insertion leaves ciphertext only in the host while the
+  plaintext remains visible in the panel until Clear/Close/field change;
+- explicit clear/close, host package/UID/field/token change, screen lock and IME
+  destruction wipe the local draft best effort;
+- a false return/exception/crash after `COMMIT_UNCERTAIN` cannot auto-retry;
+- the IME window has `FLAG_SECURE` only while Private mode is active; and
 - password fields show the warning and never auto-open/auto-commit.
+
+Run a physical-keyboard sentinel separately. Android may dispatch hardware key
+events directly to the focused host view, so the expected product behavior is
+an explicit unsupported/warning state, never a claim that those characters are
+captured by the Private draft. Private composition uses the on-screen keys.
 
 A static test enumerates direct `getCurrentInputConnection` and
 `InputConnection` mutation calls and compares them with a reviewed allowlist.
@@ -358,7 +372,7 @@ used. There is no UI/intent for remote pairing in v1.
 
 ## 9. Leakage and Logging Tests
 
-Inject a fresh high-entropy sentinel through composer and decrypt viewer, then:
+Inject a fresh high-entropy sentinel through the Private panel and decrypt viewer, then:
 
 1. capture logcat before/during/after success, every error, rotation, kill and
    crash; search plaintext, full ciphertext/QR, keys, full fingerprints, Safety
@@ -374,7 +388,7 @@ Inject a fresh high-entropy sentinel through composer and decrypt viewer, then:
    paths and forbidden debug facilities.
 
 The test passes only when plaintext is absent everywhere except the active
-private composer/viewer memory and pixels allowed by the design. Absolute JVM/
+Private panel/viewer memory and pixels allowed by the design. Absolute JVM/
 GPU RAM erasure is not asserted.
 
 ## 10. Static Analysis and Dependency Gates
@@ -411,7 +425,8 @@ Release additionally requires:
 - license compatibility/notices verification;
 - source/dependency scan for network clients, localhost, Firebase, Play
   services, analytics, crash, ads, WebView, reflection/dynamic loaders;
-- manifest review of permissions, exported components, intent filters,
+- manifest review that treats both `INTERNET` and
+  `REQUEST_INSTALL_PACKAGES` as forbidden, plus exported components, intent filters,
   providers, PendingIntent mutability, deep links, backup/data extraction,
   cleartext policy, and `usesCleartextTraffic`;
 - path traversal/ZIP import/QR and styled-span parser tests;
@@ -479,7 +494,7 @@ critical code vulnerability.
 | D08 Direct boot | Reboot without first unlock; direct-boot-disabled secure components do not access CE state; after unlock ordinary IME works and vault remains locked until authentication |
 | D09 Window protection | Hardware/system screenshot, screen recording, recents, screen-off and lock tests show no plaintext capture |
 | D10 Accessibility | Test Accessibility service/UiAutomation cannot extract protected plaintext; warning explains malicious services remain out of scope |
-| D11 Host interoperability | AOSP SMS draft and local Telegram-like single/multiline hosts receive only exact ciphertext; selection decrypt leaves source unchanged |
+| D11 Host interoperability | AOSP SMS draft and local Telegram-like single/multiline hosts receive only exact ciphertext; selection decrypt leaves source unchanged; exact-token field switches wipe/close; a physical-key sentinel demonstrates the documented bypass limitation |
 | D12 Camera permission | Camera is unrequested until Scan, grant/deny/revoke paths work fully offline |
 | D13 Destructive lifecycle | App data clear/reinstall changes identity and peer shows critical key change/pairing required |
 | D14 Locked-device theft model | With device locked/rebooted, CE vault unavailable; DB copy available to test harness contains only authenticated ciphertext |
@@ -496,7 +511,7 @@ At least one non-Play AOSP `x86_64` emulator is also required for repeatable
 | 2 Crypto | C01-C27 applicable host tests, golden vectors, property/fuzz smoke, Rust fmt/clippy/test/audit |
 | 3 Storage | atomic fault matrix, encryption/leak scans, backup/direct-boot separation, fake and real Keystore baseline |
 | 4 Pairing | signed QR negative matrix, two-device transcript/Safety match, camera permission and single-use tests |
-| 5 Secure keyboard | recording-connection bypass suite, ordinary regression, password warning, ciphertext-only commit/recovery |
+| 5 Secure keyboard | embedded-panel/local-draft recording-connection suite, ordinary regression, exact-token scope, password/hardware warnings, `READY`/`COMMIT_UNCERTAIN` ciphertext-only publication |
 | 6 Decryption | both entry points, viewer lifecycle, replay/reorder, no result/clipboard/plaintext leakage |
 | 7 UX/localization | en/ru, themes, font/orientation/RTL/accessibility and understandable error-state review |
 | 8 Hardening | full fuzz/static/dependency/native/log/manifest/security review; all findings resolved or release-blocked |

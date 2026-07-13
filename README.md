@@ -19,8 +19,8 @@
 
 CipherBoard is an offline-first encrypted text keyboard for Android, designed
 primarily for current GrapheneOS devices. It combines a HeliBoard-based input
-method with local identities, physical QR pairing, a protected composer, and a
-protected message viewer.
+method with local identities, physical QR pairing, an embedded Private panel,
+and a protected message viewer.
 
 CipherBoard is an unofficial modified fork of HeliBoard. It is not an official
 HeliBoard release and is not endorsed or supported by the HeliBoard project.
@@ -35,12 +35,14 @@ HeliBoard release and is not endorsed or supported by the HeliBoard project.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.1.1` |
+| Maturity | Pre-1.0; current version `0.2.0` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
 | Runtime network | No Internet or network-state permission; no runtime network feature |
 | Interface languages | English and Russian |
+
+See the bilingual [CipherBoard 0.2.0 release notes](docs/releases/v0.2.0.md).
 
 ## What It Does
 
@@ -53,8 +55,8 @@ accounts, phone numbers, email addresses, or a CipherBoard server:
    code.
 3. Both people compare the same Safety Number before marking the contact as
    verified.
-4. The sender opens the shield action in the keyboard and writes in the
-   CipherBoard-owned Secure Composer.
+4. The sender taps the shield to switch the keyboard into Private mode and
+   writes in the CipherBoard-owned panel above the keys.
 5. CipherBoard advances and durably stores the Olm ratchet, then commits only a
    `CB1:` ciphertext envelope to the external app.
 6. The recipient selects the ciphertext and uses **Decrypt in CipherBoard**.
@@ -77,16 +79,20 @@ can carry text. CipherBoard does not send messages itself.
   version 2 session configuration. CipherBoard does not implement Curve25519,
   Ed25519, AEAD, or the Double Ratchet primitives itself.
 - Ratchet state, replay state, and pending operations are transactionally
-  committed before ciphertext leaves the IME or plaintext is displayed.
+  committed before ciphertext leaves the IME or plaintext is displayed. A
+  pending send moves from `READY` to durable `COMMIT_UNCERTAIN` before the host
+  `commitText()` call; an uncertain operation is never retried automatically.
 - Vault records are encrypted with a random data-encryption key wrapped by a
   non-exportable, hardware-backed Android Keystore key. StrongBox is attempted
   first; a verified TEE-backed key is the fallback. Software-only keys are not
   accepted.
 - Android backup and device-transfer extraction are disabled for application
   data.
-- Secure Composer disables personalized learning, suggestions, clipboard
-  history, copy/cut/paste actions, autofill, saved view state, and content
-  capture. It never commits plaintext through the host `InputConnection`.
+- Private mode keeps a bounded draft in the IME process, disables personalized
+  learning, suggestions, clipboard history, copy/cut/paste, saved view state,
+  and content capture, and protects the IME window with `FLAG_SECURE`. Software
+  key input is routed to the local draft; only persisted ciphertext can reach
+  the host `InputConnection`.
 - The protected viewer uses `FLAG_SECURE`, disables plaintext selection and
   sharing, clears on backgrounding, and does not return plaintext through
   `ACTION_PROCESS_TEXT`.
@@ -104,7 +110,9 @@ absolute guarantees.
 
 The normal keyboard mode retains HeliBoard behavior and may use learning or
 clipboard features according to its ordinary settings. The stricter controls
-above apply to Secure Composer and the protected viewer.
+above apply to Private mode and the protected viewer. Private drafts must be
+entered with the on-screen keyboard: Android can deliver a hardware keyboard
+directly to the focused host application, bypassing IME draft routing.
 
 Read the complete [threat model](THREAT_MODEL.md),
 [protocol specification](CRYPTO_PROTOCOL.md), and current
@@ -122,14 +130,14 @@ project and assume it is CipherBoard.
 Verify the release checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.1.1-release.apk.sha256
+sha256sum --check CipherBoard-0.2.0-release.apk.sha256
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.1.1-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.1.1-release.apk.sha256
+(Get-FileHash .\CipherBoard-0.2.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.2.0-release.apk.sha256
 ```
 
 If Android Build Tools are installed, also verify the APK signature and compare
@@ -138,13 +146,13 @@ the reported SHA-256 certificate digest with
 digest through a channel you trust independently of the APK download.
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.1.1-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.2.0-release.apk
 ```
 
 Install or update the verified APK:
 
 ```sh
-adb install -r CipherBoard-0.1.1-release.apk
+adb install -r CipherBoard-0.2.0-release.apk
 ```
 
 Debug APKs are developer artifacts signed with a public debug key. Do not use
@@ -156,6 +164,11 @@ disabled. CipherBoard does not contact GitHub or update itself; the external
 installer is a separate trust boundary and is the only component that needs
 network access. Android may require confirmation for the first install or an
 update, depending on OS policy and which installer owns the existing install.
+CipherBoard intentionally has neither `android.permission.INTERNET` nor
+`android.permission.REQUEST_INSTALL_PACKAGES`, so an in-app updater is outside
+its security model. Use the release-asset filter
+`^CipherBoard-[0-9]+\.[0-9]+\.[0-9]+-release\.apk$` so source archives and debug
+artifacts are not selected.
 
 Do not uninstall CipherBoard before updating. Install the new APK over the
 existing application so Android can verify signing-certificate continuity and
@@ -192,10 +205,13 @@ silently accept a changed key.
 
 ### 4. Send and decrypt
 
-To send, focus the destination text field, open CipherBoard, tap the shield,
-choose a verified contact, write the message, and tap **Encrypt**. Confirm the
-action that inserts the resulting ciphertext. The host field must receive only
-text beginning with `CB1:`.
+To send, focus the destination text field, open CipherBoard, and tap the shield.
+The keyboard expands a Private mode panel above its keys without opening a
+separate screen. Choose a verified contact, write with the on-screen keys, and
+tap **Encrypt**. The plaintext remains visible in that panel after a successful
+insertion so you can confirm what was sent; it is wiped when you clear or close
+the panel or move to another host field. The host field receives only text
+beginning with `CB1:`. Do not type a private draft with a hardware keyboard.
 
 To receive, select all ciphertext parts in the transport app and choose
 **Decrypt in CipherBoard** from Android's text actions. Confirm decryption,
@@ -210,8 +226,9 @@ to decrypt again after its temporary local display record is removed.
 
 CipherBoard - офлайн-клавиатура для обмена зашифрованным текстом без аккаунтов,
 телефонных номеров и сервера CipherBoard. Обычный режим основан на HeliBoard. В
-защищённом режиме открытый текст вводится в собственном редакторе CipherBoard,
-а внешнему приложению передаётся только шифротекст `CB1:`.
+приватном режиме над клавишами открывается собственная панель CipherBoard:
+программные клавиши пишут в локальный черновик, а внешнему приложению передаётся
+только шифротекст `CB1:`.
 
 Для начала:
 
@@ -219,23 +236,29 @@ CipherBoard - офлайн-клавиатура для обмена зашифр
    SHA-256 и fingerprint сертификата подписи.
 2. Для обновлений без выдачи CipherBoard сетевого доступа добавьте
    `https://github.com/bglglzd/CipherBoard` в Obtainium и отключите получение
-   pre-release. Не удаляйте приложение перед обновлением: установите новую
-   версию поверх старой, чтобы сохранить Vault, identity, контакты и состояние
-   ratchet.
+   pre-release. Установите фильтр release-файлов
+   `^CipherBoard-[0-9]+\.[0-9]+\.[0-9]+-release\.apk$`. Не удаляйте приложение
+   перед обновлением: установите новую версию поверх старой, чтобы сохранить
+   Vault, identity, контакты и состояние ratchet.
 3. Включите CipherBoard в системных настройках клавиатур. На GrapheneOS
    дополнительно запретите приложению Network.
 4. Создайте локальную identity и разблокируйте Vault.
 5. Выполните взаимное физическое QR-сопряжение двух устройств.
 6. Полностью сравните Safety Number на обоих экранах и только после этого
    подтвердите контакт.
-7. Для отправки нажмите кнопку со щитом, выберите контакт, введите сообщение и
-   зашифруйте его. Во внешнем поле должен появиться только `CB1:`-шифротекст.
+7. Для отправки нажмите кнопку со щитом, выберите проверенный контакт, введите
+   сообщение программными клавишами и нажмите **Зашифровать**. Открытый текст
+   останется в панели для проверки, а во внешнем поле появится только
+   `CB1:`-шифротекст. Черновик очищается при очистке/закрытии панели или смене
+   внешнего поля. Не используйте для приватного черновика физическую клавиатуру:
+   Android может направить её ввод прямо во внешнее приложение.
 8. Для чтения выделите шифротекст и выберите **Расшифровать в CipherBoard**.
 
-CipherBoard не проверяет обновления самостоятельно и по-прежнему не имеет
-разрешения `android.permission.INTERNET`. Сеть использует только выбранный вами
-внешний установщик. Android может потребовать подтверждение первой установки
-или обновления. Подробности приведены в [инструкции для
+CipherBoard не проверяет и не устанавливает обновления самостоятельно: у него
+нет разрешений `android.permission.INTERNET` и
+`android.permission.REQUEST_INSTALL_PACKAGES`. Сеть использует только выбранный
+вами внешний установщик, например Obtainium. Android может потребовать
+подтверждение первой установки или обновления. Подробности приведены в [инструкции для
 GrapheneOS](docs/GRAPHENEOS.md).
 
 Приложение не считается независимо аудированным. Оно не защищает от полного
@@ -271,7 +294,7 @@ session state.
 
 | Path | Responsibility |
 | --- | --- |
-| `app/` | HeliBoard-based IME, onboarding, contacts, composer, viewer, and Android integration |
+| `app/` | HeliBoard-based IME, embedded Private panel, onboarding, contacts, protected viewer, and Android integration |
 | `crypto-core/` | Minimal Kotlin/JNI boundary and Rust `vodozemac` protocol core |
 | `secure-storage/` | Keystore key management, encrypted records, replay state, and atomic operations |
 | `pairing/` | Offline pairing state machine and local QR integration |
