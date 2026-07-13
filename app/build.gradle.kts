@@ -29,7 +29,7 @@ val prepareLicenseAssets by tasks.registering(Sync::class) {
 plugins {
     id("com.android.application")
     kotlin("android")
-    kotlin("plugin.serialization") version "2.3.20"
+    kotlin("plugin.serialization") version "2.4.0"
     kotlin("plugin.compose") version "2.3.20"
 }
 
