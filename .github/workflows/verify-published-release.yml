@@ -240,7 +240,7 @@ jobs:
           apk="$assets/$ARTIFACT_NAME-$VERSION_NAME-release.apk"
           expected_source="$RUNNER_TEMP/$ARTIFACT_NAME-$VERSION_NAME-source.tar"
           released_source="$assets/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz"
-          git archive --format=tar \
+          git -c tar.umask=0002 archive --format=tar \
             --prefix="$ARTIFACT_NAME-$VERSION_NAME-source/" \
             --output="$expected_source" \
             "$SOURCE_COMMIT"
@@ -317,7 +317,15 @@ jobs:
           expected = inventory(expected_path, "r:", source_prefix)
           released = inventory(released_path, "r:gz", source_prefix)
           if released != expected:
-              raise SystemExit("released source archive does not match the tagged Git tree")
+              for index in range(max(len(released), len(expected))):
+                  released_entry = released[index] if index < len(released) else None
+                  expected_entry = expected[index] if index < len(expected) else None
+                  if released_entry != expected_entry:
+                      raise SystemExit(
+                          "released source archive does not match the tagged Git tree "
+                          f"at entry {index}: released={released_entry!r}, expected={expected_entry!r}"
+                      )
+              raise SystemExit("released source archive inventory length mismatch")
           PY
 
           python - "$assets" "$apk" "$SOURCE_COMMIT" "$VERSION_NAME" <<'PY'
