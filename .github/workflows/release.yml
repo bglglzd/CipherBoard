@@ -160,7 +160,12 @@ jobs:
             :pairing:testDebugUnitTest :secure-storage:testDebugUnitTest \
             :app:assembleRelease
           git diff --exit-code -- app/gradle.lockfile '**/Cargo.lock'
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          dirty=$(git status --porcelain=v1 --untracked-files=all)
+          if [[ -n "$dirty" ]]; then
+            echo 'Release build modified the checked-out source tree:' >&2
+            printf '%s\n' "$dirty" >&2
+            exit 1
+          fi
 
       - name: Enforce unsigned APK policy
         env:
