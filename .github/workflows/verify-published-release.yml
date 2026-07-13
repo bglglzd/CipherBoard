@@ -239,13 +239,86 @@ jobs:
           assets="$RUNNER_TEMP/release-assets"
           apk="$assets/$ARTIFACT_NAME-$VERSION_NAME-release.apk"
           expected_source="$RUNNER_TEMP/$ARTIFACT_NAME-$VERSION_NAME-source.tar"
-          released_source="$RUNNER_TEMP/released-source.tar"
+          released_source="$assets/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz"
           git archive --format=tar \
             --prefix="$ARTIFACT_NAME-$VERSION_NAME-source/" \
             --output="$expected_source" \
             "$SOURCE_COMMIT"
-          gzip -dc -- "$assets/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz" >"$released_source"
-          cmp -- "$expected_source" "$released_source"
+
+          python - "$expected_source" "$released_source" "$ARTIFACT_NAME-$VERSION_NAME-source/" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+          import tarfile
+
+          MAX_ENTRIES = 100_000
+          MAX_TOTAL_FILE_BYTES = 512 * 1024 * 1024
+          READ_CHUNK_BYTES = 1024 * 1024
+
+
+          def digest_file(handle) -> str:
+              digest = hashlib.sha256()
+              while chunk := handle.read(READ_CHUNK_BYTES):
+                  digest.update(chunk)
+              return digest.hexdigest()
+
+
+          def inventory(path: pathlib.Path, mode: str, prefix: str) -> list[tuple[object, ...]]:
+              entries: list[tuple[object, ...]] = []
+              names: set[str] = set()
+              total_file_bytes = 0
+              root_name = prefix.removesuffix("/")
+              with tarfile.open(path, mode) as archive:
+                  for member in archive:
+                      name = member.name
+                      parsed = pathlib.PurePosixPath(name)
+                      outside_prefix = name != root_name and not name.startswith(prefix)
+                      if parsed.is_absolute() or ".." in parsed.parts or outside_prefix:
+                          raise SystemExit(f"unsafe source archive path: {name!r}")
+                      if name in names:
+                          raise SystemExit(f"duplicate source archive path: {name!r}")
+                      names.add(name)
+                      if len(names) > MAX_ENTRIES:
+                          raise SystemExit("source archive entry limit exceeded")
+
+                      content_digest = None
+                      if member.isfile():
+                          total_file_bytes += member.size
+                          if total_file_bytes > MAX_TOTAL_FILE_BYTES:
+                              raise SystemExit("source archive expanded-size limit exceeded")
+                          handle = archive.extractfile(member)
+                          if handle is None:
+                              raise SystemExit(f"source archive file has no content: {name!r}")
+                          content_digest = digest_file(handle)
+                          entry_type = "file"
+                      elif member.isdir():
+                          entry_type = "directory"
+                      elif member.issym():
+                          entry_type = "symlink"
+                      else:
+                          raise SystemExit(f"unsupported source archive entry type: {name!r}")
+
+                      entries.append(
+                          (
+                              name,
+                              entry_type,
+                              member.mode & 0o7777,
+                              member.linkname,
+                              member.size,
+                              content_digest,
+                          )
+                      )
+              return entries
+
+
+          expected_path = pathlib.Path(sys.argv[1])
+          released_path = pathlib.Path(sys.argv[2])
+          source_prefix = sys.argv[3]
+          expected = inventory(expected_path, "r:", source_prefix)
+          released = inventory(released_path, "r:gz", source_prefix)
+          if released != expected:
+              raise SystemExit("released source archive does not match the tagged Git tree")
+          PY
 
           python - "$assets" "$apk" "$SOURCE_COMMIT" "$VERSION_NAME" <<'PY'
           import hashlib
