@@ -346,6 +346,11 @@ public final class SecureSurfaceInstrumentationTest {
         }
 
         @Override
+        public boolean canDisplayPlaintext() {
+            return true;
+        }
+
+        @Override
         public boolean openSecureReply(Activity host, SecureReplyToken token) {
             return false;
         }

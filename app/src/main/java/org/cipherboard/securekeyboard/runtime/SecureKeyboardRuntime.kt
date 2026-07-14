@@ -45,8 +45,9 @@ class SecureKeyboardRuntime private constructor(
     private val recordStore: VaultRecordStore = VaultRecordStore(application, lockController),
     private val contacts: ContactVaultRepository = ContactVaultRepository(recordStore),
     private val clock: EpochMillisSource = SystemEpochMillisSource,
-) : Closeable {
+) : Closeable, SecureRuntimeLifecycleTarget {
     private val operationLock = ReentrantLock()
+    @Volatile private var secureImeForeground = false
     private var keyInvalidationObserved = false
     private val lifecycle = SecureRuntimeLifecycle(application, this)
     private val pairing = PairingRuntimeCoordinator(
@@ -103,10 +104,20 @@ class SecureKeyboardRuntime private constructor(
         mapUnlockRequest(keyManager.completeCryptoObjectAuthentication(request, result))
     }
 
-    fun lockVault() = lockController.lock()
-    fun onBackgrounded() = lockController.onBackgrounded()
-    fun onForegrounded(): Boolean = lockController.onForegrounded()
-    fun lockIfExpired(): Boolean = lockController.lockIfExpired()
+    override fun lockVault() = lockController.lock()
+    override fun onBackgrounded() = lockController.onBackgrounded()
+    override fun onForegrounded(): Boolean = lockController.onForegrounded()
+    fun onSecureImeForegrounded(): Boolean {
+        secureImeForeground = true
+        return lockController.onForegrounded()
+    }
+    fun onSecureImeBackgrounded() {
+        secureImeForeground = false
+        lockController.onBackgrounded()
+    }
+    override val isSecureImeForeground: Boolean
+        get() = secureImeForeground
+    override fun lockIfExpired(): Boolean = lockController.lockIfExpired()
 
     /** Irreversibly clears an unreadable Vault after Android Keystore invalidation was observed. */
     fun resetInvalidatedVault() = operationLock.withLock {

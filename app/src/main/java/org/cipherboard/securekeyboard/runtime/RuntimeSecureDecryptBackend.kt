@@ -27,6 +27,8 @@ import org.cipherboard.cryptocore.CipherBoardCrypto
 import org.cipherboard.cryptocore.CryptoCoreException
 import org.cipherboard.cryptocore.CryptoErrorCode
 import org.cipherboard.securestorage.ContactVerificationStatus
+import org.cipherboard.securestorage.VaultLockedException
+import java.security.MessageDigest
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -99,6 +101,34 @@ class RuntimeSecureDecryptBackend(
             }
         }
         return operation
+    }
+
+    override fun decryptUnlocked(
+        parsed: ParsedCiphertext,
+        callback: (DecryptResult) -> Unit,
+    ): DecryptOperation {
+        val request = parsed as? RuntimeParsedCiphertext
+            ?: return DecryptOperation { }.also {
+                callback(DecryptResult.Failure(DecryptFailureReason.INVALID_CIPHERTEXT))
+            }
+        val operation = RuntimeDecryptOperation(callback)
+        if (!runtime.isVaultUnlocked) {
+            operation.fail(DecryptFailureReason.VAULT_LOCKED)
+            return operation
+        }
+        val parts = try {
+            request.parts()
+        } catch (_: RuntimeException) {
+            operation.fail(DecryptFailureReason.INVALID_CIPHERTEXT)
+            return operation
+        }
+        decryptOnWorker(operation, parts)
+        return operation
+    }
+
+    override fun canDisplayPlaintext(): Boolean {
+        runtime.lockIfExpired()
+        return runtime.isVaultUnlocked
     }
 
     private fun handleUnlock(
@@ -254,7 +284,7 @@ class RuntimeSecureDecryptBackend(
                 }
             } catch (error: Throwable) {
                 // The ratchet may already have advanced and committed an encrypted pending-display
-                // record. Preserve it until a viewer actually renders the plaintext so an Activity
+                // record. Preserve it until a viewer actually renders the plaintext so a viewer
                 // interruption cannot make the message unrecoverable.
                 operation.fail(error.toDecryptFailure())
             }
@@ -308,6 +338,7 @@ class RuntimeSecureDecryptBackend(
 }
 
 internal fun decryptFailureFor(error: Throwable): DecryptFailureReason = when (error) {
+    is VaultLockedException -> DecryptFailureReason.VAULT_LOCKED
     is SecureRuntimeException -> when (error.reason) {
             SecureRuntimeError.WRONG_CONTACT, SecureRuntimeError.CONTACT_NOT_FOUND ->
                 DecryptFailureReason.WRONG_CONTACT
@@ -367,6 +398,10 @@ private class RuntimeReplyToken(contactId: ByteArray) : SecureReplyToken {
 
     @Synchronized
     fun contactId(): ByteArray = value?.copyOf() ?: throw IllegalStateException("Reply token is closed")
+
+    @Synchronized
+    override fun matchesContact(candidateId: ByteArray): Boolean =
+        value?.let { MessageDigest.isEqual(it, candidateId) } == true
 
     @Synchronized
     override fun close() {

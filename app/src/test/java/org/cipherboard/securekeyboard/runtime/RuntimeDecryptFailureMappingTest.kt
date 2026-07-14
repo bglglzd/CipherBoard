@@ -4,6 +4,7 @@ package org.cipherboard.securekeyboard.runtime
 import helium314.keyboard.secure.decrypt.DecryptFailureReason
 import org.cipherboard.cryptocore.CryptoCoreException
 import org.cipherboard.cryptocore.CryptoErrorCode
+import org.cipherboard.securestorage.VaultLockedException
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -35,6 +36,14 @@ class RuntimeDecryptFailureMappingTest {
         assertEquals(
             DecryptFailureReason.WRONG_CONTACT,
             decryptFailureFor(CryptoCoreException(CryptoErrorCode.WRONG_CONTACT.wireValue)),
+        )
+    }
+
+    @Test
+    fun vaultExpiryRaceRemainsAUnlockableFailure() {
+        assertEquals(
+            DecryptFailureReason.VAULT_LOCKED,
+            decryptFailureFor(VaultLockedException()),
         )
     }
 }

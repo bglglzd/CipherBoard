@@ -6,7 +6,7 @@ import androidx.fragment.app.FragmentActivity
 import java.io.Closeable
 
 /**
- * Narrow bridge between the exported text action and the application crypto/storage runtime.
+ * Narrow bridge between secure plaintext surfaces and the application crypto/storage runtime.
  *
  * Implementations must atomically persist the advanced inbound ratchet and an encrypted pending
  * display record before returning [DecryptResult.Success]. A callback may be delivered on any
@@ -20,6 +20,28 @@ interface SecureDecryptBackend {
         parsed: ParsedCiphertext,
         callback: (DecryptResult) -> Unit,
     ): DecryptOperation
+
+    /**
+     * Decrypts without presenting authentication UI.
+     *
+     * The caller must have completed an explicit Vault unlock flow before invoking this method.
+     * Implementations must fail closed with [DecryptFailureReason.VAULT_LOCKED] when the Vault is
+     * no longer unlocked and must preserve the same atomic pending-display contract as [decrypt].
+     */
+    fun decryptUnlocked(
+        parsed: ParsedCiphertext,
+        callback: (DecryptResult) -> Unit,
+    ): DecryptOperation = DecryptOperation { }.also {
+        callback(DecryptResult.Failure(DecryptFailureReason.INTERNAL_ERROR))
+    }
+
+    /**
+     * Returns true only while a protected plaintext surface may render.
+     *
+     * Implementations should apply any elapsed lock policy before answering. This gate is checked
+     * immediately before drawing so a screen-off or timeout lock cannot race the decrypt callback.
+     */
+    fun canDisplayPlaintext(): Boolean = false
 
     /** Starts Secure Composer for the contact represented by [token]. */
     fun openSecureReply(host: Activity, token: SecureReplyToken): Boolean
@@ -38,13 +60,16 @@ interface LegacyDeviceCredentialHost {
 /** Opaque, backend-owned parse result. Closing it must wipe any routing metadata it owns. */
 interface ParsedCiphertext : Closeable
 
-/** Opaque, backend-owned contact capability used only to start a secure reply. */
-interface SecureReplyToken : Closeable
+/** Opaque, backend-owned contact capability used only to start or route a secure reply. */
+interface SecureReplyToken : Closeable {
+    /** Constant-time backend check used by the embedded IME to select the same local contact. */
+    fun matchesContact(candidateId: ByteArray): Boolean = false
+}
 
 /**
  * Owns the encrypted pending-display record while plaintext is being handed to the viewer.
  *
- * Closing before [markDisplayed] must retain the encrypted record so an interrupted Activity can
+ * Closing before [markDisplayed] must retain the encrypted record so an interrupted viewer can
  * recover it. Once the viewer has rendered the plaintext, closing deletes the record.
  */
 interface SecureDisplayLease : Closeable {
@@ -194,10 +219,37 @@ object SecureDecryptRuntime {
         }
     }
 
+    /** Decrypts after a separate trusted UI has already unlocked the Vault. */
+    fun decryptUnlocked(
+        parsed: ParsedCiphertext,
+        callback: (DecryptResult) -> Unit,
+    ): DecryptOperation {
+        val current = backend
+            ?: return DecryptOperation { }.also {
+                callback(DecryptResult.Failure(DecryptFailureReason.INTERNAL_ERROR))
+            }
+        return try {
+            current.decryptUnlocked(parsed, callback)
+        } catch (_: Throwable) {
+            callback(DecryptResult.Failure(DecryptFailureReason.INTERNAL_ERROR))
+            DecryptOperation { }
+        }
+    }
+
     fun openSecureReply(host: Activity, token: SecureReplyToken): Boolean {
         val current = backend ?: return false
         return try {
             current.openSecureReply(host, token)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** Fail-closed render-time Vault gate used by protected viewer surfaces. */
+    fun canDisplayPlaintext(): Boolean {
+        val current = backend ?: return false
+        return try {
+            current.canDisplayPlaintext()
         } catch (_: Throwable) {
             false
         }

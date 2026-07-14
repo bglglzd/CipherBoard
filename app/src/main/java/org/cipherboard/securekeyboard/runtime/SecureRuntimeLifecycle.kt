@@ -12,9 +12,17 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 
+internal interface SecureRuntimeLifecycleTarget {
+    val isSecureImeForeground: Boolean
+    fun lockVault()
+    fun onBackgrounded()
+    fun onForegrounded(): Boolean
+    fun lockIfExpired(): Boolean
+}
+
 internal class SecureRuntimeLifecycle(
     private val application: Application,
-    private val runtime: SecureKeyboardRuntime,
+    private val runtime: SecureRuntimeLifecycleTarget,
 ) : Application.ActivityLifecycleCallbacks, ComponentCallbacks2 {
     private var startedActivities = 0
 
@@ -49,11 +57,22 @@ internal class SecureRuntimeLifecycle(
 
     override fun onActivityStopped(activity: Activity) {
         startedActivities = (startedActivities - 1).coerceAtLeast(0)
-        if (startedActivities == 0 && !activity.isChangingConfigurations) runtime.onBackgrounded()
+        if (
+            startedActivities == 0 &&
+            !activity.isChangingConfigurations &&
+            !runtime.isSecureImeForeground
+        ) {
+            runtime.onBackgrounded()
+        }
     }
 
     override fun onTrimMemory(level: Int) {
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) runtime.onBackgrounded()
+        if (
+            level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN &&
+            !runtime.isSecureImeForeground
+        ) {
+            runtime.onBackgrounded()
+        }
     }
 
     override fun onLowMemory() {
