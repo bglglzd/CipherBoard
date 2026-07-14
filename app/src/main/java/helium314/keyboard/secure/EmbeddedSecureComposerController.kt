@@ -50,8 +50,8 @@ import helium314.keyboard.secure.decrypt.ParsedCiphertext
 import helium314.keyboard.secure.decrypt.SecureDecryptRuntime
 import helium314.keyboard.secure.decrypt.SecurePlaintextView
 import helium314.keyboard.secure.decrypt.WipeableText
-import org.cipherboard.cryptocore.CipherBoardCrypto
-import org.cipherboard.cryptocore.TransportMode
+import org.cipherboard.cryptocore.TransportPresentation
+import org.cipherboard.securekeyboard.runtime.MessagePresentationPreferences
 import org.cipherboard.securekeyboard.runtime.PreparedOutbound
 import org.cipherboard.securekeyboard.runtime.SecureContactSummary
 import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime
@@ -92,7 +92,6 @@ class EmbeddedSecureComposerController(
     private var countView: TextView? = null
     private var encryptButton: Button? = null
     private var contextButton: Button? = null
-    private var transportGroup: RadioGroup? = null
     private var ciphertextSummary: TextView? = null
     private var decryptButton: Button? = null
     private var clearButton: ImageButton? = null
@@ -366,7 +365,6 @@ class EmbeddedSecureComposerController(
         countView = null
         encryptButton = null
         contextButton = null
-        transportGroup = null
         ciphertextSummary = null
         decryptButton = null
         clearButton = null
@@ -1068,8 +1066,11 @@ class EmbeddedSecureComposerController(
         val connection = inputConnection
         val utf8Bytes = connection?.utf8Length()
         val characters = connection?.codePointCount() ?: 0
-        val estimate = utf8Bytes?.let(::estimatedCiphertextCharacters) ?: 0
-        countView?.text = ime.getString(R.string.embedded_secure_draft_count, characters, estimate)
+        countView?.text = ime.messagePresentationEstimateText(
+            characters = characters,
+            plaintextBytes = utf8Bytes ?: 0,
+            presentation = currentMessagePresentation(),
+        )
         val withinLimit = utf8Bytes != null && utf8Bytes <= currentPlaintextLimitBytes()
         val hasDraft = connection?.isEmpty() == false
         val alreadyInserted = connection != null && connection.revision == insertedRevision
@@ -1133,7 +1134,11 @@ class EmbeddedSecureComposerController(
         }
         pendingDraftRevision = connection.revision
         try {
-            runtime.encrypt(contactId, plaintext, selectedTransportMode()).use { outbound ->
+            runtime.encrypt(
+                contactId,
+                plaintext,
+                presentation = currentMessagePresentation(),
+            ).use { outbound ->
                 handleDeliveryResult(ime.deliverEmbeddedSecureOutbound(outbound), connection.revision)
             }
         } catch (error: Throwable) {
@@ -1241,22 +1246,11 @@ class EmbeddedSecureComposerController(
         }
     }
 
-    private fun selectedTransportMode(): TransportMode =
-        if (transportGroup?.checkedRadioButtonId == R.id.secure_transport_sms) {
-            TransportMode.SMS_COMPACT
-        } else {
-            TransportMode.UNIVERSAL
-        }
+    private fun currentMessagePresentation(): TransportPresentation =
+        MessagePresentationPreferences.read(ime)
 
     private fun currentPlaintextLimitBytes(): Int =
-        if (selectedTransportMode() == TransportMode.SMS_COMPACT) SMS_PLAINTEXT_LIMIT_BYTES
-        else CipherBoardCrypto.MAX_PLAINTEXT_BYTES
-
-    private fun estimatedCiphertextCharacters(plaintextBytes: Int): Int {
-        if (plaintextBytes == 0) return 0
-        val payload = plaintextBytes + OLM_OVERHEAD_ESTIMATE
-        return (payload * 4 + 2) / 3 + UNIVERSAL_ENVELOPE_OVERHEAD_ESTIMATE
-    }
+        maximumPlaintextBytes(currentMessagePresentation())
 
     private fun setStatus(resource: Int) = setStatus(ime.getString(resource))
 
@@ -1458,33 +1452,6 @@ class EmbeddedSecureComposerController(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        transportGroup = RadioGroup(context).apply {
-            orientation = RadioGroup.HORIZONTAL
-            val itemLayout = {
-                if (wide) {
-                    LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                    )
-                } else {
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                }
-            }
-            addView(RadioButton(context).apply {
-                id = R.id.secure_transport_universal
-                text = context.getString(R.string.secure_transport_universal)
-                isChecked = true
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                buttonTintList = ColorStateList.valueOf(Settings.getValues().mColors.get(ColorType.KEY_TEXT))
-            }, itemLayout())
-            addView(RadioButton(context).apply {
-                id = R.id.secure_transport_sms
-                text = context.getString(R.string.secure_transport_sms)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                buttonTintList = ColorStateList.valueOf(Settings.getValues().mColors.get(ColorType.KEY_TEXT))
-            }, itemLayout())
-            setOnCheckedChangeListener { _, _ -> updateCountsAndActions() }
-        }
         countView = TextView(context).apply {
             id = R.id.embedded_secure_count
             gravity = Gravity.END
@@ -1506,20 +1473,7 @@ class EmbeddedSecureComposerController(
             setOnClickListener { encryptOrRetry() }
         }
         actions.addView(encryptButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        if (wide) {
-            actions.addView(
-                transportGroup,
-                0,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-            encryptRoot.addView(actions, matchWidth().apply { topMargin = dp(2) })
-        } else {
-            encryptRoot.addView(transportGroup, matchWidth())
-            encryptRoot.addView(actions, matchWidth().apply { topMargin = dp(2) })
-        }
+        encryptRoot.addView(actions, matchWidth().apply { topMargin = dp(2) })
         root.addView(encryptRoot, matchWidth())
 
         val decryptRoot = LinearLayout(context).apply {
@@ -1755,13 +1709,6 @@ class EmbeddedSecureComposerController(
         private const val DECRYPT_RENDER_TIMEOUT_MILLIS = 3_000L
         private const val UNLOCK_ACTIVITY_TIMEOUT_MILLIS = 2 * 60_000L
         private const val UNLOCK_HOST_RETURN_TIMEOUT_MILLIS = 5_000L
-        private const val OLM_OVERHEAD_ESTIMATE = 256
-        private const val UNIVERSAL_ENVELOPE_OVERHEAD_ESTIMATE = 80
-        private const val SMS_CHUNK_BYTES = 48
-        private const val MAX_TRANSPORT_PARTS = 128
-        private const val SMS_OLM_OVERHEAD_BUDGET = 512
-        private const val SMS_PLAINTEXT_LIMIT_BYTES =
-            SMS_CHUNK_BYTES * MAX_TRANSPORT_PARTS * 3 / 4 - SMS_OLM_OVERHEAD_BUDGET
     }
 }
 

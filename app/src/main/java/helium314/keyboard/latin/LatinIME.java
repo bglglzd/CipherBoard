@@ -126,7 +126,6 @@ public class LatinIME extends InputMethodService implements
     private static final int EXTENDED_TOUCHABLE_REGION_HEIGHT = 100;
     private static final int PERIOD_FOR_AUDIO_AND_HAPTIC_FEEDBACK_IN_KEY_REPEAT = 2;
     private static final int PENDING_IMS_CALLBACK_DURATION_MILLIS = 800;
-    private static final int MAX_SELECTED_CIPHERTEXT_CHARS = CiphertextSelection.MAX_SELECTION_CHARS;
     static final long DELAY_WAIT_FOR_DICTIONARY_LOAD_MILLIS = TimeUnit.SECONDS.toMillis(2);
     static final long DELAY_DEALLOCATE_MEMORY_MILLIS = TimeUnit.SECONDS.toMillis(10);
 
@@ -2194,24 +2193,7 @@ public class LatinIME extends InputMethodService implements
     }
 
     private static boolean isCiphertextSelection(final CharSequence selected) {
-        if (selected == null || selected.length() == 0 || selected.length() > MAX_SELECTED_CIPHERTEXT_CHARS)
-            return false;
-        int first = 0;
-        while (first < selected.length() && Character.isWhitespace(selected.charAt(first))) first++;
-        if (first + 4 > selected.length()
-                || selected.charAt(first) != 'C'
-                || selected.charAt(first + 1) != 'B'
-                || selected.charAt(first + 2) != '1'
-                || selected.charAt(first + 3) != ':') return false;
-        for (int index = first; index < selected.length(); index++) {
-            final char value = selected.charAt(index);
-            if (!(value >= 'A' && value <= 'Z')
-                    && !(value >= 'a' && value <= 'z')
-                    && !(value >= '0' && value <= '9')
-                    && value != '-' && value != '_' && value != ':'
-                    && !Character.isWhitespace(value)) return false;
-        }
-        return true;
+        return CiphertextSelection.isCandidate(selected);
     }
 
     @Override

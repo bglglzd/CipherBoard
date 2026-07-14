@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <item name="secure_transport_universal" type="id" />
-    <item name="secure_transport_sms" type="id" />
     <item name="secure_decrypt_confirm_button" type="id" />
     <item name="secure_viewer_plaintext" type="id" />
     <item name="embedded_secure_composer_panel" type="id" />

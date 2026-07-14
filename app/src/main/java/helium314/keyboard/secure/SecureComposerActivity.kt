@@ -34,8 +34,6 @@ import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -50,8 +48,8 @@ import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.fragment.app.FragmentActivity
 import helium314.keyboard.latin.InputAttributes
 import helium314.keyboard.latin.R
-import org.cipherboard.cryptocore.TransportMode
-import org.cipherboard.cryptocore.CipherBoardCrypto
+import org.cipherboard.cryptocore.TransportPresentation
+import org.cipherboard.securekeyboard.runtime.MessagePresentationPreferences
 import org.cipherboard.securekeyboard.runtime.PreparedOutbound
 import org.cipherboard.securekeyboard.runtime.SecureContactSummary
 import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime
@@ -90,7 +88,6 @@ class SecureComposerActivity : FragmentActivity() {
     private lateinit var contactStatus: TextView
     private lateinit var editor: SecurePlaintextEditText
     private lateinit var countText: TextView
-    private lateinit var transportMode: RadioGroup
     private lateinit var encryptButton: Button
     private lateinit var pendingButton: Button
     private lateinit var passwordWarning: LinearLayout
@@ -266,22 +263,6 @@ class SecureComposerActivity : FragmentActivity() {
         content.addView(editor, matchWidth())
         countText = TextView(this)
         content.addView(countText)
-        content.addGap(10)
-
-        transportMode = RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
-            addView(RadioButton(this@SecureComposerActivity).apply {
-                id = R.id.secure_transport_universal
-                setText(R.string.secure_transport_universal)
-                isChecked = true
-            })
-            addView(RadioButton(this@SecureComposerActivity).apply {
-                id = R.id.secure_transport_sms
-                setText(R.string.secure_transport_sms)
-            })
-            setOnCheckedChangeListener { _, _ -> updateCounts() }
-        }
-        content.addView(transportMode)
         content.addGap(10)
 
         val actions = LinearLayout(this).apply {
@@ -535,26 +516,10 @@ class SecureComposerActivity : FragmentActivity() {
         if (!::countText.isInitialized || !::editor.isInitialized) return
         val characters = Character.codePointCount(editor.text, 0, editor.length())
         val utf8Estimate = estimateUtf8Bytes(editor.text)
-        val encryptedPayloadEstimate = utf8Estimate + OLM_OVERHEAD_ESTIMATE
-        val smsCompact = ::transportMode.isInitialized &&
-            transportMode.checkedRadioButtonId == R.id.secure_transport_sms
-        val compactPayloadEstimate = ((utf8Estimate + SMS_OLM_OVERHEAD_BUDGET) * 4 + 2) / 3
-        val compactParts = ceil(compactPayloadEstimate / SMS_CHUNK_BYTES.toDouble()).toInt().coerceAtLeast(1)
-        val envelopeEstimate = if (smsCompact) {
-            compactParts * SMS_SEGMENT_CHARACTERS
-        } else {
-            ((encryptedPayloadEstimate * 4 + 2) / 3 + UNIVERSAL_ENVELOPE_OVERHEAD_ESTIMATE)
-        }
-        val smsParts = if (smsCompact) {
-            compactParts
-        } else {
-            ceil(envelopeEstimate / SMS_SEGMENT_CHARACTERS.toDouble()).toInt().coerceAtLeast(1)
-        }
-        countText.text = getString(
-            R.string.secure_size_estimate,
-            characters,
-            envelopeEstimate,
-            smsParts,
+        countText.text = messagePresentationEstimateText(
+            characters = characters,
+            plaintextBytes = utf8Estimate,
+            presentation = currentMessagePresentation(),
         )
         if (!messageWithinSelectedLimit()) {
             contactStatus.setText(R.string.secure_message_too_large)
@@ -591,13 +556,12 @@ class SecureComposerActivity : FragmentActivity() {
             return
         }
         val contactId = contact.internalId()
-        val mode = if (transportMode.checkedRadioButtonId == R.id.secure_transport_sms) {
-            TransportMode.SMS_COMPACT
-        } else {
-            TransportMode.UNIVERSAL
-        }
         try {
-            runtime.encrypt(contactId, plaintext, mode).use { outbound ->
+            runtime.encrypt(
+                contactId,
+                plaintext,
+                presentation = currentMessagePresentation(),
+            ).use { outbound ->
                 clearPlaintext()
                 if (scheduleImeHandoff(outbound)) {
                     finishAndRemoveTask()
@@ -901,12 +865,11 @@ class SecureComposerActivity : FragmentActivity() {
         return bytes
     }
 
+    private fun currentMessagePresentation(): TransportPresentation =
+        MessagePresentationPreferences.read(this)
+
     private fun currentPlaintextLimitBytes(): Int =
-        if (::transportMode.isInitialized && transportMode.checkedRadioButtonId == R.id.secure_transport_sms) {
-            SMS_PLAINTEXT_LIMIT_BYTES
-        } else {
-            CipherBoardCrypto.MAX_PLAINTEXT_BYTES
-        }
+        maximumPlaintextBytes(currentMessagePresentation())
 
     private fun messageWithinSelectedLimit(): Boolean =
         estimateUtf8Bytes(editor.text) <= currentPlaintextLimitBytes()
@@ -932,14 +895,6 @@ class SecureComposerActivity : FragmentActivity() {
         const val EXTRA_HOST_IS_PASSWORD_FIELD = "org.cipherboard.extra.HOST_IS_PASSWORD_FIELD"
         const val EXTRA_REPLY_CONTACT_ID = "org.cipherboard.extra.REPLY_CONTACT_ID"
         const val EXTRA_IME_HANDOFF_TOKEN = "org.cipherboard.extra.IME_HANDOFF_TOKEN"
-        private const val OLM_OVERHEAD_ESTIMATE = 256
-        private const val UNIVERSAL_ENVELOPE_OVERHEAD_ESTIMATE = 80
-        private const val SMS_CHUNK_BYTES = 48
-        private const val SMS_SEGMENT_CHARACTERS = 153
-        private const val MAX_TRANSPORT_PARTS = 128
-        private const val SMS_OLM_OVERHEAD_BUDGET = 512
-        private const val SMS_PLAINTEXT_LIMIT_BYTES =
-            SMS_CHUNK_BYTES * MAX_TRANSPORT_PARTS * 3 / 4 - SMS_OLM_OVERHEAD_BUDGET
     }
 }
 

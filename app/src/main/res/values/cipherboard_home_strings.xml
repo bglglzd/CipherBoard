@@ -34,6 +34,16 @@
     <string name="cipherboard_home_add_contact">Add contact</string>
     <string name="cipherboard_home_no_contacts">No paired contacts yet. Add a contact and complete the two-way QR scan in person.</string>
     <string name="cipherboard_home_keyboard_settings">Keyboard settings</string>
+    <string name="cipherboard_message_format_title">Message format</string>
+    <string name="cipherboard_message_format_description">Choose how future encrypted messages appear when CipherBoard inserts them into another app. Decryption detects every supported format automatically.</string>
+    <string name="cipherboard_message_format_compact">Compact (CB1)</string>
+    <string name="cipherboard_message_format_compact_description">Shortest and most resilient. The message visibly begins with CB1.</string>
+    <string name="cipherboard_message_format_russian">Russian words</string>
+    <string name="cipherboard_message_format_russian_description">Represents the same ciphertext as a longer sequence of Russian words.</string>
+    <string name="cipherboard_message_format_english">English words</string>
+    <string name="cipherboard_message_format_english_description">Represents the same ciphertext as a longer sequence of English words.</string>
+    <string name="cipherboard_message_format_warning">Word formats change only the appearance of ciphertext. They do not hide encryption from automated analysis or provide plausible deniability. They are substantially longer and cannot be decoded if a word is edited, removed, added, or reordered. The recipient needs CipherBoard 0.4 or newer to decode word formats. The generated words do not form a meaningful sentence.</string>
+    <string name="cipherboard_message_format_save_failed">The message format could not be saved.</string>
     <string name="cipherboard_home_security">Security</string>
     <string name="cipherboard_home_licenses">Licenses and source</string>
     <string name="cipherboard_home_updates">Updates</string>
