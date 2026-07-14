@@ -35,14 +35,14 @@ HeliBoard release and is not endorsed or supported by the HeliBoard project.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.4.1` |
+| Maturity | Pre-1.0; current version `0.4.2` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
 | Runtime network | No Internet or network-state permission; no runtime network feature |
 | Interface languages | English and Russian |
 
-See the bilingual [CipherBoard 0.4.1 release notes](docs/releases/v0.4.1.md).
+See the bilingual [CipherBoard 0.4.2 release notes](docs/releases/v0.4.2.md).
 
 ## What It Does
 
@@ -156,14 +156,14 @@ project and assume it is CipherBoard.
 Verify the release checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.4.1-release.apk.sha256
+sha256sum --check CipherBoard-0.4.2-release.apk.sha256
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.4.1-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.4.1-release.apk.sha256
+(Get-FileHash .\CipherBoard-0.4.2-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.4.2-release.apk.sha256
 ```
 
 If Android Build Tools are installed, also verify the APK signature and compare
@@ -172,13 +172,13 @@ the reported SHA-256 certificate digest with
 digest through a channel you trust independently of the APK download.
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.4.1-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.4.2-release.apk
 ```
 
 Install or update the verified APK:
 
 ```sh
-adb install -r CipherBoard-0.4.1-release.apk
+adb install -r CipherBoard-0.4.2-release.apk
 ```
 
 Debug APKs are developer artifacts signed with a public debug key. Do not use

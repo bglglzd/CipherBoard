@@ -16,6 +16,12 @@ physical-device or GrapheneOS evidence.
 
 ## Evidence Observed
 
+- The 0.4.2 clipboard-fallback instrumentation waits for the protected
+  Activity's window focus before setting and explicitly reading ciphertext.
+  This matches Android's foreground clipboard boundary and removes a false
+  negative where `RESUMED` preceded focus; plaintext is still never written to
+  the clipboard.
+
 - The 0.4.1 IME lifecycle fix accepts Android's temporarily missing
   `InputBinding.connectionToken` only when the exact live `InputConnection`
   object, host UID/package and editor metadata still match. Unit tests reject a
