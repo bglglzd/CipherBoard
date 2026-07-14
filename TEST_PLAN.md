@@ -279,6 +279,8 @@ Switch the panel repeatedly between Encrypt and Decrypt. Expected:
 - orientation, input-view recreation, host-scope loss and screen-off cancel
   parse/decrypt work and close every stale success result; and
 - no decrypted text is transferred into the outbound draft or host editor.
+- the secure-panel root and every interactive descendant reject touches marked
+  `FLAG_WINDOW_IS_OBSCURED`, including dynamically created contact rows.
 
 Run a physical-keyboard sentinel separately. Android may dispatch hardware key
 events directly to the focused host view, so the expected product behavior is

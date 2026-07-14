@@ -229,6 +229,9 @@ reset is offered only after observed key invalidation with explicit confirmation
 The earlier shield-to-activity overlap is also closed by the embedded Private
 panel, and the external acknowledgement ambiguity is represented durably as
 `COMMIT_UNCERTAIN` rather than an automatically retryable send.
+The embedded secure panel and its dynamically created contact rows now reject
+obscured touches recursively, closing the reviewed tapjacking path for
+Encrypt, Decrypt, Reply, unlock, contact selection, clear and close actions.
 The absence of text actions in transports such as Telegram is addressed by the
 v0.3 shield-panel Decrypt mode; plaintext remains inside CipherBoard, while only
 copied ciphertext crosses the clipboard boundary.
