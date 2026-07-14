@@ -89,6 +89,31 @@ physical-device or GrapheneOS evidence.
   inspection confirmed that the panel remains inside the IME bounds and a
   `FLAG_SECURE` capture was black; full host-field/leakage instrumentation on the
   exact release commit remains required.
+- The v0.3 source adds an embedded copied-ciphertext Decrypt mode. One explicit
+  action reads exactly one bounded clipboard text item, the clipboard remains
+  ciphertext, ordinary keys are hidden, and plaintext is owned by a
+  drawing-only surface excluded from selection, Accessibility text, autofill,
+  content capture and saved state. Targeted Robolectric tests for the clipboard
+  reader and surface pass; a real IME/Telegram/GrapheneOS flow remains required.
+- Pending-display acknowledgement now occurs on the first allowed completed
+  plaintext draw, not when bytes are decoded or attached to a view. The
+  pre-draw Vault check and one-shot callback are unit-tested. A three-second
+  render timeout clears without marking the lease, retaining the encrypted
+  recovery record for an exact retry.
+- Worker results posted toward the embedded panel have explicit ownership.
+  Generation cancellation drains queued values and closes late parse/decrypt
+  successes, including their plaintext, instead of silently removing a handler
+  callback. Focused concurrency tests cover post-versus-close races.
+- Vault authentication for the embedded flow uses a process-local random token
+  accepted once by the non-exported activity and completed once back to the
+  controller. The Activity Intent carries no ciphertext or plaintext. Targeted
+  tests cover activation, duplicate completion and cancellation, and the
+  hostless backend fails `VAULT_LOCKED` rather than opening authentication UI.
+- The Activity viewer cancels parse/decrypt work on pause, stop, user-leave and
+  UI-hidden transitions, except while its own legacy system-credential result
+  is pending. Its first-draw gate reapplies Vault expiry immediately before
+  rendering. The legacy unlock host is non-exported and no longer uses
+  `noHistory`, which would destroy it before an Android 6-10 credential result.
 - Pending outbound records now have versioned `READY` and
   `COMMIT_UNCERTAIN` states. The latter is durably set before host
   `commitText()` and is excluded from automatic retry. Codec, store and bridge
@@ -107,9 +132,9 @@ physical-device or GrapheneOS evidence.
 | Storage | AES-256-GCM records with type/key/schema/revision AAD; random nonces; no-backup CE location | stolen-DB, WAL/SHM, corruption and backup/transfer device tests |
 | Keystore | non-exportable AES wrapping key; StrongBox-first; only reported TEE accepted as fallback; software/unknown rejected; user authentication | real StrongBox/TEE/invalidation/reboot tests |
 | Send atomicity | advanced ratchet plus contact-bound exact pending ciphertext commit; `READY` changes durably to `COMMIT_UNCERTAIN` before one exact-token-scoped host commit; uncertain delivery cannot auto-retry | existing SIGKILL commit-boundary tests and new codec/store/bridge unit coverage; individual SQLite statements and real host-ack window remain |
-| Receive atomicity | replay, advanced ratchet and encrypted pending display commit together; exact-ciphertext digest recovery; pre-render abandon retains record | real post-commit SIGKILL and close/reopen pass; in-transaction failpoints remain |
-| Private panel | shield toggles an embedded `FLAG_SECURE` IME panel; bounded RAM draft; software keys/edit actions route locally; no saved state/copy/cut/paste/share/learning/clipboard history; exact connection-token scope and lifecycle clearing | complete hostile-host, field-switch, hardware-keyboard, clipboard/learning/log/storage sentinel and GrapheneOS suite |
-| Decrypt/viewer | hostile selected-text bounds, read-only process-text result, vault auth, drawing-only inaccessible text, `FLAG_SECURE`, recents/background/timeout cleanup, reply by contact ID | process-text/FLAG_SECURE/background wipe/zeroization and clipboard fallback pass on AOSP; a separate `FLAG_SECURE` test screencap is black, while secure-viewer screenshot/recents/Assistant/Accessibility/screen-lock evidence remains |
+| Receive atomicity | replay, advanced ratchet and encrypted pending display commit together; exact-ciphertext digest recovery; pre-first-draw abandon retains record; first allowed draw acknowledges the lease | real post-commit SIGKILL and close/reopen plus targeted first-draw tests pass; in-transaction and post-draw/pre-close kill failpoints remain |
+| Private panel | shield toggles an embedded `FLAG_SECURE` IME panel; bounded Encrypt draft; software keys/edit actions route locally; Decrypt hides keys; no saved state/plaintext copy/share/learning/clipboard history; exact connection-token scope and lifecycle clearing | locked Encrypt and idle Decrypt states fit API 36 landscape at font scale 2.0 in English/Russian; paired-contact/long-text matrix, hostile-host, hardware-keyboard and physical GrapheneOS evidence remain |
+| Decrypt/viewer | explicit bounded ciphertext clipboard read; clipboard unchanged; owned result handoff; one-shot unlock token; drawing-only inaccessible embedded/activity text; render-time Vault gate; background cancellation; local opaque reply capability | targeted v0.3 race/surface tests and 7/7 API 36 process-text/FLAG_SECURE/background-wipe/clipboard instrumentation pass; embedded paired-contact E2E, screenshot/recents/Assistant/Accessibility/screen-lock evidence remains |
 | Pairing/contact | signed native offer/response; encrypted one-shot state; bounded orphan cleanup; explicit comparison; changed identity blocks use until verification | live two-device, camera permission, lifecycle, process-kill and hostile-QR instrumentation |
 | QR | local ZXing codec and lifecycle-bound CameraX scanner with bounded ASCII payloads; Camera requested only by the Scan actions | real permission grant/deny/revoke and two-device camera evidence |
 | Manifest/signing | source backup/cleartext controls, forbidden-permission tests and public release-certificate SHA-256 pin; a pre-public local signed candidate passed scripted APK/signature policy | repeat `aapt`/`apkanalyzer`/`apksigner` verification and publish its evidence for the final public tag |
@@ -140,6 +165,18 @@ immediately before process death. The v0.2 handoff marks the operation
 user must inspect the transport. The receiver rejects a duplicate as replay.
 These are explicit remaining coverage gaps, not claims of a test pass.
 
+The v0.3 additions have JVM/Robolectric race and surface evidence plus the
+existing API 36 instrumentation suite. Targeted runs pass for the embedded
+surface/clipboard, one-shot unlock, owned-result handoff, reply transition,
+render-time Vault gate, background cancellation and secure-IME lifecycle. The
+7/7 device suite confirms process-text plaintext remains inside a protected
+viewer, its owned buffers wipe on background, and clipboard ciphertext remains
+unchanged. Manual API 36 inspection confirms locked Encrypt and idle Decrypt
+controls fit the IME in English and Russian landscape at font scale 2.0, with
+ordinary keys absent in Decrypt. This does not establish a paired-contact
+embedded decrypt, BiometricPrompt behavior, a live Telegram integration, or
+physical GrapheneOS behavior.
+
 ## Residual Validation Before High-risk Use
 
 The following are assurance prerequisites and residual validation, not known
@@ -164,8 +201,13 @@ code vulnerability when no such defect has been demonstrated.
 - SQLite lookup/replay hashes, record kinds, revisions and timestamps expose
   bounded count/timing metadata and permit denial-of-service tampering, while
   secret values and ratchet state remain AEAD-encrypted.
-- Selected-text entry paths intentionally use different UI bounds; the larger
-  viewer grammar and smaller IME selection cap need device UX coverage.
+- Embedded clipboard, selected-text and process-text entry paths share bounded
+  plaintext-free parsing but still need hostile transport and device UX
+  coverage across their different Android framework boundaries.
+- The display lease's acknowledged flag is process-local until the surface
+  closes and deletes the encrypted pending record. Process death after first
+  draw but before close can therefore leave that record recoverable for the
+  bounded crash-recovery window; v1 is not a strict exactly-once viewer.
 - JVM/Android UI objects, public routing/fingerprint summaries and local names
   cannot be guaranteed to zeroize before garbage collection.
 - Android may route a physical keyboard directly to the focused host view,
@@ -187,6 +229,9 @@ reset is offered only after observed key invalidation with explicit confirmation
 The earlier shield-to-activity overlap is also closed by the embedded Private
 panel, and the external acknowledgement ambiguity is represented durably as
 `COMMIT_UNCERTAIN` rather than an automatically retryable send.
+The absence of text actions in transports such as Telegram is addressed by the
+v0.3 shield-panel Decrypt mode; plaintext remains inside CipherBoard, while only
+copied ciphertext crosses the clipboard boundary.
 
 ## APK Policy Review
 

@@ -49,6 +49,7 @@ As of 2026-07-14, stored/reported local evidence is:
 | offline licenses | unit test requires GPL/Apache/BlueOak/BSD/CC/notices/provenance assets to exist and be nonempty | final APK asset/manual completeness review pending |
 | pairing/contact | state-machine tests cover one-shot state, bounded orphan cleanup, duplicate/expiry and blocking identity change | no live-camera/permission/pairing E2E or pairing-specific process-kill evidence |
 | pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass; v0.2 unit tests cover `READY` -> `COMMIT_UNCERTAIN`, no automatic retry, exact host-token scope and local draft routing | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
+| v0.3 embedded decrypt controls | targeted tests pass for bounded ciphertext clipboard input, drawing-only/first-draw behavior, one-shot unlock, reply draft wipe, race-safe worker-result ownership, render-time Vault expiry, background cancellation and secure-IME lifecycle | manual API 36 English/Russian landscape/font-2.0 covers locked Encrypt and idle Decrypt only; no paired-contact decrypt, biometric, process-kill-at-first-draw or physical GrapheneOS evidence |
 | Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/private-panel/live-camera E2E |
 | debug Home UI smoke | current APK installs/launches; English and per-app `ru-RU` Home controls do not overlap; Russian landscape fits at font scale 1.3; locale-change process remains alive after the receiver fix | Home only; no full screen/theme/font-2.0/RTL matrix and no ordinary IME input claim |
 | signed release candidate | a clean pre-public local pipeline produced a non-debug-signed APK and passed scripted signature, permission, APK-policy, SBOM/vulnerability, and artifact-hash gates | its evidence bundle is local, untracked, and unpublished; rebuild and publish new evidence for the final public tag; physical install acceptance is not claimed |
@@ -269,6 +270,16 @@ restart, toolbar actions, app completion, and race entry/exit. Expected:
 - the IME window has `FLAG_SECURE` only while Private mode is active; and
 - password fields show the warning and never auto-open/auto-commit.
 
+Switch the panel repeatedly between Encrypt and Decrypt. Expected:
+
+- entering Decrypt hides the ordinary key wrapper and suggestion strip, while
+  no software-key or host-mutating path becomes available;
+- returning to Encrypt wipes received plaintext and its reply capability before
+  restoring the keys and the local draft editor;
+- orientation, input-view recreation, host-scope loss and screen-off cancel
+  parse/decrypt work and close every stale success result; and
+- no decrypted text is transferred into the outbound draft or host editor.
+
 Run a physical-keyboard sentinel separately. Android may dispatch hardware key
 events directly to the focused host view, so the expected product behavior is
 an explicit unsupported/warning state, never a claim that those characters are
@@ -286,11 +297,31 @@ launch, trailing text, replay, wrong contact, locked vault, cancelled auth, and
 background launch restrictions. Expected result is never plaintext; source
 selection is unchanged and no plaintext extra/result leaves the activity.
 
+For the primary embedded flow, copy one complete ciphertext from Telegram-like,
+SMS-like, email-like and multiline fixtures, open the shield, select Decrypt,
+and press **Paste and decrypt**. Test null, empty, non-text, multiple-item,
+oversize, malformed, multipart-incomplete, replay, wrong-contact and styled
+clipboard inputs. Reading must occur only after the explicit button action,
+must use the same bounded unstyled-ciphertext grammar as the viewer, and must
+leave the original ciphertext clip unchanged. The ordinary keys stay hidden
+throughout Decrypt mode and no plaintext reaches the host `InputConnection`.
+
+Test the unlock boundary separately: only a newly issued process-local token
+may activate the non-exported unlock activity; activation and completion are
+one-shot; duplicate, cancelled, timed-out and unknown tokens fail closed. The
+Intent contains the token only, never ciphertext or plaintext. A successful
+callback still requires the exact metadata-matching host return before one
+connection-token rebind, and `decryptUnlocked()` must return `VAULT_LOCKED` if
+the lease expired before worker execution.
+
 For IME selection, test `getSelectedText` success/null/timeout/oversize and
 malicious styled spans. Spans are discarded and only bounded plain ciphertext
-is parsed. Clipboard fallback is manual and ciphertext-only; after reading it,
-CipherBoard never overwrites clipboard with plaintext. Reply carries only a
-random internal contact ID after viewer data is cleared.
+is parsed. The alternative clipboard Activity remains manual and
+ciphertext-only; after reading it, CipherBoard never overwrites clipboard with
+plaintext. Embedded **Reply securely** resolves an opaque reply capability
+against the current local contacts, clears the received surface, switches to
+Encrypt, and selects that contact without starting an Activity or exposing its
+ID in an Intent.
 
 ### 6.4 Protected viewer lifecycle
 
@@ -302,6 +333,15 @@ record output must be blocked/blank according to the OS and the recent-app
 thumbnail must not contain the sentinel. A `UiAutomation` accessibility dump
 must not expose protected plaintext; non-secret controls retain localized
 labels.
+
+For the embedded surface, assert that plaintext is not acknowledged merely by
+decoding or attaching it. Before the first draw, recheck active Decrypt mode and
+an unexpired Vault; a denied draw must produce no pixels and no display
+acknowledgement. The first allowed completed draw marks the display lease once
+and only then starts the viewer timeout. A render timeout or stale callback
+before acknowledgement wipes the drawing buffer and retains the encrypted
+pending display; clear/hide/mode switch after acknowledgement closes the lease
+and removes that record under no-history policy.
 
 Recorded API 36 instrumentation covers a strict subset: process-text returned
 `RESULT_CANCELED` with no data and left host text unchanged; the real viewer had
@@ -321,13 +361,24 @@ plurals/number grouping are correct, touch targets and content descriptions are
 present for non-secret actions, no text overlaps/clips, and secret content is
 deliberately excluded from TalkBack/accessibility export.
 
-Recorded manual API 36 smoke evidence covers Home only: the installed debug APK
-launched with bounded, non-overlapping English controls; per-app `ru-RU` showed
-complete Russian Home strings; and Russian landscape at `font_scale=1.3` fit
-without overlap. A discovered inherited `SystemBroadcastReceiver` locale-change
-self-SIGKILL loop was fixed, then the rebuilt process stayed alive for the
-recorded three-second observation. This does not cover the remaining screens,
-themes, font scale 2.0, pseudo-RTL, accessibility or ordinary IME input.
+The v0.3 embedded panel has a release-specific responsive matrix. At minimum,
+capture Encrypt and Decrypt states at a phone portrait viewport, phone
+landscape, and font scale 2.0 in both English and Russian. Verify the two mode
+labels, clear/close controls, ciphertext summary, **Paste and decrypt** or
+**Вставить и расшифровать**, status text, scrollable plaintext, and **Reply
+securely / Ответить защищённо** do not overlap or leave the IME viewport. In
+Decrypt mode verify the ordinary keys are hidden; in Encrypt mode verify they
+return. Long plaintext must scroll without resizing the command controls. This
+visual matrix is a release QA requirement, not established by the drawing-only
+Robolectric test.
+
+Recorded manual API 36 smoke evidence includes Home and the v0.3 embedded panel.
+The installed debug APK showed non-overlapping locked Encrypt and idle Decrypt
+controls in English and Russian landscape at `font_scale=2.0`; the panel stayed
+below the status bar and ordinary keys were absent in Decrypt. The earlier
+locale-change receiver fix also remained stable. This evidence does not cover a
+ready paired contact, rendered long plaintext, remaining screens, themes,
+pseudo-RTL, accessibility or physical GrapheneOS input.
 
 ## 7. Storage, Keystore, and Lifecycle Tests
 

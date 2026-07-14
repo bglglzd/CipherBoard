@@ -4,6 +4,66 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.3.0] - 2026-07-14
+
+### Added
+
+- An **Encrypt / Decrypt** mode selector inside the shield panel. The primary
+  receive flow is now: copy a complete `CB1:` message from any transport, open
+  the shield panel, select **Decrypt**, and tap **Paste and decrypt**.
+- Embedded, drawing-only plaintext display inside the `FLAG_SECURE` IME window.
+  The surface is non-focusable and non-selectable and is excluded from
+  Accessibility text, autofill, content capture, and saved state.
+- **Reply securely** in the embedded decrypt view. It clears the received
+  plaintext, returns to **Encrypt**, and selects the same local contact without
+  placing a contact identifier or plaintext in an Intent.
+- A process-local one-shot token handoff for the non-exported Vault unlock
+  activity. The handoff must activate and complete exactly once before the IME
+  accepts the narrowly scoped host-connection rebind.
+- First-draw acknowledgement for pending displays. The encrypted recovery
+  record is marked displayed only after an allowed plaintext draw; a bounded
+  render timeout fails closed if that acknowledgement never occurs.
+- Race-safe ownership for parser/decrypt worker results. Lifecycle cancellation
+  drains queued results and wipes any plaintext before removing callbacks.
+
+### Changed
+
+- Clipboard access is explicit and ciphertext-only. CipherBoard reads exactly
+  one bounded item after **Paste and decrypt**, validates it as `CB1:`, and
+  leaves the original ciphertext clip unchanged.
+- Ordinary keyboard keys are hidden in **Decrypt** mode. This prevents the
+  receive surface from looking editable and removes an accidental host-input
+  affordance while plaintext is visible.
+- The embedded panel uses constrained landscape and large-font layouts, a
+  scrollable plaintext region, and bounded text lines. Release QA now includes
+  portrait/landscape checks at font scales 1.0, 1.3, and 2.0 in English and
+  Russian.
+- `ACTION_PROCESS_TEXT` and the separate protected viewer remain supported as
+  an alternative where the transport exposes Android text actions; they are no
+  longer required for the common copied-ciphertext flow.
+- The protected Activity viewer now cancels in-flight parsing/decryption on
+  background and rechecks the current Vault lock policy immediately before its
+  first plaintext draw.
+- Android 6-10 device-credential confirmation keeps its non-exported unlock
+  host alive only for the controlled system credential transition.
+
+### Security Notes
+
+- Only ciphertext may remain in Android's clipboard. CipherBoard never writes
+  decrypted plaintext there, but the transport and clipboard provider can
+  still observe or retain the copied ciphertext.
+- Ratchet, replay marker, and encrypted pending-display plaintext are committed
+  before the embedded surface receives plaintext. Abandoning before first draw
+  preserves the encrypted pending display for exact recovery; closing after an
+  acknowledged draw removes it under the no-history policy.
+- **Reply securely** wipes any hidden outbound draft before selecting the
+  decrypted message's contact, preventing a draft from another recipient from
+  being reused accidentally.
+- Responsive source controls and automated surface tests do not replace visual
+  QA on the exact release APK or physical GrapheneOS testing.
+- The complete product has not received an independent applied-cryptography or
+  Android security audit.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added
@@ -103,6 +163,7 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.3.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.3.0
 [0.2.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.2.0
 [0.1.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.1.1
 [0.1.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.1.0
