@@ -1603,6 +1603,7 @@ class EmbeddedSecureComposerController(
             )
         }
 
+        protectEmbeddedSecureInteractions(root)
         applyKeyboardColors(root)
         parent.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         applyModeVisibility()
@@ -1700,6 +1701,7 @@ class EmbeddedSecureComposerController(
                 setPadding(dp(10), dp(4), dp(if (dropDown) 10 else 36), dp(4))
                 setBackgroundColor(if (dropDown) dropDownBackgroundColor else Color.TRANSPARENT)
                 isSaveEnabled = false
+                filterTouchesWhenObscured = true
             }
         }
     }
@@ -1776,6 +1778,15 @@ internal inline fun performSecureReplyTransition(
     clearPrivateDraft()
     enterEncryptMode()
     selectReplyContact()
+}
+
+internal fun protectEmbeddedSecureInteractions(view: View) {
+    view.filterTouchesWhenObscured = true
+    if (view is ViewGroup) {
+        for (index in 0 until view.childCount) {
+            protectEmbeddedSecureInteractions(view.getChildAt(index))
+        }
+    }
 }
 
 private enum class EmbeddedDecryptStage {
