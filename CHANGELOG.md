@@ -12,6 +12,8 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   receive flow is now: copy a complete `CB1:` message from any transport, open
   the shield panel, select **Decrypt**, and tap **Paste and decrypt**.
 - Embedded, drawing-only plaintext display inside the `FLAG_SECURE` IME window.
+- Obscured-touch filtering across the embedded secure panel to reject overlay
+  tapjacking attempts on encryption, decryption, reply and Vault actions.
   The surface is non-focusable and non-selectable and is excluded from
   Accessibility text, autofill, content capture, and saved state.
 - **Reply securely** in the embedded decrypt view. It clears the received
