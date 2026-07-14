@@ -1,7 +1,9 @@
 use cipherboard_crypto::{
-    decode_transport_part, parse_pairing_payload, CipherAccount, CipherSession, CoreError,
-    ErrorCode, PairingOffer, PairingResponse, PublicIdentity, Result, SecretBytes, TransportMode,
-    MAX_ENCODED_PART_BYTES, MAX_PARTS, OLM_SESSION_VERSION, PROTOCOL_VERSION,
+    decode_presentation, decode_transport_part, encode_presentation, parse_pairing_payload,
+    CipherAccount, CipherSession, CoreError, ErrorCode, PairingOffer, PairingResponse,
+    PublicIdentity, Result, SecretBytes, TransportMode, TransportPresentation,
+    MAX_ENCODED_PART_BYTES, MAX_PARTS, MAX_PRESENTATION_TEXT_BYTES, OLM_SESSION_VERSION,
+    PROTOCOL_VERSION,
 };
 use minicbor::{Decoder, Encoder};
 use zeroize::Zeroize;
@@ -22,6 +24,8 @@ const OP_ENCRYPT: i32 = 5;
 const OP_DECRYPT: i32 = 6;
 const OP_PARSE_ENVELOPE: i32 = 7;
 const OP_PARSE_PAIRING_PAYLOAD: i32 = 8;
+const OP_ENCODE_PRESENTATION: i32 = 9;
+const OP_DECODE_PRESENTATION: i32 = 10;
 
 /// Invoke a stateless crypto operation through the bounded CBOR wire format.
 pub fn dispatch(operation: i32, request: &[u8]) -> SecretBytes {
@@ -72,6 +76,8 @@ fn dispatch_inner(operation: i32, input: &[u8]) -> Result<SecretBytes> {
         OP_DECRYPT => decrypt(input),
         OP_PARSE_ENVELOPE => parse_envelope(input),
         OP_PARSE_PAIRING_PAYLOAD => parse_pairing(input),
+        OP_ENCODE_PRESENTATION => encode_transport_presentation(input),
+        OP_DECODE_PRESENTATION => decode_transport_presentation(input),
         _ => Err(ErrorCode::InvalidInput.into()),
     }
 }
@@ -280,6 +286,46 @@ fn parse_envelope(input: &[u8]) -> Result<SecretBytes> {
             u32::try_from(part.payload().len())
                 .map_err(|_| minicbor::encode::Error::message("size"))?,
         )?;
+        Ok(())
+    })
+}
+
+fn encode_transport_presentation(input: &[u8]) -> Result<SecretBytes> {
+    let mut request = Request::new(input, 3)?;
+    request.version()?;
+    let presentation =
+        TransportPresentation::from_wire(request.u8()?).ok_or(ErrorCode::InvalidInput)?;
+    let count = request.array_len()?;
+    if count == 0 || count > u64::from(MAX_PARTS) {
+        return Err(ErrorCode::TooManyParts.into());
+    }
+    let mut parts = Vec::with_capacity(usize::try_from(count).map_err(|_| ErrorCode::SizeLimit)?);
+    for _ in 0..count {
+        parts.push(request.utf8(MAX_ENCODED_PART_BYTES)?.to_owned());
+    }
+    request.finish()?;
+    let encoded = encode_presentation(&parts, presentation)?;
+    encode_payload(|encoder| {
+        encoder.array(1)?.bytes(encoded.as_bytes())?;
+        Ok(())
+    })
+}
+
+fn decode_transport_presentation(input: &[u8]) -> Result<SecretBytes> {
+    let mut request = Request::new(input, 2)?;
+    request.version()?;
+    let text = request.utf8(MAX_PRESENTATION_TEXT_BYTES)?;
+    request.finish()?;
+    let decoded = decode_presentation(text)?;
+    encode_payload(|encoder| {
+        encoder.array(2)?.u8(decoded.presentation().wire_value())?;
+        encoder.array(
+            u64::try_from(decoded.parts().len())
+                .map_err(|_| minicbor::encode::Error::message("size"))?,
+        )?;
+        for part in decoded.parts() {
+            encoder.bytes(part.as_bytes())?;
+        }
         Ok(())
     })
 }

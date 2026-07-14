@@ -15,9 +15,13 @@ pub const PROTOCOL_VERSION: u8 = 1;
 #[path = "../../src/envelope.rs"]
 #[allow(dead_code)]
 mod envelope;
-use envelope::{
-    decode_transport_part, encode_transport_parts, TransportMode, MAX_ENCODED_PART_BYTES,
-};
+pub use envelope::{decode_transport_part, MAX_ENCODED_PART_BYTES, MAX_MESSAGE_BYTES, MAX_PARTS};
+use envelope::{encode_transport_parts, TransportMode};
+
+#[path = "../../src/presentation.rs"]
+#[allow(dead_code)]
+mod presentation;
+use presentation::{decode_presentation, encode_presentation, TransportPresentation};
 
 const PREFIX: &str = "CB1:";
 const ROUTING_TAG: [u8; 16] = [0x42; 16];
@@ -29,7 +33,7 @@ fuzz_target!(|input: &[u8]| {
         return;
     };
 
-    match mode % 3 {
+    match mode % 5 {
         // Exercise prefix, alphabet, UTF-8, base64url, size, and trailing-data checks.
         0 => {
             if let Ok(text) = core::str::from_utf8(payload) {
@@ -48,7 +52,7 @@ fuzz_target!(|input: &[u8]| {
             }
         }
         // Keep valid envelopes in the corpus and exercise encode/decode invariants.
-        _ => {
+        2 => {
             if payload.len() <= MAX_ROUND_TRIP_PAYLOAD {
                 if let Ok(parts) = encode_transport_parts(
                     ROUTING_TAG,
@@ -64,6 +68,39 @@ fuzz_target!(|input: &[u8]| {
                         assert_eq!(decoded.routing_tag(), &ROUTING_TAG);
                         assert_eq!(decoded.message_id(), &MESSAGE_ID);
                         assert_eq!(decoded.olm_type(), 1);
+                    }
+                }
+            }
+        }
+        // Exercise strict Unicode tokenization, dictionaries, wrapper limits,
+        // checksum, padding, and reconstructed canonical envelopes.
+        3 => {
+            if let Ok(text) = core::str::from_utf8(payload) {
+                let _ = decode_presentation(text);
+            }
+        }
+        // Keep valid word presentations in the corpus and assert exact recovery
+        // of the already authenticated CB1 parts.
+        _ => {
+            if payload.len() <= MAX_ROUND_TRIP_PAYLOAD {
+                if let Ok(parts) = encode_transport_parts(
+                    ROUTING_TAG,
+                    MESSAGE_ID,
+                    1,
+                    payload,
+                    0,
+                    TransportMode::Universal,
+                ) {
+                    let presentation = if mode & 1 == 0 {
+                        TransportPresentation::EnglishWords
+                    } else {
+                        TransportPresentation::RussianWords
+                    };
+                    if let Ok(text) = encode_presentation(&parts, presentation) {
+                        let decoded = decode_presentation(&text)
+                            .expect("the word encoder must produce a parseable presentation");
+                        assert_eq!(decoded.presentation(), presentation);
+                        assert_eq!(decoded.parts(), parts);
                     }
                 }
             }

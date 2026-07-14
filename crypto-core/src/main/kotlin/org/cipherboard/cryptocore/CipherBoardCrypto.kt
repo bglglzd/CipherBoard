@@ -205,6 +205,39 @@ class CipherBoardCrypto {
         }
     }
 
+    fun encodePresentation(parts: List<String>, presentation: TransportPresentation): String {
+        require(parts.size in 1..MAX_PARTS)
+        val request = CborWriter().use { writer ->
+            writer.array(3).uint(WIRE_VERSION.toLong()).uint(presentation.wireValue.toLong())
+            writer.array(parts.size)
+            parts.forEach(writer::ascii)
+            writer.finish()
+        }
+        return invoke(OP_ENCODE_PRESENTATION, request) { payload ->
+            payload.array(1)
+            val result = payload.utf8(MAX_PRESENTATION_TEXT_BYTES)
+            payload.finish()
+            result
+        }
+    }
+
+    fun decodePresentation(text: String): PresentationDecoded {
+        require(text.isNotEmpty())
+        require(text.length <= MAX_PRESENTATION_TEXT_BYTES)
+        val request = CborWriter().use { writer ->
+            writer.array(2).uint(WIRE_VERSION.toLong()).utf8(text, MAX_PRESENTATION_TEXT_BYTES).finish()
+        }
+        return invoke(OP_DECODE_PRESENTATION, request) { payload ->
+            payload.array(2)
+            val presentation = TransportPresentation.fromWire(payload.uint().toInt())
+            val count = payload.arrayLength()
+            require(count in 1..MAX_PARTS)
+            val parts = List(count) { payload.ascii(MAX_PART) }
+            payload.finish()
+            PresentationDecoded(presentation, parts)
+        }
+    }
+
     fun parsePairingPayload(
         qrPayload: ByteArray,
         nowEpochSeconds: Long,
@@ -284,6 +317,8 @@ class CipherBoardCrypto {
         private const val OP_DECRYPT = 6
         private const val OP_PARSE_ENVELOPE = 7
         private const val OP_PARSE_PAIRING_PAYLOAD = 8
+        private const val OP_ENCODE_PRESENTATION = 9
+        private const val OP_DECODE_PRESENTATION = 10
 
         private const val MAX_ACCOUNT_STATE = 1024 * 1024
         private const val MAX_SESSION_STATE = 4 * 1024 * 1024
@@ -291,6 +326,7 @@ class CipherBoardCrypto {
         private const val MAX_PAIRING = 32 * 1024
         private const val MAX_PART = 32 * 1024
         private const val MAX_PARTS = 128
+        const val MAX_PRESENTATION_TEXT_BYTES = 768 * 1024
     }
 }
 

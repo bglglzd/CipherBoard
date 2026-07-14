@@ -1,8 +1,9 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use cipherboard_crypto::{
-    decode_transport_part, encode_transport_parts, parse_pairing_payload,
-    reassemble_transport_parts, CipherAccount, CipherSession, ErrorCode, PairingOffer,
-    PairingPayloadType, PairingResponse, SecretBytes, TransportMode, MAX_PARTS,
+    decode_presentation, decode_transport_part, encode_presentation, encode_transport_parts,
+    parse_pairing_payload, reassemble_transport_parts, CipherAccount, CipherSession, ErrorCode,
+    PairingOffer, PairingPayloadType, PairingResponse, SecretBytes, TransportMode,
+    TransportPresentation, MAX_PARTS,
 };
 use minicbor::Encoder;
 use proptest::prelude::*;
@@ -90,6 +91,68 @@ fn pairing_qr_and_bidirectional_first_messages() {
         TransportMode::Universal,
     );
     assert_eq!(decrypt(&mut paired.alice_state, &reply), b"Hello, Alice");
+}
+
+#[test]
+fn paired_sessions_exchange_russian_and_english_word_presentations() {
+    let mut paired = pair();
+    let russian_plaintext = "Сообщение через русские слова 🔐";
+    let russian_parts = encrypt(
+        &mut paired.alice_state,
+        russian_plaintext.as_bytes(),
+        TransportMode::Universal,
+    );
+    let russian_words = encode_presentation(&russian_parts, TransportPresentation::RussianWords)
+        .expect("encode Russian words");
+    assert!(!russian_words.contains("CB1:"));
+    let decoded_russian = decode_presentation(&russian_words).expect("decode Russian words");
+    assert_eq!(
+        decoded_russian.presentation(),
+        TransportPresentation::RussianWords
+    );
+    assert_eq!(
+        decrypt(&mut paired.bob_state, decoded_russian.parts()),
+        russian_plaintext.as_bytes()
+    );
+
+    let english_plaintext = "Reply through English words";
+    let english_parts = encrypt(
+        &mut paired.bob_state,
+        english_plaintext.as_bytes(),
+        TransportMode::Universal,
+    );
+    let english_words = encode_presentation(&english_parts, TransportPresentation::EnglishWords)
+        .expect("encode English words");
+    assert!(!english_words.contains("CB1:"));
+    let decoded_english = decode_presentation(&english_words).expect("decode English words");
+    assert_eq!(
+        decoded_english.presentation(),
+        TransportPresentation::EnglishWords
+    );
+    assert_eq!(
+        decrypt(&mut paired.alice_state, decoded_english.parts()),
+        english_plaintext.as_bytes()
+    );
+}
+
+#[test]
+fn first_32_kib_message_fits_each_word_presentation() {
+    let plaintext = vec![0x5a; 32 * 1024];
+    for presentation in [
+        TransportPresentation::RussianWords,
+        TransportPresentation::EnglishWords,
+    ] {
+        let mut paired = pair();
+        let parts = encrypt(
+            &mut paired.alice_state,
+            &plaintext,
+            TransportMode::Universal,
+        );
+        let words = encode_presentation(&parts, presentation).expect("encode boundary message");
+        let decoded = decode_presentation(&words).expect("decode boundary message");
+        assert_eq!(decoded.presentation(), presentation);
+        assert_eq!(decrypt(&mut paired.bob_state, decoded.parts()), plaintext);
+    }
 }
 
 #[test]

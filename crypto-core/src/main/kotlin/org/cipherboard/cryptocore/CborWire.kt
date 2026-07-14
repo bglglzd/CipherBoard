@@ -1,5 +1,8 @@
 package org.cipherboard.cryptocore
 
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+
 internal const val WIRE_VERSION = 1
 internal const val MAX_WIRE_BYTES = 8 * 1024 * 1024
 
@@ -34,6 +37,17 @@ internal class CborWriter(
     fun ascii(value: String): CborWriter {
         require(value.all { it.code in 0..127 })
         return bytes(value.toByteArray(Charsets.US_ASCII))
+    }
+
+    fun utf8(value: String, limit: Int = maximum): CborWriter {
+        require(value.length <= limit)
+        val encoded = value.toByteArray(Charsets.UTF_8)
+        return try {
+            require(encoded.size <= limit)
+            bytes(encoded)
+        } finally {
+            encoded.fill(0)
+        }
     }
 
     fun finish(): ByteArray {
@@ -133,6 +147,19 @@ internal class CborReader(
         try {
             require(bytes.all { it.toInt() and 0xff <= 127 })
             return bytes.toString(Charsets.US_ASCII)
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    fun utf8(limit: Int): String {
+        val bytes = bytes(limit)
+        return try {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
         } finally {
             bytes.fill(0)
         }
