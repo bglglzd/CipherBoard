@@ -17,6 +17,7 @@ import org.mockito.Mockito.mock
 
 class SecureImeBridgeTest {
     private val hostConnectionToken: IBinder = mock(IBinder::class.java)
+    private val hostConnectionIdentity = Any()
 
     @Before
     fun setUp() = SecureImeBridge.clear()
@@ -184,6 +185,38 @@ class SecureImeBridgeTest {
     }
 
     @Test
+    fun `missing framework connection token does not block a live host handoff`() {
+        val operationId = ByteArray(16) { 0x32 }
+        val token = requireNotNull(begin(connectionToken = null))
+        assertTrue(SecureImeBridge.activateComposer(token))
+        assertTrue(
+            SecureImeBridge.arm(
+                token,
+                outbound(operationId, listOf("CB1:no-framework-token")),
+            ),
+        )
+
+        var committed: String? = null
+        assertEquals(
+            CiphertextDeliveryResult.NO_HANDOFF,
+            deliver(connectionToken = null, connectionIdentity = Any(), committer = {
+                committed = it
+                true
+            }, completion = { true }),
+        )
+        assertNull(committed)
+        assertEquals(
+            CiphertextDeliveryResult.COMMITTED_AND_COMPLETED,
+            deliver(connectionToken = null, committer = {
+                committed = it
+                true
+            }, completion = { true }),
+        )
+        assertEquals("CB1:no-framework-token", committed)
+        operationId.fill(0)
+    }
+
+    @Test
     fun `each host commit attempt is one shot and durable pending remains explicit`() {
         val operationId = ByteArray(16) { 7 }
         val token = requireNotNull(begin())
@@ -284,6 +317,7 @@ class SecureImeBridgeTest {
                 packageName = HOST_PACKAGE,
                 uid = HOST_UID,
                 connectionToken = hostConnectionToken,
+                connectionIdentity = hostConnectionIdentity,
                 fieldId = HOST_FIELD,
                 fieldName = HOST_FIELD_NAME,
                 inputType = HOST_INPUT_TYPE,
@@ -368,10 +402,14 @@ class SecureImeBridgeTest {
         val deliveryText: String,
     )
 
-    private fun begin(): String? = SecureImeBridge.beginSession(
+    private fun begin(
+        connectionToken: IBinder? = hostConnectionToken,
+        connectionIdentity: Any = hostConnectionIdentity,
+    ): String? = SecureImeBridge.beginSession(
         packageName = HOST_PACKAGE,
         uid = HOST_UID,
-        connectionToken = hostConnectionToken,
+        connectionToken = connectionToken,
+        connectionIdentity = connectionIdentity,
         fieldId = HOST_FIELD,
         fieldName = HOST_FIELD_NAME,
         inputType = HOST_INPUT_TYPE,
@@ -384,13 +422,15 @@ class SecureImeBridgeTest {
 
     private fun deliver(
         fieldId: Int = HOST_FIELD,
-        connectionToken: IBinder = hostConnectionToken,
+        connectionToken: IBinder? = hostConnectionToken,
+        connectionIdentity: Any = hostConnectionIdentity,
         committer: (String) -> Boolean,
         completion: (ByteArray) -> Boolean,
     ): CiphertextDeliveryResult = SecureImeBridge.deliver(
         packageName = HOST_PACKAGE,
         uid = HOST_UID,
         connectionToken = connectionToken,
+        connectionIdentity = connectionIdentity,
         fieldId = fieldId,
         fieldName = HOST_FIELD_NAME,
         inputType = HOST_INPUT_TYPE,

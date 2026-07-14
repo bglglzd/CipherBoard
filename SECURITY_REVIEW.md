@@ -16,6 +16,17 @@ physical-device or GrapheneOS evidence.
 
 ## Evidence Observed
 
+- The 0.4.1 IME lifecycle fix accepts Android's temporarily missing
+  `InputBinding.connectionToken` only when the exact live `InputConnection`
+  object, host UID/package and editor metadata still match. Unit tests reject a
+  different connection even with the same Binder token and metadata, and the
+  one-shot `SecureImeBridge` independently enforces the same referential
+  connection identity before ciphertext publication.
+- API 36 manual regression testing confirmed that the embedded Private panel
+  switches RU to EN locally while the Vault is locked. Static policy tests keep
+  the external IME picker blocked and allow only the local language action and
+  explicit shield close while plaintext input is unavailable.
+
 - `vodozemac 0.10.0` is exact-versioned with default features disabled and Olm
   `SessionConfig::version_2()` enforced. Rust Cargo lockfiles are checked in.
 - The latest native test run reported 43 passing tests and the JNI crate
@@ -83,8 +94,9 @@ physical-device or GrapheneOS evidence.
   positive-duration legacy key is generated.
 - The v0.2 source replaces shield-to-activity navigation with an embedded
   Private mode panel. Software-key and IME edit paths target a bounded local
-  draft, the active host is scoped by exact `InputBinding.connectionToken`, and
-  personalized learning/clipboard-history paths are disabled. Detailed
+  draft, the active host is scoped by the exact live `InputConnection`, host
+  UID/package and editor metadata, and personalized learning/clipboard-history
+  paths are disabled. Detailed
   inherited InputLogic diagnostics are unconditionally suppressed for the
   secure editor, including chosen words, n-gram context and code points; a
   policy regression test covers this gate. Visual emulator
@@ -161,9 +173,9 @@ physical-device or GrapheneOS evidence.
 | Replay | 4096 IDs in serialized session plus per-contact 8192-marker SQLite bound committed with inbound state | inbound SIGKILL/reopen test passes; wider long-run/device restart matrix remains |
 | Storage | AES-256-GCM records with type/key/schema/revision AAD; random nonces; no-backup CE location | stolen-DB, WAL/SHM, corruption and backup/transfer device tests |
 | Keystore | non-exportable AES wrapping key; StrongBox-first; only reported TEE accepted as fallback; software/unknown rejected; user authentication | real StrongBox/TEE/invalidation/reboot tests |
-| Send atomicity | advanced ratchet plus contact-bound exact pending ciphertext commit; `READY` changes durably to `COMMIT_UNCERTAIN` before one exact-token-scoped host commit; uncertain delivery cannot auto-retry | existing SIGKILL commit-boundary tests and new codec/store/bridge unit coverage; individual SQLite statements and real host-ack window remain |
+| Send atomicity | advanced ratchet plus contact-bound exact pending ciphertext commit; `READY` changes durably to `COMMIT_UNCERTAIN` before one exact-live-connection-scoped host commit; uncertain delivery cannot auto-retry | existing SIGKILL commit-boundary tests and new codec/store/bridge unit coverage; individual SQLite statements and real host-ack window remain |
 | Receive atomicity | replay, advanced ratchet and encrypted pending display commit together; exact-ciphertext digest recovery; pre-first-draw abandon retains record; first allowed draw acknowledges the lease | real post-commit SIGKILL and close/reopen plus targeted first-draw tests pass; in-transaction and post-draw/pre-close kill failpoints remain |
-| Private panel | shield toggles an embedded `FLAG_SECURE` IME panel; bounded Encrypt draft; software keys/edit actions route locally; Decrypt hides keys; no saved state/plaintext copy/share/learning/clipboard history; exact connection-token scope and lifecycle clearing | locked Encrypt and idle Decrypt states fit API 36 landscape at font scale 2.0 in English/Russian; paired-contact/long-text matrix, hostile-host, hardware-keyboard and physical GrapheneOS evidence remain |
+| Private panel | shield toggles an embedded `FLAG_SECURE` IME panel; bounded Encrypt draft; software keys/edit actions route locally; Decrypt hides keys; no saved state/plaintext copy/share/learning/clipboard history; exact live-connection scope and lifecycle clearing | locked Encrypt and idle Decrypt states fit API 36 landscape at font scale 2.0 in English/Russian; paired-contact/long-text matrix, hostile-host, hardware-keyboard and physical GrapheneOS evidence remain |
 | Decrypt/viewer | explicit bounded ciphertext clipboard read; clipboard unchanged; owned result handoff; one-shot unlock token; drawing-only inaccessible embedded/activity text; render-time Vault gate; background cancellation; local opaque reply capability | targeted v0.3 race/surface tests and 7/7 API 36 process-text/FLAG_SECURE/background-wipe/clipboard instrumentation pass; embedded paired-contact E2E, screenshot/recents/Assistant/Accessibility/screen-lock evidence remains |
 | Pairing/contact | signed native offer/response; encrypted one-shot state; bounded orphan cleanup; explicit comparison; changed identity blocks use until verification | live two-device, camera permission, lifecycle, process-kill and hostile-QR instrumentation |
 | QR | local ZXing codec and lifecycle-bound CameraX scanner with bounded ASCII payloads; Camera requested only by the Scan actions | real permission grant/deny/revoke and two-device camera evidence |

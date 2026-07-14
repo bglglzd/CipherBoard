@@ -171,10 +171,15 @@ class EmbeddedSecureComposerController(
 
     fun effectiveEditorInfo(): EditorInfo? = if (active) secureEditorInfo() else null
 
-    fun activate(editorInfo: EditorInfo?, uid: Int, connectionToken: IBinder?): Boolean {
-        if (active) return acceptsHost(editorInfo, uid, connectionToken)
+    fun activate(
+        editorInfo: EditorInfo?,
+        uid: Int,
+        connectionToken: IBinder?,
+        connectionIdentity: Any?,
+    ): Boolean {
+        if (active) return acceptsHost(editorInfo, uid, connectionToken, connectionIdentity)
         val hostInfo = editorInfo ?: return false
-        val scope = EmbeddedHostScope.from(hostInfo, uid, connectionToken) ?: return false
+        val scope = EmbeddedHostScope.from(hostInfo, uid, connectionToken, connectionIdentity) ?: return false
         if (container == null) return false
         hostScope = scope
         passwordAcknowledged = !isPasswordInput(hostInfo.inputType)
@@ -237,8 +242,12 @@ class EmbeddedSecureComposerController(
         parserExecutor.shutdownNow()
     }
 
-    fun acceptsHost(editorInfo: EditorInfo?, uid: Int, connectionToken: IBinder?): Boolean =
-        hostScope?.matches(editorInfo, uid, connectionToken) == true
+    fun acceptsHost(
+        editorInfo: EditorInfo?,
+        uid: Int,
+        connectionToken: IBinder?,
+        connectionIdentity: Any?,
+    ): Boolean = hostScope?.matches(editorInfo, uid, connectionToken, connectionIdentity) == true
 
     fun markUnlockStarted(): String? {
         if (!active) return null
@@ -283,10 +292,15 @@ class EmbeddedSecureComposerController(
         ime.forceCloseEmbeddedSecureComposer()
     }
 
-    fun consumeUnlockReturn(editorInfo: EditorInfo?, uid: Int, connectionToken: IBinder?): Boolean {
+    fun consumeUnlockReturn(
+        editorInfo: EditorInfo?,
+        uid: Int,
+        connectionToken: IBinder?,
+        connectionIdentity: Any?,
+    ): Boolean {
         if (!active || !awaitingUnlock || !unlockActivityCompleted) return false
         val scope = hostScope ?: return false
-        if (!scope.rebindAfterUnlock(editorInfo, uid, connectionToken)) return false
+        if (!scope.rebindAfterUnlock(editorInfo, uid, connectionToken, connectionIdentity)) return false
         awaitingUnlock = false
         unlockActivityCompleted = false
         mainHandler.removeCallbacks(unlockReturnTimeout)
@@ -1869,23 +1883,36 @@ internal class EmbeddedHostScope private constructor(
     private val fieldName: String?,
     private val inputType: Int,
     private val imeOptions: Int,
-    private var connectionToken: IBinder,
+    private var connectionToken: IBinder?,
+    private var connectionIdentity: Any,
 ) {
     private var unlockRebindArmed = false
 
-    fun matches(editorInfo: EditorInfo?, currentUid: Int, currentToken: IBinder?): Boolean =
-        metadataMatches(editorInfo, currentUid) && currentToken != null && currentToken === connectionToken
+    fun matches(
+        editorInfo: EditorInfo?,
+        currentUid: Int,
+        currentToken: IBinder?,
+        currentConnectionIdentity: Any?,
+    ): Boolean = metadataMatches(editorInfo, currentUid) &&
+        currentConnectionIdentity != null && currentConnectionIdentity === connectionIdentity &&
+        (connectionToken == null || currentToken == null || currentToken === connectionToken)
 
     fun armUnlockRebind() {
         unlockRebindArmed = true
     }
 
     /** Consumes the one token replacement authorized by an explicit Vault unlock transition. */
-    fun rebindAfterUnlock(editorInfo: EditorInfo?, currentUid: Int, newToken: IBinder?): Boolean {
-        if (!unlockRebindArmed || !metadataMatches(editorInfo, currentUid) || newToken == null) {
+    fun rebindAfterUnlock(
+        editorInfo: EditorInfo?,
+        currentUid: Int,
+        newToken: IBinder?,
+        newConnectionIdentity: Any?,
+    ): Boolean {
+        if (!unlockRebindArmed || !metadataMatches(editorInfo, currentUid) || newConnectionIdentity == null) {
             return false
         }
         connectionToken = newToken
+        connectionIdentity = newConnectionIdentity
         unlockRebindArmed = false
         return true
     }
@@ -1895,10 +1922,15 @@ internal class EmbeddedHostScope private constructor(
         fieldName == editorInfo.fieldName && inputType == editorInfo.inputType && imeOptions == editorInfo.imeOptions
 
     companion object {
-        fun from(editorInfo: EditorInfo?, uid: Int, connectionToken: IBinder?): EmbeddedHostScope? {
+        fun from(
+            editorInfo: EditorInfo?,
+            uid: Int,
+            connectionToken: IBinder?,
+            connectionIdentity: Any?,
+        ): EmbeddedHostScope? {
             val info = editorInfo ?: return null
             val packageName = info.packageName?.takeIf { it.isNotBlank() } ?: return null
-            if (uid < 0 || connectionToken == null) return null
+            if (uid < 0 || connectionIdentity == null) return null
             return EmbeddedHostScope(
                 packageName,
                 uid,
@@ -1907,6 +1939,7 @@ internal class EmbeddedHostScope private constructor(
                 info.inputType,
                 info.imeOptions,
                 connectionToken,
+                connectionIdentity,
             )
         }
     }

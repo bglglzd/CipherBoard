@@ -46,9 +46,9 @@ Pending outbound records are contact-bound. A `READY` operation may be offered
 once without another ratchet step. Before the external Binder call it is
 durably changed to `COMMIT_UNCERTAIN`; this state is never automatically
 retried because the host may have accepted text even when its acknowledgement
-was lost. The handoff is bound to the pending operation, exact ciphertext,
-original host package/UID, input field metadata, selection and exact
-`InputBinding.connectionToken`. `LatinIME` performs the only permitted host
+was lost. The handoff is bound to the pending operation, exact ciphertext, the
+exact live `InputConnection` object, original host package/UID, input field
+metadata and selection. `LatinIME` performs the only permitted host
 `commitText()` and completes the pending record after an accepted insertion.
 Inbound recovery is bound to the digest of the complete ordered ciphertext.
 The embedded surface acknowledges the pending display only after its first
@@ -268,12 +268,15 @@ history, clipboard history, paste and plaintext clipboard fallbacks are
 disabled. The IME window sets `FLAG_SECURE`. Password fields require an
 explicit warning before activation.
 
-The scope stores the exact non-null `InputBinding.connectionToken` as well as
-package/UID and editor metadata. Any field or token change closes the panel and
-wipes the draft and embedded plaintext. The Vault-unlock activity is
-non-exported and may cause Android to recreate the connection; one explicit,
-metadata-matching token rebind is allowed only after its one-shot process-local
-handoff reports a successful unlock.
+The scope stores the exact live `InputConnection` object as well as package/UID
+and editor metadata. When both old and current `InputBinding.connectionToken`
+values are available they must also match, but Android may temporarily omit or
+replace that token during an IME lifecycle transition. Any unapproved live
+connection or field change closes the panel and wipes the draft and embedded
+plaintext. The non-exported Vault-unlock activity may cause Android to recreate
+the connection; one explicit, metadata-matching live-connection rebind is
+allowed only after its one-shot process-local handoff reports a successful
+unlock. A locked draft is wiped before that transition.
 
 Android physical-keyboard dispatch is outside this software-key routing
 boundary and may deliver characters directly to the focused host view. Private
@@ -287,7 +290,9 @@ same revision-checked storage operation. `SecureImeBridge` receives a one-shot
 process-local claim containing its operation ID and the exact transport text
 deterministically reconstructed from the persisted canonical parts and
 versioned presentation enum. The claim is scoped to the active embedded host
-scope, including the exact connection token. The runtime always produces canonical `CB1` parts with the universal
+scope, including the exact live `InputConnection` identity, host UID/package and
+editor metadata. A Binder token is only an additional check because Android can
+temporarily omit or replace it. The runtime always produces canonical `CB1` parts with the universal
 16-KiB core fragmentation profile, then applies the sender's local presentation
 preference. The receiver does not need the same preference because decode is
 auto-detected.
@@ -330,7 +335,7 @@ plaintext are never Intent extras. The activity must activate the token once
 and complete it once. Cancellation, duplicate activation, timeout, screen-off,
 or a failed/mismatched host-scope return invalidates the handoff and closes the
 panel. Only then may the exact editor metadata obtain its single authorised
-connection-token rebind. `decryptUnlocked()` never presents authentication UI
+live-connection rebind. `decryptUnlocked()` never presents authentication UI
 and fails closed if the Vault expired between the handoff and worker execution.
 Parser and decrypt completions cross to the main thread through an owned-result
 handoff. Cancellation invalidates its generation and closes queued or late
@@ -375,7 +380,7 @@ ratchet revision supplies local concurrency control.
 4. In one database transaction, store session revision `n+1` and an encrypted
    pending record containing contact ID, canonical `CB1` parts, and the
    versioned presentation enum.
-5. Only after commit and exact connection-token validation, claim the `READY`
+5. Only after commit and exact live-connection validation, claim the `READY`
    operation once.
 6. Atomically change it to `COMMIT_UNCERTAIN` before crossing the host Binder
    boundary.
