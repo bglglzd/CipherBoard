@@ -6,7 +6,8 @@ CipherBoard is an unofficial, modified HeliBoard keyboard for one-to-one
 offline encrypted text exchange, primarily on current GrapheneOS devices. Two
 people install the same APK, create local cryptographic identities, pair in
 person by scanning each other's QR codes, compare a Safety Number, and carry
-`CB1` ciphertext through any ordinary text application.
+compact `CB1` or reversibly word-presented ciphertext through any ordinary text
+application.
 
 The external application is an untrusted transport. Secure-composer plaintext
 must never enter its editor; decrypted plaintext is shown only in a protected
@@ -20,7 +21,8 @@ Working identifiers are:
 | Product name | `CipherBoard` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Native crate | `cipherboard-crypto` |
-| Wire prefix | `CB1:` |
+| Canonical wire prefix | `CB1:` |
+| Word presentation | `CBW1`, Russian or English Base4096 |
 
 The product name, application ID/namespace-derived authorities, version, and
 artifact base name MUST be defined from centralized build configuration. The
@@ -84,6 +86,10 @@ independent Android and applied-cryptography audit.
    backup, and root-oriented export paths exclude the vault and ratchet state.
 8. **Honest claims.** The product does not claim absolute security or an
    independent audit. Platform and memory-erasure limits are visible to users.
+9. **Presentation is not cryptography.** Russian/English words wrap the same
+   authenticated canonical `CB1` parts. Their checksum is not authentication,
+   and the UI must call the result camouflage rather than steganography or
+   natural language.
 
 ## Target Users and Core Flows
 
@@ -112,16 +118,21 @@ confirm locally. Names remain local and are excluded from the transcript.
 
 The user opens the shield tool, authenticates, selects a verified contact, and
 types into CipherBoard's private composer using the standard layouts. Encrypt
-atomically advances the session and persists the exact `CB1` envelope. Only
-that ciphertext is committed to the host editor after an explicit user action.
+atomically advances the session, always builds universally fragmented canonical
+`CB1` parts, and persists their exact compact/Russian-word/English-word
+presentation. Only that ciphertext is committed to the host editor after an
+explicit user action. Presentation is a sender-local setting, not a contact or
+session capability.
 
 ### Receive
 
-The user selects one or more `CB1` parts and invokes read-only
-`ACTION_PROCESS_TEXT`, or chooses Decrypt selected text in the keyboard. After
-strict parsing and vault authentication, CipherBoard advances receive state and
-shows plaintext in a `FLAG_SECURE` viewer. It never replaces the selection or
-returns plaintext to the caller. Clipboard fallback accepts ciphertext only.
+The user copies a complete compact or word-presented message, opens Decrypt in
+the shield panel, and explicitly asks CipherBoard to paste and decrypt it.
+`ACTION_PROCESS_TEXT` and selected text remain alternatives. CipherBoard 0.4+
+auto-detects all three presentations, recovers and strictly validates canonical
+`CB1` parts, then authenticates and advances the receive state before showing
+plaintext in a `FLAG_SECURE` surface. It never replaces the selection or returns
+plaintext to the caller. Clipboard input and fallback accept ciphertext only.
 
 ## Version 1 Scope
 
@@ -132,7 +143,9 @@ Included:
 - local identity, contact vault, rename/delete/reset/re-pair operations;
 - reciprocal offline QR pairing and explicit Safety Number verification;
 - one-to-one Olm V2 sessions, replay tracking, bounded out-of-order handling;
-- canonical, versioned `CB1` envelopes and Universal/SMS fragmentation;
+- canonical, versioned `CB1` envelopes, universal fragmentation for new sends,
+  backward parsing of legacy SMS-profile parts, and compact/Russian/English
+  presentation;
 - secure composer, selected-ciphertext decrypt, protected viewer and reply;
 - StrongBox-first/TEE-fallback vault with configurable lock lease;
 - English and Russian product UI, accessibility for non-secret controls, light,
@@ -166,6 +179,9 @@ Not included:
   before host insertion.
 - **Pending display:** DEK-encrypted plaintext stored with advanced receive state
   only long enough to recover/show the no-history viewer.
+- **Presentation:** a receiver-independent textual rendering of the same
+  canonical ciphertext parts: compact `CB1`, Russian words, or English words.
+  `CBW1` is recognizable deterministic camouflage, not additional encryption.
 - **Verified:** local user confirmation that the Safety Number/emoji code matched
   on both physically present devices. It is not server attestation.
 - **Key changed:** a peer identity differs from the pinned contact; messaging is
@@ -176,6 +192,8 @@ Not included:
 - `UPSTREAM.md` pins the HeliBoard origin and build baseline.
 - `docs/adr/0001-crypto-library.md` records the vodozemac choice, API surface,
   audit evidence, feature flags, and alternatives.
+- `docs/adr/0002-word-transport.md` records the word-presentation goals, format,
+  compatibility, limitations, and dictionary provenance.
 - `ARCHITECTURE.md` defines module boundaries, direct boot, IME isolation,
   storage, and crash recovery.
 - `CRYPTO_PROTOCOL.md` is the normative byte/state protocol.

@@ -1,7 +1,7 @@
 # CipherBoard Licensing Inventory
 
 This inventory was checked against the repository state and resolved dependency
-metadata on 2026-07-13. It is not a substitute for preserving source-file
+metadata on 2026-07-14. It is not a substitute for preserving source-file
 headers or the complete license texts shipped in this repository.
 
 ## CipherBoard and HeliBoard
@@ -23,6 +23,37 @@ notices for the applicable resolved components are retained in
 [`LICENSE-BSD-3-Clause-NOTICES`](LICENSE-BSD-3-Clause-NOTICES). Exact MIT
 copyright and permission notices for the MIT-only resolved components are
 retained in [`LICENSE-MIT`](LICENSE-MIT).
+
+## Word Presentation Dictionaries
+
+The English and Russian 4096-word presentation dictionaries are generated
+derivative datasets from
+[`hermitdave/FrequencyWords`](https://github.com/hermitdave/FrequencyWords),
+commit `525f9b560de45753a5ea01069454e72e9aa541c6`. The exact upstream inputs are:
+
+- `content/2018/en/en_50k.txt`
+- `content/2018/ru/ru_50k.txt`
+
+FrequencyWords identifies its content as Creative Commons Attribution-
+ShareAlike 4.0 (`CC-BY-SA-4.0`). CipherBoard redistributes the generated lists
+under the same content license; the complete text is
+[`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0).
+
+The generation process extracts the word column, keeps only already-lowercase
+alphabetic English `a-z` or Russian `а-я` words of 4--10 letters,
+deduplicates entries, removes profanity and alarming words/fragments, then
+takes a deterministic 4096-entry list in source-frequency order. These
+transformations produce codebook tokens, not natural phrases or a language
+model. The exact generated UTF-8 files are pinned by SHA-256:
+
+| Generated file | SHA-256 |
+| --- | --- |
+| `crypto-core/native/data/words_en_v1.txt` | `620b96da9c31f8552a6ed8eb54ef22a9a9a6b7885d2caf4ba9f658b748cf0cb3` |
+| `crypto-core/native/data/words_ru_v1.txt` | `6163eddf094c8c426959c1bb36d95dca3d7cbe4bdecc13bd13077279b7ccc8a9` |
+
+The dictionary bytes are versioned protocol data. Reordering, replacing, or
+silently regenerating them would break `CBW1` interoperability and requires a
+new presentation version plus license review.
 
 ## Android Runtime Dependencies
 

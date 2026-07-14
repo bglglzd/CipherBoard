@@ -28,8 +28,8 @@ The Gradle product identity is centralized in `gradle.properties`:
 ```text
 cipherboard.applicationId=org.cipherboard.securekeyboard
 cipherboard.productName=CipherBoard
-cipherboard.versionCode=10000
-cipherboard.versionName=0.1.0
+cipherboard.versionCode=40000
+cipherboard.versionName=0.4.0
 cipherboard.artifactName=CipherBoard
 ```
 
@@ -113,7 +113,7 @@ The production transport parser has a separate pinned cargo-fuzz package. From
 
 ```sh
 cargo +nightly fuzz run transport_parser fuzz/corpus/transport_parser -- \
-  -max_total_time=60 -max_len=32768 -timeout=5
+  -max_total_time=60 -max_len=393216 -timeout=5
 ```
 
 See `crypto-core/native/fuzz/README.md` for pinned prerequisites and the Windows
@@ -188,16 +188,18 @@ native hardening, and source review.
 
 ## Current Status
 
-On the current 2026-07-13 worktree, the complete app/library debug unit tasks and
+On the current 2026-07-14 worktree, the complete app/library debug unit tasks and
 release lint gates for all four modules pass after the API 23 compatibility
-fixes. The Rust native suite reports 27 passing tests; Rust format, Clippy and
-dependency audit gates also pass. These results include
-deterministic CBOR and compact-SMS regressions, storage transactions,
-contact-bound pending operations, pairing cleanup/key-change behavior, and the
-process-local one-shot IME handoff.
+fixes. The Rust native suite reports 43 passing tests and the narrow JNI crate
+reports 3; Rust format, Clippy and dependency audit gates also pass. These
+results include deterministic CBOR, compact/word presentation and legacy
+multipart compatibility regressions, storage transactions, contact-bound
+pending operations, pairing cleanup/key-change behavior, and the typed
+one-shot IME handoff.
 
-The production envelope parser also completed a 31-second ASan/libFuzzer run:
-601,574 inputs, zero crashes and zero timeouts. This bounded campaign does not
+The production envelope/presentation parser also completed a 61-second
+ASan/libFuzzer run: 236,453 inputs, zero crashes, zero timeouts and zero
+artifacts, using nine reviewed seeds and `max_len=393216`. This bounded campaign does not
 replace longer scheduled fuzzing or future pairing/JNI targets. Release
 preflight also scanned all 255 CycloneDX packages using the pinned official
 OSV-Scanner v2.4.0 and fresh offline Maven/crates.io databases; it exited zero

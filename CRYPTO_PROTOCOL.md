@@ -1,6 +1,6 @@
 # CipherBoard Protocol: Implemented Snapshot
 
-**Snapshot date:** 2026-07-13
+**Snapshot date:** 2026-07-14
 
 **Wire version:** provisional `1`
 
@@ -14,8 +14,10 @@ protocol version; it must not silently reinterpret already emitted version-1
 bytes.
 
 The implementation sources of truth are `account.rs`, `pairing.rs`,
-`session.rs`, and `envelope.rs`. Android storage and publication ordering are
-described in `ARCHITECTURE.md`.
+`session.rs`, `envelope.rs`, and `presentation.rs`. Android storage and
+publication ordering are described in `ARCHITECTURE.md`. The word-presentation
+decision and its non-security goals are recorded in
+`docs/adr/0002-word-transport.md`.
 
 ## 1. Cryptographic Dependency
 
@@ -277,30 +279,80 @@ whole-payload digest field. Corruption is ultimately rejected by Olm
 authentication and the authenticated inner message bindings, but the omitted
 early assembly digest remains a design difference from the requested format.
 
-## 9. Fragmentation Limits
+## 9. Presentation and Fragmentation Limits
 
 | Property | Implemented value |
 | --- | --- |
-| Android composer plaintext | non-empty, at most Rust limit after UTF-8 encoding |
+| Android composer plaintext, Compact | non-empty, at most 192 KiB after UTF-8 encoding |
+| Android composer plaintext, Russian/English words | non-empty, at most 32 KiB after UTF-8 encoding |
 | Rust plaintext body | 192 KiB |
 | Reassembled Olm payload | 256 KiB |
 | Parts | 128 |
 | Encoded token | 32 KiB |
 | Universal chunk | 16 KiB of Olm payload |
-| SMS compact chunk | 48 bytes of Olm payload |
-| Viewer first-pass part | 32 KiB characters |
-| Viewer first-pass selection | 128 parts plus separators, about 4 MiB characters |
+| Word wrapper after Base4096 decode | 48 KiB |
+| Word tokens | 32,768 |
+| Android presentation input | 384 Ki UTF-16 code units |
 
-`SMS_COMPACT` selects a fixed 48-byte payload chunk. Regression tests assert
-that every complete ASCII `CB1` token is at most 153 characters, including the
-canonical-CBOR envelope and Base64url expansion. The Android estimate uses the
-same 48-byte logical chunk size. This is a conservative compact transport
-profile; an actual carrier may still split or transform text according to its
-own SMS encoding and concatenation policy.
+New sends always use the universal 16-KiB fragmentation profile. The former
+Android **SMS compact** selector is removed. The parser still accepts canonical
+legacy `CB1` part sets created with the old 48-byte profile because chunk size
+is not a protocol field and the normal consistency and size limits still apply.
+
+After the ordered canonical `CB1` parts are built, the sender selects one of
+three presentation layers:
+
+| Presentation | External text | Compatibility |
+| --- | --- | --- |
+| Compact | canonical `CB1:` tokens separated by newline | current and older CipherBoard versions |
+| Russian words | `CBW1` Base4096 using the pinned Russian 4096-word list | CipherBoard 0.4+ |
+| English words | `CBW1` Base4096 using the pinned English 4096-word list | CipherBoard 0.4+ |
+
+The two word formats wrap the complete ordered canonical parts; they do not
+replace the canonical envelope or modify the Olm ciphertext. Their decoded
+binary wrapper is:
+
+```text
+tag[8] || "CBW" || version[1] || alphabet[1] || flags[1] ||
+part_count_be[2] || body_length_be[4] ||
+repeat(part_length_be[4] || canonical_CB1_cbor_bytes)
+```
+
+`version` is `1`, so this presentation family is called `CBW1`. `alphabet` is
+`1` for Russian and `2` for English; flags are currently zero. The 8-byte tag
+comes first and is the first 8 bytes of
+`SHA-256("CipherBoard Word Transport v1\0" || wrapper_without_tag)`. It is a
+checksum for early corruption rejection, not authentication and not a MAC.
+Message authenticity and integrity continue to come only from the unchanged
+Olm/AEAD payload and its inner/outer bindings.
+
+`CBW1` is the internal magic/version name, not a literal visible prefix. Because
+the tag is the first binary field and the whole wrapper is Base4096-encoded, the
+external text begins with dictionary words derived from the tag.
+
+The complete wrapper is encoded most-significant-bit first in 12-bit values;
+each value indexes one token in the selected, version-pinned 4096-word
+dictionary. Tokens are separated with bounded ASCII transport whitespace.
+Decode determines
+the alphabet from the first token, enforces zero padding and exact declared
+length/count, reconstructs the exact `CB1:` parts, and runs the normal canonical
+part validation before decryption. It rejects mixed/unknown words, edits,
+truncation, extra tokens, reordered parts, inconsistent metadata, more than
+32,768 words, a decoded wrapper over 48 KiB, or Android input over 384 Ki UTF-16
+code units. The lower-level JNI text boundary is also bounded; no path allocates
+from an untrusted declared length without validation.
+
+Presentation is a local sender preference and is not negotiated or stored in a
+contact/session. Receivers on 0.4+ auto-detect all three forms, independent of
+their own send preference. Word output is not a natural-language sentence,
+steganography, or plausible deniability. It is longer and more fragile under
+autocorrect, translation, token edits, and messenger transformations than
+compact `CB1`, while exposing substantially the same timing, sender, recipient,
+and approximate-size metadata.
 
 The parser does not persist incomplete assemblies: selected text must contain
-all parts in one invocation. There is no 24-hour partial-message collector in
-the current application.
+all parts, either directly or inside one word wrapper, in one invocation. There
+is no 24-hour partial-message collector in the current application.
 
 ## 10. Replay and Atomic Android State
 

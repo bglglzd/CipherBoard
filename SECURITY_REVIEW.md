@@ -18,7 +18,8 @@ physical-device or GrapheneOS evidence.
 
 - `vodozemac 0.10.0` is exact-versioned with default features disabled and Olm
   `SessionConfig::version_2()` enforced. Rust Cargo lockfiles are checked in.
-- The latest native test run reported 27 passing tests. The suite covers
+- The latest native test run reported 43 passing tests and the JNI crate
+  reported 3. The suites cover
   Alice/Bob pairing and matching comparison values, bidirectional traffic,
   1000 messages, bounded reordering, replay after state restore, tamper,
   truncation, Unicode, multipart bounds, state corruption, transactional API
@@ -31,10 +32,11 @@ physical-device or GrapheneOS evidence.
   reasons; the full current gate does not rely on the older `runTests` build-
   type bypass.
 - A pinned `cargo-fuzz 0.13.2`/`libfuzzer-sys 0.4.13` ASan campaign exercised
-  the production `CB1`/canonical-CBOR envelope parser for 601,574 inputs in 31
-  seconds with zero crashes or timeouts. The tracked harness has three bounded
-  modes and three seed files. This is useful parser evidence, not a substitute
-  for longer scheduled runs or pairing/JNI fuzz targets.
+  the production `CB1`/`CBW1` presentation and canonical-CBOR envelope parser
+  for 236,453 inputs in 61 seconds with zero crashes, timeouts or artifacts.
+  The tracked harness has five bounded modes and nine seed files. This is useful
+  parser evidence, not a substitute for longer scheduled runs or pairing/JNI
+  fuzz targets.
 - `:app:connectedDebugAndroidTest --no-configuration-cache` passed 7/7 tests
   with zero failures/skips on the API 36 x86_64 `CipherBoard_API_36_AOSP`
   no-Play emulator. The tests verify read-only process-text return behavior,
@@ -121,13 +123,41 @@ physical-device or GrapheneOS evidence.
   `COMMIT_UNCERTAIN`, since their prior handoff state is unknowable. The real
   Binder acknowledgement/process-death window remains an explicit platform
   test gap.
+- The v0.4 source removes the new-send SMS fragmentation selector. Encryption
+  always builds universally fragmented canonical `CB1` parts, then persists
+  those parts with a versioned compact/Russian/English presentation enum.
+  Delivery text is deterministically reconstructed and checked against that
+  pending record. Receive auto-detects all presentations; compact
+  remains backward interoperable and legacy SMS-profile `CB1` parts remain
+  accepted.
+- `CBW1` is a presentation wrapper, not new cryptography. Its tag-first 64-bit
+  truncated SHA-256 checksum is unkeyed and is used only for early corruption
+  rejection. Recovered `CB1` parts still undergo canonical validation and
+  Olm/AEAD authentication. Parser bounds are 48 KiB decoded wrapper, 32,768
+  words, and 384 Ki UTF-16 code units at Android entry points.
+- Committed dictionary invariants and byte hashes, compact/Russian/English
+  round trips, mutations, wrong alphabet/version/flags, truncation/extra token,
+  reordered-part, size/count boundaries, property inputs, JNI dispatch, and
+  fuzz corpus cases are covered by source tests. Their exact release-commit run
+  results must be recorded before publishing 0.4; this paragraph does not claim
+  physical GrapheneOS or messenger E2E evidence.
+- Review found and fixed an order-dependence regression in compact multipart
+  decoding. Compact Universal and legacy SMS-profile parts are now bounded,
+  checked for duplicates/mixed metadata, and restored to canonical order before
+  the existing receive path; reversed-profile regressions cover both cases.
+- Review also replaced the app-module raw-string handoff invariant with a typed
+  publication proof. `ValidatedOutboundDelivery` has a private constructor and
+  requires a native encode/decode exact round trip; `PreparedOutbound` has a
+  private constructor and requires an opaque secure-storage commit receipt or
+  recovered pending record whose exact codec bytes match. The bridge therefore
+  cannot be armed with an arbitrary plaintext string through production APIs.
 
 ## Implemented Controls
 
 | Area | Current source control | Evidence still required |
 | --- | --- | --- |
 | Crypto | vodozemac Olm v2; signed offer/response; exact Rust versions | final protocol review, golden vectors, pairing/JNI fuzzing |
-| Envelope | bounded `CB1` Base64url/canonical-CBOR map; duplicate/core-field/trailing-byte checks; order-independent parts; real ASan/libFuzzer campaign | longer scheduled and Android/device tests |
+| Envelope/presentation | bounded `CB1` Base64url/canonical-CBOR map; universal new-send fragmentation; bounded tag-first `CBW1` Base4096 Russian/English wrappers; recovered parts receive normal validation; real prior `CB1` ASan/libFuzzer campaign and expanded v0.4 harness/corpus | run and archive the expanded exact-commit campaign; Android/physical messenger tests |
 | Replay | 4096 IDs in serialized session plus per-contact 8192-marker SQLite bound committed with inbound state | inbound SIGKILL/reopen test passes; wider long-run/device restart matrix remains |
 | Storage | AES-256-GCM records with type/key/schema/revision AAD; random nonces; no-backup CE location | stolen-DB, WAL/SHM, corruption and backup/transfer device tests |
 | Keystore | non-exportable AES wrapping key; StrongBox-first; only reported TEE accepted as fallback; software/unknown rejected; user authentication | real StrongBox/TEE/invalidation/reboot tests |
@@ -214,8 +244,17 @@ code vulnerability when no such defect has been demonstrated.
   bypassing the IME's local Private draft. Private input is supported only with
   CipherBoard's on-screen keys; a physical-device warning/host sentinel remains
   required.
-- The 601,574-input ASan/libFuzzer run covers the envelope parser only; pairing,
-  inner and JNI codecs need additional targets and longer scheduled campaigns.
+- The 236,453-input ASan/libFuzzer run covers the envelope/presentation parser
+  only; pairing, inner and JNI codecs need additional targets and longer
+  scheduled campaigns. A new exact-commit campaign must still be recorded
+  before release.
+- Word presentation is recognizable deterministic ciphertext camouflage, not
+  natural language, steganography, or plausible deniability. It expands text,
+  remains vulnerable to transport truncation/autocorrection/translation, and
+  does not hide sender/recipient, timing, or approximate-size metadata.
+- Two CipherBoard 0.4+ peers are required for Russian/English word messages.
+  Compact output is the compatibility choice for an older peer. The recipient's
+  local send setting is irrelevant because receive format detection is automatic.
 - Restricted temporary password files avoid command-line disclosure, but
   PowerShell/JVM memory cannot be guaranteed to zeroize; offline signing remains
   preferable for a high-assurance release process.
@@ -235,6 +274,9 @@ Encrypt, Decrypt, Reply, unlock, contact selection, clear and close actions.
 The absence of text actions in transports such as Telegram is addressed by the
 v0.3 shield-panel Decrypt mode; plaintext remains inside CipherBoard, while only
 copied ciphertext crosses the clipboard boundary.
+The v0.4 word-presentation UI and parser still require an exact-release, paired-
+contact send/copy/decrypt test in a real messenger on physical GrapheneOS. This
+is residual validation, not evidence that the feature has failed.
 
 ## APK Policy Review
 

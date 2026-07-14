@@ -22,9 +22,12 @@ Implemented source paths include:
   and encrypted pending-display plaintext before returning it to the viewer;
 - an embedded Private mode panel above the keyboard keys, backed by a bounded
   process-local draft connection, with no-learning/clipboard-history gates,
-  best-effort buffer clearing, contact/vault status, Universal/SMS selection,
-  ciphertext-only publication through the active IME, and an **Encrypt /
-  Decrypt** mode selector;
+  best-effort buffer clearing, contact/vault status, a local Compact/Russian-
+  words/English-words presentation preference, ciphertext-only publication
+  through the active IME, and an **Encrypt / Decrypt** mode selector;
+- a Rust `CBW1` presentation codec that wraps already canonical, universally
+  fragmented `CB1` parts as Base4096 dictionary tokens and auto-detects compact,
+  Russian-word, and English-word input under fixed allocation limits;
 - an embedded copied-ciphertext receive flow that reads one bounded clipboard
   item only after an explicit action, hides the ordinary keys, decrypts through
   a hostless already-unlocked backend, and draws plaintext on a non-selectable
@@ -70,10 +73,13 @@ CipherBoard is one offline Android APK with two user-facing roles:
    only inside CipherBoard.
 
 The host application is an untrusted text transport. The IME may read selected
-`CB1` ciphertext from it, explicitly read copied `CB1` ciphertext from the
-system clipboard, and write an exact, already persisted `CB1` ciphertext to the
-host. It MUST NOT write secure-composer plaintext, return decrypted text through
-`ACTION_PROCESS_TEXT`, or place plaintext on the system clipboard.
+compact or word-presented ciphertext from it, explicitly read copied ciphertext
+from the system clipboard, and write an exact, already persisted presentation
+to the host. Compact presentation contains canonical `CB1` parts. Word
+presentation is an unencrypted, reversible wrapper around those same parts; it
+does not alter the authenticated message. The IME MUST NOT write secure-composer
+plaintext, return decrypted text through `ACTION_PROCESS_TEXT`, or place
+plaintext on the system clipboard.
 
 The application has no backend and no runtime network capability. Pairing is a
 physical, bidirectional QR ceremony. Message delivery, availability, ordering,
@@ -94,7 +100,7 @@ same boundary MUST be enforced as a package plus an API/friend test.
 | `crypto-core/` | Rust `vodozemac` wrapper, identity/account/session operations, zeroization, JNI error mapping | `vodozemac`; no Android UI or database |
 | `secure-storage/` | Keystore wrapping key, in-memory DEK lease, encrypted records, transactions, recovery | Android Keystore/SQLite and opaque crypto state |
 | `pairing/` | Offer/response state machine, signatures, expiry/single-use checks, transcript, verification status | crypto, storage, QR codec facade |
-| `transport-envelope/` | Canonical CBOR, `CB1` Base64url, fragmentation/reassembly, limits, routing metadata | no UI, Keystore, database, or `InputConnection` |
+| `transport-envelope/` | Canonical CBOR, universal `CB1` fragmentation/reassembly, compact and `CBW1` Base4096 presentations, limits, routing metadata | no UI, Keystore, database, or `InputConnection` |
 
 The dependency direction MUST keep Android framework objects out of Rust and
 must keep `InputConnection`, clipboard, intents, and logs out of `crypto-core`.
@@ -234,13 +240,17 @@ The shield toggles an embedded Private mode panel inside CipherBoard's IME
 window. It does not launch the composer activity. While active, software-key
 events and IME text-edit commands are routed to a bounded local
 `EmbeddedSecureInputConnection`, not to the host application's connection. The
-panel displays the draft above the ordinary keys, contact/Vault state,
-transport selection and explicit Encrypt/Clear/Close actions. No plaintext
-intent extra, saved-state field or persistent draft API exists.
+panel displays the draft above the ordinary keys, contact/Vault state, selected
+message-format estimate and explicit Encrypt/Clear/Close actions. The output
+format is selected separately under **Home > Message format**; there is no SMS
+or transport selector in the panel. No plaintext intent extra, saved-state
+field or persistent draft API exists.
 
-The interactive draft is capped at 32,768 UTF-16 code units, below the protocol
-core's 192-KiB plaintext ceiling, to bound UI work and wiping latency. UTF-8
-encoding still applies the core byte limit before encryption.
+The interactive draft is capped at 32,768 UTF-16 code units to bound UI work
+and wiping latency. UTF-8 encoding additionally applies the selected
+presentation limit before encryption: 192 KiB in Compact and 32 KiB in either
+word format. The lower word limit ensures that the complete first/pre-key Olm
+message fits the bounded 48-KiB word wrapper.
 
 After an accepted ciphertext insertion, the plaintext remains in the panel so
 the sender can verify what was sent. It is wiped on explicit clear or close,
@@ -274,8 +284,13 @@ keyboard use is unsupported and warned against.
 
 Encryption obtains the exact contact-bound `PendingOutbound` created in the
 same revision-checked storage operation. `SecureImeBridge` receives a one-shot
-process-local claim containing its operation ID and exact `CB1` parts, scoped
-to the active embedded host scope, including the exact connection token.
+process-local claim containing its operation ID and the exact transport text
+deterministically reconstructed from the persisted canonical parts and
+versioned presentation enum. The claim is scoped to the active embedded host
+scope, including the exact connection token. The runtime always produces canonical `CB1` parts with the universal
+16-KiB core fragmentation profile, then applies the sender's local presentation
+preference. The receiver does not need the same preference because decode is
+auto-detected.
 
 After revalidating that scope, the bridge atomically marks the durable record
 `COMMIT_UNCERTAIN` and only then invokes the host `commitText()` once with the
@@ -287,14 +302,25 @@ separate explicit/lifecycle operation and is never part of publication.
 
 ### 6.3 Embedded copied-ciphertext receive gate
 
-The common receive flow is explicit: the user copies a complete `CB1` message,
-opens the shield panel, selects **Decrypt**, and presses **Paste and decrypt**.
-The controller reads exactly one clipboard text item with the existing
-allocation bounds, rejects malformed or incomplete envelopes before Vault
+The common receive flow is explicit: the user copies a complete compact or word
+message, opens the shield panel, selects **Decrypt**, and presses **Paste and
+decrypt**. The controller reads exactly one clipboard text item with the
+existing allocation bounds, auto-detects compact/Russian/English presentation,
+recovers and validates the complete canonical `CB1` part set before Vault
 access, and does not change the clipboard. Clipboard content is ciphertext; no
 plaintext clipboard API exists. The ordinary keyboard wrapper and suggestion
 strip are hidden in Decrypt mode, so software keys cannot look like an input
 path for the read-only message.
+
+Word decode is bounded at a 48-KiB decoded wrapper, 32,768 dictionary tokens,
+and the Android 384-Ki UTF-16 input boundary. A tag-first truncated SHA-256
+checksum detects accidental transport edits before reconstruction, but it is
+not an authenticator and is not trusted for message integrity; Olm/AEAD remains
+the authentication boundary. A word list setting affects future sends only and
+is neither stored per contact nor negotiated with the peer. Both peers require
+CipherBoard 0.4 or newer for word presentation. Compact presentation remains
+interoperable with earlier releases, and decode retains legacy SMS-fragmented
+`CB1` compatibility.
 
 Envelope parsing runs off the main thread. If authentication is required, the
 controller keeps only ciphertext and an opaque parsed handle in process memory.
@@ -344,14 +370,17 @@ ratchet revision supplies local concurrency control.
 
 1. Lock the contact and load session revision `n`.
 2. Encode the inner payload and call `Session::encrypt()` once.
-3. Build and fragment the exact `CB1` wire representation.
+3. Build and fragment the exact canonical `CB1` wire representation with the
+   universal profile, then apply the selected compact or word presentation.
 4. In one database transaction, store session revision `n+1` and an encrypted
-   pending record containing contact ID and the exact ciphertext.
+   pending record containing contact ID, canonical `CB1` parts, and the
+   versioned presentation enum.
 5. Only after commit and exact connection-token validation, claim the `READY`
    operation once.
 6. Atomically change it to `COMMIT_UNCERTAIN` before crossing the host Binder
    boundary.
-7. Call `InputConnection.commitText()` once with the exact stored ciphertext.
+7. Verify deterministic reconstruction against the persisted pending bytes,
+   then call `InputConnection.commitText()` once with that exact text.
 8. If it returns true, delete the pending record. On a false return, exception,
    process death or acknowledgement loss, retain `COMMIT_UNCERTAIN` and do not
    retry automatically.

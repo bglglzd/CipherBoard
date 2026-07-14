@@ -246,9 +246,10 @@ may the final report include this required, narrowly scoped statement:
 > аудированным до проверки внешним специалистом по прикладной криптографии и
 > Android security.
 
-At the 2026-07-13 verification snapshot, full app/library unit and module lint
-gates, 27 native Rust tests, and a 601,574-input ASan/libFuzzer envelope campaign
-pass. A clean pre-public local signed-candidate pipeline also verified the pinned
+At the 2026-07-14 verification snapshot, full app/library unit and module lint
+gates, 43 native Rust tests, 3 JNI tests, and a 236,453-input
+ASan/libFuzzer envelope/presentation campaign pass. A clean pre-public local
+signed-candidate pipeline also verified the pinned
 official OSV-Scanner v2.4.0, fresh offline Maven/crates.io databases, all 255
 SBOM packages, release signing, the merged APK policy, and artifact hashes. Its
 local evidence bundle is neither tracked nor published and is not evidence for

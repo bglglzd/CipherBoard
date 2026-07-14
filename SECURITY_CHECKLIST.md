@@ -13,9 +13,10 @@ certificate. Update an item's state only with evidence tied to the current
 commit and, where applicable, the exact APK.
 
 The complete app/library debug unit gates and module release lint gates pass on
-the current worktree. Native Rust reports 27 passing tests plus format/Clippy
-success. A bounded ASan/libFuzzer envelope campaign completed 601,574 inputs
-without a crash or timeout. Strict packageable dependency locking is checked in
+the current worktree. Native Rust reports 43 passing tests and JNI reports 3,
+plus format/Clippy/audit success. A bounded ASan/libFuzzer
+envelope/presentation campaign completed 236,453 inputs without a crash,
+timeout or artifact. Strict packageable dependency locking is checked in
 at `app/gradle.lockfile`. An offline OSV preflight scanned all 255 SBOM packages
 with the pinned official v2.4.0 scanner and fresh Maven/crates.io databases,
 returning zero findings. A clean pre-public local signed-candidate pipeline then
@@ -121,15 +122,15 @@ still unverified.
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| ENV-01 | Outer format is versioned `CB1:` with Base64url without padding and deterministic binary encoding | 12 | Implemented | Canonical-CBOR regressions exist; stable golden vectors pending |
+| ENV-01 | Core outer format is versioned `CB1:` with Base64url without padding and deterministic binary encoding | 12 | Implemented | Canonical-CBOR and stable Compact/Russian/English presentation vectors exist |
 | ENV-02 | Envelope exposes only required opaque routing/reassembly metadata; sensitive metadata is encrypted | 12 | Implemented | Actual nine-field schema reviewed; final metadata/privacy protocol decision pending |
-| ENV-03 | Parser rejects invalid Base64, duplicate/unknown mandatory fields, trailing bytes, invalid versions, and inconsistent IDs | 12, 25 | Implemented | Native negative/canonical tests plus 601,574-input ASan/libFuzzer envelope campaign with no crash/timeout; longer scheduled runs pending |
+| ENV-03 | Parser rejects invalid Base64/words, duplicate/unknown mandatory fields, trailing bytes, invalid versions, and inconsistent IDs | 12, 25 | Implemented | Native negative/canonical tests plus 236,453-input ASan/libFuzzer envelope/presentation campaign with no crash/timeout/artifact; longer scheduled runs pending |
 | ENV-04 | Parser enforces input, field, nesting, allocation, part-count, and total-size limits | 12, 13 | Implemented | 32 fields, scalar-only extensions, 32 KiB token, 256 KiB payload, 128 parts; bounded production-parser fuzz harness included |
 | ENV-05 | Multipart assembly is order independent, detects gaps/duplicates, and decrypts only when complete | 13 | Implemented | Native permutation/gap/duplicate tests; Android integration pending |
-| ENV-06 | Universal and SMS compact modes use transport-safe ASCII and report size/part estimates | 13 | Implemented | SMS uses 48-byte chunks; native regressions assert each complete part is ASCII and at most 153 characters; carrier/device test pending |
+| ENV-06 | New sends use one universal fragmentation profile with selectable Compact, Russian-word or English-word presentation | 13 | Implemented | SMS selector/send path removed; old 48-byte part sets remain decode-compatible and are covered by native regressions |
 | ENV-07 | Plaintext is not compressed by default | 13 | Implemented | Direct byte-to-inner-CBOR/Olm path; final source review pending |
 | ENV-08 | UTF-8 round trip is byte-exact without normalization for required Unicode classes | 12, 25 | Implemented | Native Unicode and strict Android encode/decode paths; full class/UI matrix pending |
-| ENV-09 | Arbitrary parser input cannot panic/crash or allocate without bound | 25 | Implemented | Property regressions and pinned cargo-fuzz corpus completed 601,574 ASan inputs in 31 seconds with no crash/timeout; longer/multi-platform evidence pending |
+| ENV-09 | Arbitrary parser input cannot panic/crash or allocate without bound | 25 | Implemented | Property regressions and nine-seed cargo-fuzz corpus completed 236,453 ASan inputs in 61 seconds with no crash/timeout/artifact; longer/multi-platform evidence pending |
 
 ## 7. Ratchet Atomicity and Replay
 
@@ -224,18 +225,18 @@ still unverified.
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| TST-01 | Alice/Bob pairing, Safety Number, bidirectional first messages, and 1000-message sequence pass | 25 | Implemented | 27-test native suite covers these paths and matching numeric/word comparison; Android integration pending |
+| TST-01 | Alice/Bob pairing, Safety Number, bidirectional first messages, and 1000-message sequence pass | 25 | Implemented | 43-test native suite covers these paths and matching numeric/word comparison; Android integration pending |
 | TST-02 | Reorder, skip, replay, tamper, truncate, trailing data, wrong version/contact, concurrency pass | 25 | Implemented | Native regression coverage reported; complete concurrency/Android report pending |
-| TST-03 | Empty, long, Unicode, maximum multipart, and over-limit cases pass | 25 | Implemented | Native boundary coverage includes the 48-byte SMS/153-character limit; Android product intentionally rejects empty compose and UI/device matrix remains |
+| TST-03 | Empty, long, Unicode, maximum multipart, and over-limit cases pass | 25 | Implemented | Native boundary coverage includes a real 32-KiB first Olm message in both word alphabets, legacy 48-byte parts and presentation limits; Android product intentionally rejects empty compose and UI/device matrix remains |
 | TST-04 | Crash matrix, restart replay, and outbound delivery-state tests pass | 17, 25 | Implemented | Targeted 3-boundary actual-SIGKILL matrix, 2 close/reopen atomicity tests and v0.2 `READY`/`COMMIT_UNCERTAIN` unit cases exist; individual SQLite statements and ambiguous real `commitText()` acknowledgement remain uncovered |
 | TST-05 | Delete, re-pair, identity change, DB corruption, Keystore invalidation, StrongBox/TEE fallback pass | 25 | Pending | Storage/device report |
-| TST-06 | Parser property tests and fuzzing complete without panic or unbounded allocation | 25 | Implemented | Reproducible three-seed cargo-fuzz target completed 601,574 ASan inputs in 31 seconds with zero crashes/timeouts; broader pairing/JNI campaigns pending |
+| TST-06 | Parser property tests and fuzzing complete without panic or unbounded allocation | 25 | Implemented | Reproducible nine-seed cargo-fuzz target completed 236,453 ASan inputs in 61 seconds with zero crashes/timeouts/artifacts; broader pairing/JNI campaigns pending |
 | TST-07 | IME regression, embedded Private panel, process-text, selection, clipboard, lifecycle, and viewer Android tests pass | 26 | Implemented | Existing API 36 AOSP 7/7 covers process-text/viewer/clipboard and vault fault scope; local draft/routing unit tests pass, while full IME/private-panel/live-camera E2E remains absent |
 | TST-08 | Tests run on GrapheneOS without Google Play | 20, 26 | Pending | Device/build/version evidence |
 | TOOL-01 | Gradle lint and unit tests pass | 27 | Implemented | Full debug unit tasks and release lint for `app`/`crypto-core`/`pairing`/`secure-storage` pass after API 23 compatibility fixes; rerun/archive for exact release commit |
 | TOOL-02 | Kotlin formatting/static analysis pass | 27 | Implemented | Fork-wide changed-Kotlin format gate and Android lint pass; independent detekt-equivalent review remains desirable |
-| TOOL-03 | `cargo fmt --check`, clippy with warnings denied, and Rust tests pass | 27 | Implemented | Current work session reported fmt/clippy and 27 native tests passing; rerun/archive on clean release commit |
-| TOOL-04 | Dependency audit/locking/SBOM checks pass or exceptions are risk-accepted with expiry | 27 | Verified | Pre-public local signed candidate PASS: pinned official OSV-Scanner v2.4.0 hash, fresh offline Maven/crates.io DBs, all 255 SBOM packages, exit 0/zero findings; final public tag must repeat and review its own `VULNERABILITY_SCAN.json` |
+| TOOL-03 | `cargo fmt --check`, clippy with warnings denied, and Rust tests pass | 27 | Implemented | Current work session reports fmt/clippy/audit, 43 native and 3 JNI tests passing; rerun/archive on clean release commit |
+| TOOL-04 | Dependency audit/locking/SBOM checks pass or exceptions are risk-accepted with expiry | 27 | Verified | Prior pre-public candidate scanned 255 software packages with pinned OSV-Scanner v2.4.0 and zero findings; v0.4 SBOM tests additionally require the pinned FrequencyWords data component, and the final public tag must repeat and review its own `VULNERABILITY_SCAN.json` |
 | TOOL-05 | Secret scan and plaintext sentinel scan pass | 23, 27 | Implemented | Fail-closed source/network/telemetry/secret scanner passes; runtime/build-output plaintext sentinel evidence remains pending |
 
 ## 14. Release Artifact and Signing
