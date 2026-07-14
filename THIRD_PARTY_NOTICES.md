@@ -32,6 +32,34 @@ the named vodozemac contributors. The Apache 2.0 license text is included in
 The use of vodozemac does not imply that the complete CipherBoard product has
 been independently audited or endorsed by Matrix.org.
 
+## FrequencyWords English and Russian Content
+
+CipherBoard's English and Russian word-presentation dictionaries are adapted
+from [`hermitdave/FrequencyWords`](https://github.com/hermitdave/FrequencyWords)
+at commit `525f9b560de45753a5ea01069454e72e9aa541c6`, specifically:
+
+- `content/2018/en/en_50k.txt`
+- `content/2018/ru/ru_50k.txt`
+
+The upstream content is licensed under Creative Commons Attribution-ShareAlike
+4.0 (`CC-BY-SA-4.0`). CipherBoard's generated derivative lists remain under
+CC-BY-SA-4.0, whose complete text is included in
+`LICENSE-CC-BY-SA-4.0` and the offline Licenses screen.
+
+CipherBoard extracted the word column and retained only already-lowercase
+alphabetic English `a-z` or Russian `а-я` words of 4--10 letters,
+deduplicated them, removed profanity and alarming words/fragments, and selected
+4096 entries deterministically in source-frequency order. The resulting files
+and SHA-256 digests are:
+
+- `words_en_v1.txt`:
+  `620b96da9c31f8552a6ed8eb54ef22a9a9a6b7885d2caf4ba9f658b748cf0cb3`
+- `words_ru_v1.txt`:
+  `6163eddf094c8c426959c1bb36d95dca3d7cbe4bdecc13bd13077279b7ccc8a9`
+
+These lists encode 12-bit values as independent dictionary tokens. They are not
+represented as natural-language generation, translation, or steganography.
+
 ## Android and JVM Libraries
 
 The release uses AndroidX (including Core, CameraX, Biometric, Compose,

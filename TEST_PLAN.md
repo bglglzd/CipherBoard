@@ -41,26 +41,27 @@ As of 2026-07-14, stored/reported local evidence is:
 
 | Scope | Result | Limitation |
 | --- | --- | --- |
-| `crypto-core/native` | 27 tests passing; format and Clippy passing | no independent oracle/audit or archived exact-release log; final wire decisions remain |
+| `crypto-core/native` and JNI | 43 native and 3 JNI tests passing; format, Clippy and Cargo audit passing | no independent oracle/audit or archived exact-release log; final wire decisions remain |
 | repository Android unit gate | full `app`, `crypto-core`, `pairing`, and `secure-storage` debug unit tasks pass | JVM/fakes; not framework/camera/real-Keystore evidence; two inherited regressions are explicitly ignored with issue-specific reasons |
 | repository Android lint gate | app/library module release lint tasks pass on current worktree | rerun and archive for the final commit/artifact |
-| envelope cargo-fuzz | pinned ASan/libFuzzer run completed 601,574 inputs in 31 seconds with zero crashes/timeouts | bounded local run; not long-duration, multi-platform, pairing, inner-codec, or JNI evidence |
+| transport cargo-fuzz | pinned ASan/libFuzzer run completed 236,453 inputs in 61 seconds with zero crashes/timeouts/artifacts | bounded local run; not long-duration, multi-platform, pairing, inner-codec, or JNI evidence |
 | dependency vulnerability scan | official SHA-pinned OSV-Scanner v2.4.0 scanned all 255 SBOM packages against fresh offline Maven/crates.io DBs; exit 0/zero findings, including the pre-public local signed-candidate run | repeat and archive against the final public release SBOM |
 | offline licenses | unit test requires GPL/Apache/BlueOak/BSD/CC/notices/provenance assets to exist and be nonempty | final APK asset/manual completeness review pending |
 | pairing/contact | state-machine tests cover one-shot state, bounded orphan cleanup, duplicate/expiry and blocking identity change | no live-camera/permission/pairing E2E or pairing-specific process-kill evidence |
 | pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass; v0.2 unit tests cover `READY` -> `COMMIT_UNCERTAIN`, no automatic retry, exact host-token scope and local draft routing | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
 | v0.3 embedded decrypt controls | targeted tests pass for bounded ciphertext clipboard input, drawing-only/first-draw behavior, one-shot unlock, reply draft wipe, race-safe worker-result ownership, render-time Vault expiry, background cancellation and secure-IME lifecycle | manual API 36 English/Russian landscape/font-2.0 covers locked Encrypt and idle Decrypt only; no paired-contact decrypt, biometric, process-kill-at-first-draw or physical GrapheneOS evidence |
+| v0.4 word presentation source | pinned dictionary, Compact/Russian/English, malformed/limit/property, real Olm, JNI, pending-state and settings tests pass; fuzz uses nine reviewed seeds | rerun and archive every gate on the exact release commit; no paired-contact messenger or physical GrapheneOS E2E evidence |
 | Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/private-panel/live-camera E2E |
-| debug Home UI smoke | current APK installs/launches; English and per-app `ru-RU` Home controls do not overlap; Russian landscape fits at font scale 1.3; locale-change process remains alive after the receiver fix | Home only; no full screen/theme/font-2.0/RTL matrix and no ordinary IME input claim |
+| debug Home/UI smoke | current APK installs/launches; Message format remains reachable with a locked Vault at font scale 2.0; the Russian settings screen has no status-bar overlap and scrolls in portrait/landscape at font scale 2.0 | targeted Home/settings only; no full screen/theme/RTL matrix and no ordinary IME input claim |
 | signed release candidate | a clean pre-public local pipeline produced a non-debug-signed APK and passed scripted signature, permission, APK-policy, SBOM/vulnerability, and artifact-hash gates | its evidence bundle is local, untracked, and unpublished; rebuild and publish new evidence for the final public tag; physical install acceptance is not claimed |
 | GrapheneOS/physical devices | not run | D01-D14 remain residual validation prerequisites before high-risk use, not demonstrated critical code defects |
 
 Independent protocol review should validate the exact documented routing,
-capability, inner-binding, assembly-integrity and 192-KiB plaintext-limit
-decisions. This is residual assurance work, not a currently demonstrated code
-defect. The numeric Safety Number and word code derive from one transcript; the
-48-byte SMS profile has regressions proving complete parts are at most 153 ASCII
-characters.
+capability, inner-binding, assembly-integrity, 192-KiB Compact limit and 32-KiB
+word-presentation limit decisions. This is residual assurance work, not a currently demonstrated code
+defect. The numeric Safety Number and word code derive from one transcript. New
+sends use universal fragmentation; legacy 48-byte SMS-profile fixtures remain a
+receive-compatibility test only.
 
 ## 2. Deterministic Fixtures and Oracles
 
@@ -69,7 +70,8 @@ characters.
 - After the final schema decision, golden vectors cover fingerprint export,
   signed `CBO1` and `CBR1`, offer/transcript hash, routing tag, the approved
   numeric and short comparison renderings, inner message CBOR,
-  single/multipart `CB1`, and Base64url without padding. Current Rust produces
+  single/multipart `CB1`, Base64url without padding, and exact compact/Russian/
+  English presentation vectors. Current Rust produces
   the provisional 80-digit Safety Number and eight-word code from one hash.
 - A second independent parser/encoder test implementation checks golden bytes;
   it is test-only and does not implement cryptographic primitives.
@@ -198,7 +200,12 @@ validity, and all size limits. Valid-message properties are:
 
 - encode -> parse -> encode returns identical canonical bytes;
 - fragment -> arbitrary permutation -> reassemble returns exact Olm bytes;
-- Universal/SMS fragment tokens respect their independent size caps;
+- every new send uses universal fragmentation, while legacy SMS-profile `CB1`
+  fixtures remain accepted by receive;
+- compact -> Russian/English Base4096 -> compact round trips recover the exact
+  ordered canonical `CB1` parts;
+- presentation selection affects output only: all receivers auto-detect all
+  three formats without matching the sender's local setting;
 - a valid optional unknown extension is ignored, while a critical/unknown core
   field is rejected;
 - parse errors never mutate session/storage or expose partial plaintext; and
@@ -207,17 +214,34 @@ validity, and all size limits. Valid-message properties are:
 ### 5.2 Fuzz targets
 
 The implemented `crypto-core/native/fuzz` package pins cargo-fuzz/libFuzzer and
-compiles the production envelope/error source directly, without pulling Olm
-cryptographic primitives into the fuzz binary. Its `transport_parser` target has
-three bounded modes: arbitrary UTF-8 `CB1:` text, arbitrary decoded CBOR bytes
-wrapped in strict base64url, and valid encode/decode round trips. Three reviewed
-seed files are checked in; generated corpus and artifacts are ignored.
+compiles the production envelope/presentation/error source directly, without
+pulling Olm cryptographic primitives into the fuzz binary. Its
+`transport_parser` target covers arbitrary UTF-8 compact and word-like text,
+arbitrary decoded CBOR bytes wrapped in strict Base64url, valid envelope round
+trips, and valid Russian/English word presentation round trips. Reviewed compact,
+binary, arbitrary-word, English-word, and Russian-word seeds are checked in;
+generated corpus and artifacts are ignored.
 
-The recorded 2026-07-13 ASan run executed 601,574 inputs in 31 seconds with zero
-crashes and zero timeouts. Future targets still must cover offer/response,
-inner payload, fragment collection and JNI length/error conversion. Longer
-scheduled and release-candidate campaigns must archive toolchain, duration,
-corpus hash, sanitizer configuration and minimized failures.
+The recorded 2026-07-14 ASan run executed 236,453 inputs in 61 seconds with zero
+crashes, zero timeouts and zero artifacts. It used nine checked-in seeds,
+`max_len=393216`, and reached 1,141 coverage counters / 3,089 features. Future
+targets still must cover offer/response, inner payload, fragment collection and
+JNI length/error conversion. Longer scheduled and release-candidate campaigns
+must archive toolchain, duration, corpus hash, sanitizer configuration and
+minimized failures.
+
+Dedicated presentation tests MUST pin both generated dictionary SHA-256 values
+and assert exactly 4096 unique lowercase tokens of 4--10 letters. They cover
+tag-first checksum mutation, wrong version/alphabet/flags, unknown or mixed
+words, nonzero tail padding, truncation, extra words, reordered canonical parts,
+inconsistent length/count, the 48-KiB decoded-wrapper limit, 32,768-word limit,
+384-Ki UTF-16 Android boundary, and allocation-safe error mapping through JNI.
+Real paired Olm sessions also encrypt and decrypt an initial 32-KiB plaintext
+through each word alphabet, proving the UI cap fits the wrapper instead of
+relying only on an estimate. Separate regressions reverse multipart Compact
+Universal and legacy SMS-profile fixtures and require canonical-order recovery.
+The checksum test must state that it is not authentication; a recomputed wrapper
+still reaches canonical `CB1` and Olm/AEAD validation.
 
 Parser fuzzing is isolated from vodozemac crypto. Production or crypto tests
 MUST NOT compile vodozemac with `cfg(fuzzing)`, because that configuration can
@@ -257,8 +281,9 @@ restart, toolbar actions, app completion, and race entry/exit. Expected:
 - personal learning, emoji recents, user dictionary and clipboard history get
   no secure entry;
 - no surrounding host text is requested while composing;
-- only a one-use claim can call `commitText`, with exact persisted `CB1`, after
-  the pending state became `COMMIT_UNCERTAIN`;
+- only a one-use typed claim can call `commitText`, after the pending state
+  became `COMMIT_UNCERTAIN`; the exact persisted canonical `CB1` parts and
+  selected presentation must regenerate the validated delivery text;
 - false/stale editor/claim/bytes and any mismatched
   `InputBinding.connectionToken` are rejected;
 - no printable key-event or alternate `InputConnection` path bypasses the gate;
@@ -299,14 +324,25 @@ launch, trailing text, replay, wrong contact, locked vault, cancelled auth, and
 background launch restrictions. Expected result is never plaintext; source
 selection is unchanged and no plaintext extra/result leaves the activity.
 
-For the primary embedded flow, copy one complete ciphertext from Telegram-like,
-SMS-like, email-like and multiline fixtures, open the shield, select Decrypt,
-and press **Paste and decrypt**. Test null, empty, non-text, multiple-item,
-oversize, malformed, multipart-incomplete, replay, wrong-contact and styled
-clipboard inputs. Reading must occur only after the explicit button action,
-must use the same bounded unstyled-ciphertext grammar as the viewer, and must
-leave the original ciphertext clip unchanged. The ordinary keys stay hidden
-throughout Decrypt mode and no plaintext reaches the host `InputConnection`.
+For the primary embedded flow, copy one complete compact, Russian-word, or
+English-word ciphertext from Telegram-like, SMS-like, email-like and multiline
+fixtures, open the shield, select Decrypt, and press **Paste and decrypt**. Test
+null, empty, non-text, multiple-item, oversize, malformed, multipart-incomplete,
+replay, wrong-contact and styled clipboard inputs. Reading must occur only after
+the explicit button action, auto-detect the presentation with the same bounded
+unstyled-ciphertext grammar as the viewer, and leave the original ciphertext
+clip unchanged. The ordinary keys stay hidden throughout Decrypt mode and no
+plaintext reaches the host `InputConnection`.
+
+For send presentation, verify the Message format screen offers only **Compact**,
+**Russian words**, and **English words**; the old SMS transport selector is not
+present. For each setting, assert encryption calls the universal core mode,
+durably stores canonical parts plus the versioned presentation enum before
+`commitText()`, verifies deterministic exact reconstruction, and never
+re-ratchets when rendering the same pending ciphertext. Verify Compact can be
+read by the previous release and that 0.4 reads captured legacy compact fixtures
+from both old Universal and SMS profiles. A word message must fail clearly on an
+older peer; no silent fallback or per-contact negotiation is implied.
 
 Test the unlock boundary separately: only a newly issued process-local token
 may activate the non-exported unlock activity; activation and completion are
@@ -362,6 +398,12 @@ product strings are resources, Russian has no accidental English fragments,
 plurals/number grouping are correct, touch targets and content descriptions are
 present for non-secret actions, no text overlaps/clips, and secret content is
 deliberately excluded from TalkBack/accessibility export.
+
+The v0.4 matrix also covers the Message format settings screen and compact,
+Russian-word, and English-word estimates in both locales. Long word output must
+wrap without overlapping controls. UI copy must call the word form camouflage
+or presentation, never natural language, steganography, or extra encryption,
+and must explain that both peers need version 0.4+ for word messages.
 
 The v0.3 embedded panel has a release-specific responsive matrix. At minimum,
 capture Encrypt and Decrypt states at a phone portrait viewport, phone
@@ -459,7 +501,7 @@ cargo clippy --locked --all-targets --manifest-path crypto-core/native/Cargo.tom
 cargo test --locked --manifest-path crypto-core/native/Cargo.toml
 cargo audit --file crypto-core/native/Cargo.lock
 (cd crypto-core/native && cargo +nightly fuzz run transport_parser \
-  fuzz/corpus/transport_parser -- -max_total_time=60 -max_len=32768 -timeout=5)
+  fuzz/corpus/transport_parser -- -max_total_time=60 -max_len=393216 -timeout=5)
 ```
 
 Release additionally requires:
@@ -547,7 +589,7 @@ critical code vulnerability.
 | D08 Direct boot | Reboot without first unlock; direct-boot-disabled secure components do not access CE state; after unlock ordinary IME works and vault remains locked until authentication |
 | D09 Window protection | Hardware/system screenshot, screen recording, recents, screen-off and lock tests show no plaintext capture |
 | D10 Accessibility | Test Accessibility service/UiAutomation cannot extract protected plaintext; warning explains malicious services remain out of scope |
-| D11 Host interoperability | AOSP SMS draft and local Telegram-like single/multiline hosts receive only exact ciphertext; selection decrypt leaves source unchanged; exact-token field switches wipe/close; a physical-key sentinel demonstrates the documented bypass limitation |
+| D11 Host interoperability | AOSP SMS draft and real messenger single/multiline hosts receive exact compact/Russian/English ciphertext; copy/decrypt auto-detects all three; 0.4 accepts legacy SMS-profile `CB1`; selection decrypt leaves source unchanged; exact-token field switches wipe/close; a physical-key sentinel demonstrates the documented bypass limitation |
 | D12 Camera permission | Camera is unrequested until Scan, grant/deny/revoke paths work fully offline |
 | D13 Destructive lifecycle | App data clear/reinstall changes identity and peer shows critical key change/pairing required |
 | D14 Locked-device theft model | With device locked/rebooted, CE vault unavailable; DB copy available to test harness contains only authenticated ciphertext |

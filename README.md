@@ -35,14 +35,14 @@ HeliBoard release and is not endorsed or supported by the HeliBoard project.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.3.0` |
+| Maturity | Pre-1.0; current version `0.4.0` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
 | Runtime network | No Internet or network-state permission; no runtime network feature |
 | Interface languages | English and Russian |
 
-See the bilingual [CipherBoard 0.3.0 release notes](docs/releases/v0.3.0.md).
+See the bilingual [CipherBoard 0.4.0 release notes](docs/releases/v0.4.0.md).
 
 ## What It Does
 
@@ -57,10 +57,12 @@ accounts, phone numbers, email addresses, or a CipherBoard server:
    verified.
 4. The sender taps the shield, keeps the panel in **Encrypt** mode, and writes
    in the CipherBoard-owned field above the keys.
-5. CipherBoard advances and durably stores the Olm ratchet, then commits only a
-   `CB1:` ciphertext envelope to the external app.
-6. The recipient copies the complete `CB1:` text, taps the shield, switches the
-   same panel to **Decrypt**, and taps **Paste and decrypt**.
+5. CipherBoard advances and durably stores the Olm ratchet, builds canonical
+   `CB1:` ciphertext parts, and presents them as compact text, Russian words,
+   or English words according to the sender's local setting.
+6. The recipient copies the complete compact or word-form message, taps the
+   shield, switches the same panel to **Decrypt**, and taps **Paste and
+   decrypt**. CipherBoard detects the presentation automatically.
 7. Plaintext is drawn read-only inside the `FLAG_SECURE` IME panel. It is not
    returned to the transport app or written to the clipboard; **Reply
    securely** selects the same local contact in **Encrypt** mode.
@@ -96,8 +98,9 @@ can carry text. CipherBoard does not send messages itself.
   key input is routed to the local draft; only persisted ciphertext can reach
   the host `InputConnection`.
 - The embedded **Decrypt** mode reads exactly one bounded clipboard item only
-  after the explicit **Paste and decrypt** action, accepts only complete `CB1:`
-  ciphertext, leaves that ciphertext in the clipboard, and hides the ordinary
+  after the explicit **Paste and decrypt** action, accepts only a complete
+  compact/Russian-word/English-word ciphertext presentation, leaves that
+  ciphertext in the clipboard, and hides the ordinary
   keys while plaintext is visible. Plaintext uses a drawing-only surface with
   no focus, selection, clipboard action mode, autofill, content capture, or
   Accessibility text.
@@ -110,6 +113,10 @@ can carry text. CipherBoard does not send messages itself.
   `ACTION_PROCESS_TEXT`.
 - Transport and QR parsers have explicit size/count limits and reject malformed,
   duplicate, non-canonical, inconsistent, or trailing data.
+- Russian- and English-word presentation is a reversible Base4096 wrapper over
+  the same authenticated canonical `CB1` parts. It does not change Olm, AEAD,
+  replay protection, or ratchet state. The tag-first checksum rejects accidental
+  edits early but is not a cryptographic authenticator.
 
 ### What it does not solve
 
@@ -119,6 +126,13 @@ cannot prevent a camera or nearby person from seeing the screen, hide transport
 metadata, resist physical coercion, or eliminate implementation and dependency
 defects. `FLAG_SECURE` and best-effort memory clearing are useful controls, not
 absolute guarantees.
+
+Word presentation is camouflage from a casual glance, not steganography or
+plausible deniability. The words are independent dictionary tokens rather than
+natural sentences; automated analysis can identify the pattern. Word messages
+are much longer than compact `CB1`, reveal comparable transport metadata, and
+are fragile if a messenger edits, translates, autocorrects, reorders, or removes
+tokens.
 
 The normal keyboard mode retains HeliBoard behavior and may use learning or
 clipboard features according to its ordinary settings. The stricter controls
@@ -142,14 +156,14 @@ project and assume it is CipherBoard.
 Verify the release checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.3.0-release.apk.sha256
+sha256sum --check CipherBoard-0.4.0-release.apk.sha256
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.3.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.3.0-release.apk.sha256
+(Get-FileHash .\CipherBoard-0.4.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.4.0-release.apk.sha256
 ```
 
 If Android Build Tools are installed, also verify the APK signature and compare
@@ -158,13 +172,13 @@ the reported SHA-256 certificate digest with
 digest through a channel you trust independently of the APK download.
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.3.0-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.4.0-release.apk
 ```
 
 Install or update the verified APK:
 
 ```sh
-adb install -r CipherBoard-0.3.0-release.apk
+adb install -r CipherBoard-0.4.0-release.apk
 ```
 
 Debug APKs are developer artifacts signed with a public debug key. Do not use
@@ -220,21 +234,33 @@ silently accept a changed key.
 To send, focus the destination text field, open CipherBoard, and tap the shield.
 The keyboard expands a Private mode panel above its keys without opening a
 separate screen. Choose a verified contact, write with the on-screen keys, and
-tap **Encrypt**. The plaintext remains visible in that panel after a successful
+tap **Encrypt**. On CipherBoard's main screen, **Message format** selects
+**Compact**, **Russian words**, or **English words**. This is a sender-local
+presentation choice: CipherBoard 0.4 and newer auto-detect all three on receive,
+so the recipient does not need to select the same setting. The plaintext remains
+visible in that panel after a successful
 insertion so you can confirm what was sent; it is wiped when you clear or close
-the panel or move to another host field. The host field receives only text
-beginning with `CB1:`. Do not type a private draft with a hardware keyboard.
+the panel or move to another host field. The host field receives only compact
+`CB1:` ciphertext or its word wrapper. New sends always use one universal core
+fragmentation profile; the former SMS compact selector has been removed. Do not
+type a private draft with a hardware keyboard.
 
 To receive from Telegram, SMS, email, or another text transport, copy the full
-`CB1:` ciphertext, focus a text field so CipherBoard is visible, and tap the
-shield. Switch the embedded panel to **Decrypt**, then tap **Paste and
-decrypt**. This explicit action reads one bounded clipboard item; it does not
-modify the ciphertext clip. Unlock the Vault when requested and read the
+compact or word-form ciphertext, focus a text field so CipherBoard is visible,
+and tap the shield. Switch the embedded panel to **Decrypt**, then tap **Paste
+and decrypt**. This explicit action reads one bounded clipboard item, detects
+compact/Russian/English presentation, and does not modify the ciphertext clip.
+Unlock the Vault when requested and read the
 plaintext directly in the protected IME panel. The ordinary keys are hidden in
 this mode, and the drawing-only plaintext cannot be selected or copied. Tap
 **Reply securely** to clear the received plaintext, switch to **Encrypt**, and
 select the same local contact. Android's **Decrypt in CipherBoard** text action
 remains available in apps that expose it, but it is not required for this flow.
+
+Word presentation requires CipherBoard 0.4 or newer on both devices. Compact
+`CB1:` output remains interoperable with older CipherBoard releases, and 0.4
+continues to accept legacy `CB1` messages produced with the removed SMS compact
+fragmentation profile.
 
 By default CipherBoard does not keep plaintext history or message keys for
 convenient re-reading. A previously viewed message may therefore be impossible
@@ -246,8 +272,10 @@ CipherBoard - офлайн-клавиатура для обмена зашифр
 телефонных номеров и сервера CipherBoard. Обычный режим основан на HeliBoard. В
 приватном режиме над клавишами открывается собственная панель CipherBoard с
 режимами **Зашифровать** и **Расшифровать**. При отправке программные клавиши
-пишут в локальный черновик, а внешнему приложению передаётся только шифротекст
-`CB1:`.
+пишут в локальный черновик, а внешнему приложению передаётся только шифротекст.
+Его вид выбирается в настройках: компактный `CB1:`, русские слова или английские
+слова. Словарный вид только маскирует формат от беглого взгляда: это не
+естественные фразы, не стеганография и не дополнительное шифрование.
 
 Для начала:
 
@@ -265,19 +293,30 @@ CipherBoard - офлайн-клавиатура для обмена зашифр
 5. Выполните взаимное физическое QR-сопряжение двух устройств.
 6. Полностью сравните Safety Number на обоих экранах и только после этого
    подтвердите контакт.
-7. Для отправки нажмите кнопку со щитом, выберите проверенный контакт, введите
+7. Перед отправкой на главном экране CipherBoard откройте **Формат сообщения**
+   и выберите компактный вид, русские или английские слова. Затем нажмите кнопку
+   со щитом, выберите проверенный контакт, введите
    сообщение программными клавишами и нажмите **Зашифровать**. Открытый текст
-   останется в панели для проверки, а во внешнем поле появится только
-   `CB1:`-шифротекст. Черновик очищается при очистке/закрытии панели или смене
+   останется в панели для проверки, а во внешнем поле появится только выбранное
+   представление шифротекста. Для новых сообщений всегда используется единое
+   универсальное разбиение; отдельный режим SMS удалён. Настройка вида локальна
+   для отправителя, получатель на CipherBoard 0.4+ распознаёт формат
+   автоматически. Черновик очищается при очистке/закрытии панели или смене
    внешнего поля. Не используйте для приватного черновика физическую клавиатуру:
    Android может направить её ввод прямо во внешнее приложение.
-8. Для чтения скопируйте целиком полученный `CB1:`-шифротекст, откройте
+8. Для чтения скопируйте целиком полученный компактный или словарный шифротекст, откройте
    CipherBoard в любом поле, нажмите щит, выберите **Расшифровать**, затем
    **Вставить и расшифровать**. После разблокировки Vault открытый текст будет
    показан прямо в защищённой панели клавиатуры; обычные клавиши в этом режиме
    скрыты. Буфер обмена останется шифротекстом. Кнопка **Ответить защищённо**
    очистит показанное сообщение, переключит панель на отправку и выберет того
    же локального контакта.
+
+Словарные сообщения требуют CipherBoard 0.4 или новее у обоих участников.
+Компактный `CB1:` остаётся совместим со старыми версиями, а CipherBoard 0.4
+продолжает читать прежние `CB1`-сообщения, включая созданные старым SMS-профилем.
+Словарный вид заметно длиннее компактного и ломается при автозамене, переводе,
+изменении или перестановке слов транспортом.
 
 CipherBoard не проверяет и не устанавливает обновления самостоятельно: у него
 нет разрешений `android.permission.INTERNET` и

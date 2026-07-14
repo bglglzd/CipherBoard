@@ -4,6 +4,47 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.4.0] - 2026-07-14
+
+### Added
+
+- Three receiver-auto-detected message presentations: compact `CB1`, Russian
+  words, and English words. The choice is a local setting for future sends and
+  is not negotiated or stored per contact.
+- A versioned `CBW1` Base4096 wrapper over complete ordered canonical `CB1`
+  parts. Its tag-first checksum rejects accidental edits before reconstruction;
+  canonical envelope validation and Olm/AEAD remain the security boundary.
+- Pinned 4096-word Russian and English dictionaries generated from the
+  hermitdave/FrequencyWords 2018 lists, with committed byte hashes, invariant
+  tests, filtering documentation, and CC-BY-SA-4.0 attribution.
+- Parser/property/JNI/fuzz coverage for both word alphabets, mutations,
+  truncation, extra or unknown words, wrong header fields, padding, limits,
+  canonical-part recovery, and receiver-independent settings behavior.
+
+### Changed
+
+- Every new message uses the universal 16-KiB core fragmentation profile. The
+  confusing SMS compact selector has been removed from the UI and send path.
+- Receive continues to accept legacy canonical `CB1` messages produced by both
+  former fragmentation profiles. Compact 0.4 output remains interoperable with
+  older CipherBoard versions; word presentation requires 0.4 or newer on both
+  devices.
+- Presentation parsing is bounded to a 48-KiB decoded word wrapper, 32,768
+  tokens, and a 384-Ki UTF-16 Android input boundary.
+
+### Security Notes
+
+- Word presentation does not change message keys, Double Ratchet, AEAD,
+  integrity, replay protection, forward secrecy, or authenticated metadata.
+- The `CBW1` checksum is unkeyed and is not authentication. An attacker can
+  recognize and re-encode the public word format; it is camouflage from casual
+  inspection, not natural language, steganography, or plausible deniability.
+- Word messages are substantially longer and more fragile under autocorrect,
+  translation, truncation, and token edits. They do not hide messenger account,
+  sender/recipient relationship, timing, or approximate-size metadata.
+- Exact-release paired-device messenger testing on physical GrapheneOS and an
+  independent applied-cryptography/Android security audit remain outstanding.
+
 ## [0.3.0] - 2026-07-14
 
 ### Added
@@ -165,6 +206,7 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.4.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.0
 [0.3.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.3.0
 [0.2.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.2.0
 [0.1.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.1.1

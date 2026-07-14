@@ -18,6 +18,23 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+FREQUENCY_WORDS_COMMIT = "525f9b560de45753a5ea01069454e72e9aa541c6"
+FREQUENCY_WORD_LISTS = (
+    (
+        "English",
+        "content/2018/en/en_50k.txt",
+        "crypto-core/native/data/words_en_v1.txt",
+        "620b96da9c31f8552a6ed8eb54ef22a9a9a6b7885d2caf4ba9f658b748cf0cb3",
+    ),
+    (
+        "Russian",
+        "content/2018/ru/ru_50k.txt",
+        "crypto-core/native/data/words_ru_v1.txt",
+        "6163eddf094c8c426959c1bb36d95dca3d7cbe4bdecc13bd13077279b7ccc8a9",
+    ),
+)
+
+
 def run(command: list[str], cwd: pathlib.Path) -> str:
     process = subprocess.run(
         command,
@@ -211,6 +228,44 @@ def cargo_components(root: pathlib.Path) -> list[dict[str, object]]:
     return components
 
 
+def frequency_words_component(root: pathlib.Path) -> dict[str, object]:
+    properties = [
+        {"name": "cipherboard:upstreamCommit", "value": FREQUENCY_WORDS_COMMIT},
+    ]
+    for language, source, generated, expected_hash in FREQUENCY_WORD_LISTS:
+        generated_path = root / generated
+        actual_hash = hashlib.sha256(generated_path.read_bytes()).hexdigest()
+        if actual_hash != expected_hash:
+            raise RuntimeError(f"bundled word list hash mismatch: {generated}")
+        property_prefix = f"cipherboard:{language.lower()}WordList"
+        properties.extend(
+            [
+                {"name": f"{property_prefix}UpstreamInput", "value": source},
+                {"name": f"{property_prefix}BundledFile", "value": generated},
+                {"name": f"{property_prefix}Sha256", "value": actual_hash},
+            ]
+        )
+
+    purl = f"pkg:generic/hermitdave/frequencywords@{FREQUENCY_WORDS_COMMIT}"
+    return {
+        "type": "data",
+        "group": "hermitdave",
+        "name": "FrequencyWords",
+        "version": FREQUENCY_WORDS_COMMIT,
+        "bom-ref": purl,
+        "purl": purl,
+        "scope": "required",
+        "licenses": [{"expression": "CC-BY-SA-4.0"}],
+        "externalReferences": [
+            {
+                "type": "vcs",
+                "url": f"https://github.com/hermitdave/FrequencyWords/tree/{FREQUENCY_WORDS_COMMIT}",
+            }
+        ],
+        "properties": properties,
+    }
+
+
 def generate_sbom(
     root: pathlib.Path,
     output: pathlib.Path,
@@ -220,7 +275,7 @@ def generate_sbom(
     product_name: str,
     apk: pathlib.Path,
 ) -> None:
-    components = gradle_components(root) + cargo_components(root)
+    components = gradle_components(root) + cargo_components(root) + [frequency_words_component(root)]
     seen: set[str] = set()
     unique = []
     for component in components:

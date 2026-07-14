@@ -58,10 +58,11 @@ and the gate must be repeated for the final public tag.
 CipherBoard is a serverless Android input method and companion UI derived from
 HeliBoard. Two users establish a one-to-one cryptographic session by physically
 scanning each other's QR codes and comparing a Safety Number. The sender writes
-plaintext only in CipherBoard's embedded Private panel. CipherBoard commits only an
-ASCII ciphertext envelope to the host application. The recipient passes that
-ciphertext back to CipherBoard for decryption and views plaintext only in a
-protected CipherBoard window.
+plaintext only in CipherBoard's embedded Private panel. CipherBoard commits
+only ciphertext to the host application: either compact ASCII `CB1` text or a
+strict Russian/English word presentation of the same encrypted envelope. The
+recipient passes that ciphertext back to CipherBoard for decryption and views
+plaintext only in a protected CipherBoard window.
 
 The principal confidentiality boundary is between CipherBoard and the external
 transport application. SMS clients, messengers, email clients, carriers,
@@ -221,13 +222,20 @@ high-risk use; neither is represented as a pass by the narrower storage tests.
 
 ## 8. Transport Envelope and Metadata
 
-The outer transport is an ASCII-safe, versioned `CB1:` envelope with strict,
-deterministic binary encoding such as canonical CBOR. It may expose the minimum
-needed for parsing and reassembly: protocol/envelope version, message type,
-opaque routing/session tag, random message ID, Olm message type, part index,
-part count, and capability flags. Contact names, fingerprints, Safety Numbers,
-plaintext timestamps, reply subjects, and other sensitive metadata belong only
-inside the authenticated encrypted payload.
+The authenticated outer transport is an ASCII-safe, versioned `CB1:` envelope
+with strict canonical CBOR. It may expose the minimum needed for parsing and
+reassembly: protocol/envelope version, message type, opaque routing/session tag,
+random message ID, Olm message type, part index, part count, and capability
+flags. Contact names, fingerprints, Safety Numbers, plaintext timestamps, reply
+subjects, and other sensitive metadata belong only inside the authenticated
+encrypted payload.
+
+For presentation, CipherBoard may leave the canonical parts as compact `CB1`
+tokens or reversibly encode the complete part set as `CBW1` Base4096 tokens from
+a fixed Russian or English 4096-word dictionary. This layer is outside the
+cryptographic boundary. Its tag-first truncated SHA-256 value is only a
+corruption checksum; an attacker can recompute it. It does not authenticate a
+sender and must never replace Olm/AEAD validation.
 
 The parser must reject invalid Base64url, padding where forbidden, duplicate
 fields, unknown mandatory fields, trailing data, inconsistent message IDs,
@@ -236,6 +244,22 @@ allocation beyond fixed limits. Unknown optional fields may be retained or
 ignored only as the version rules define. Multipart reassembly is bounded and
 order independent, and decryption starts only when every consistent part is
 present.
+
+The word decoder additionally limits the decoded wrapper to 48 KiB, input to
+32,768 words, and the Android boundary to 384 Ki UTF-16 code units. It rejects
+unknown/mixed tokens, nonzero padding, wrong tag/version/alphabet/flags,
+inconsistent lengths and part counts, extra or missing data, and any recovered
+`CB1` part set that fails the normal canonical validation. New sends always use
+universal fragmentation; legacy SMS-profile `CB1` parts remain parseable.
+
+Word presentation is camouflage only. It does not produce natural phrases,
+provide steganography, prevent automated detection, or support plausible
+deniability. An observer can learn the public dictionaries and reverse the
+wrapper. Compared with compact `CB1`, it is substantially longer and is more
+likely to be broken by autocorrect, translation, word substitution, whitespace
+rewriting, or message truncation. It does not hide transport accounts, timing,
+recipient relationships, or approximate content size. The sender's appearance
+setting is receiver-independent and does not add a negotiated security property.
 
 UTF-8 plaintext is encrypted byte-for-byte without normalization. Rendering may
 apply the platform's normal bidirectional algorithm, but encryption/decryption
@@ -399,9 +423,10 @@ checked and cleared by the owning side after use.
 Rust release profiles use unwind semantics so the narrow JNI boundary can catch
 an unexpected panic and return a fixed content-free error rather than aborting
 the IME process. This is containment, not proof that every dependency is
-panic-free. A pinned ASan/libFuzzer campaign ran the production envelope parser
-for 601,574 inputs without a crash or timeout; pairing/inner/JNI targets and
-longer scheduled campaigns remain required.
+panic-free. A pinned ASan/libFuzzer campaign ran the production
+envelope/presentation parser for 236,453 inputs in 61 seconds without a crash,
+timeout or artifact; pairing/inner/JNI targets and longer scheduled campaigns
+remain required.
 
 Kotlin/Java should prefer `ByteArray` and `CharArray` for application-managed
 secret buffers, clear them, cancel work when the protected view closes, and
@@ -501,9 +526,9 @@ Unit, property, fuzz, Android instrumentation, crash-injection, manifest,
 dependency, and signed-APK tests defined in `TEST_PLAN.md` and
 `SECURITY_CHECKLIST.md` must pass for the exact release commit and artifact.
 Testing on a GrapheneOS device without Sandboxed Google Play remains necessary.
-Current parser evidence includes a bounded 601,574-input ASan/libFuzzer
-campaign with no crash or timeout; it does not satisfy the remaining device,
-full-codec, long-duration, or exact-release validation gates.
+Current parser evidence includes a bounded 236,453-input ASan/libFuzzer
+campaign with no crash, timeout or artifact; it does not satisfy the remaining
+device, full-codec, long-duration, or exact-release validation gates.
 
 Automated tests can demonstrate selected behavior but cannot prove absence of
 all leakage or cryptographic design defects. Before use in a high-risk setting,
