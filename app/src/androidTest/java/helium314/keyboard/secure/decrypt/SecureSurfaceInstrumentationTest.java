@@ -154,17 +154,25 @@ public final class SecureSurfaceInstrumentationTest {
             false
         );
         AtomicReference<ClipData> originalClip = new AtomicReference<>();
+        AtomicReference<CiphertextClipboardActivity> clipboardActivity = new AtomicReference<>();
         AtomicReference<SecureMessageViewerActivity> viewer = new AtomicReference<>();
         try (ActivityScenario<CiphertextClipboardActivity> scenario = ActivityScenario.launch(
             new Intent(targetContext, CiphertextClipboardActivity.class)
         )) {
+            scenario.onActivity(activity -> {
+                clipboardActivity.set(activity);
+                assertSecureWindow(activity);
+            });
+            waitUntil(
+                "clipboard fallback did not receive window focus",
+                () -> clipboardActivity.get() != null && clipboardActivity.get().hasWindowFocus()
+            );
             scenario.onActivity(activity -> {
                 ClipboardManager clipboard =
                     (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
                 originalClip.set(clipboard.getPrimaryClip());
                 ClipData ciphertextClip = ClipData.newPlainText("", CLIPBOARD_CIPHERTEXT_SENTINEL);
                 clipboard.setPrimaryClip(ciphertextClip);
-                assertSecureWindow(activity);
                 List<Button> buttons = findDescendants(activity, Button.class);
                 Button action = null;
                 for (Button candidate : buttons) {
