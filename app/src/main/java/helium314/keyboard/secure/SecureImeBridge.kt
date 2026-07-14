@@ -21,7 +21,7 @@ enum class CiphertextDeliveryResult {
     COMMITTED_PENDING_CLEANUP,
 }
 
-private data class HostEditorScope(
+private class HostEditorScope(
     val packageName: String,
     val uid: Int,
     val fieldId: Int,
@@ -31,7 +31,14 @@ private data class HostEditorScope(
     val privateImeOptions: String?,
     val initialSelectionStart: Int,
     val initialSelectionEnd: Int,
-)
+    val connectionIdentity: Any,
+) {
+    fun matches(other: HostEditorScope): Boolean =
+        packageName == other.packageName && uid == other.uid && fieldId == other.fieldId &&
+            fieldName == other.fieldName && inputType == other.inputType && imeOptions == other.imeOptions &&
+            privateImeOptions == other.privateImeOptions && initialSelectionStart == other.initialSelectionStart &&
+            initialSelectionEnd == other.initialSelectionEnd && connectionIdentity === other.connectionIdentity
+}
 
 private class HandoffSession(
     val token: String,
@@ -60,9 +67,10 @@ private class HandoffSession(
  *
  * The composer can arm the gate only with a [PreparedOutbound] returned after the atomic ratchet
  * transaction. It cannot ask the IME to insert an arbitrary string. The IME can claim that exact
- * ciphertext only after Android restores the original editor UID/package/field scope. Android
- * replaces RemoteInputConnection Binder tokens across the Activity focus transition, so a token
- * is required for liveness but is deliberately not treated as a stable editor identifier.
+ * ciphertext only after Android restores the original editor UID/package/field scope. Android can
+ * replace or temporarily omit RemoteInputConnection Binder tokens across IME transitions. The IME
+ * therefore proves liveness by holding a current InputConnection before calling this gate; a
+ * Binder token is not treated as a stable editor identifier.
  */
 object SecureImeBridge {
     private var session: HandoffSession? = null
@@ -74,6 +82,7 @@ object SecureImeBridge {
         packageName: String?,
         uid: Int,
         connectionToken: IBinder?,
+        connectionIdentity: Any?,
         fieldId: Int,
         fieldName: String?,
         inputType: Int,
@@ -87,6 +96,7 @@ object SecureImeBridge {
             packageName,
             uid,
             connectionToken,
+            connectionIdentity,
             fieldId,
             fieldName,
             inputType,
@@ -149,6 +159,7 @@ object SecureImeBridge {
         packageName: String?,
         uid: Int,
         connectionToken: IBinder?,
+        connectionIdentity: Any?,
         fieldId: Int,
         fieldName: String?,
         inputType: Int,
@@ -163,6 +174,7 @@ object SecureImeBridge {
             packageName,
             uid,
             connectionToken,
+            connectionIdentity,
             fieldId,
             fieldName,
             inputType,
@@ -224,7 +236,7 @@ object SecureImeBridge {
 
     private fun claimLocked(host: HostEditorScope): CiphertextClaim? {
         val current = liveSessionLocked() ?: return null
-        if (current.host != host || current.activeClaim != null) return null
+        if (!current.host.matches(host) || current.activeClaim != null) return null
         val operationId = current.operationId ?: return null
         val ciphertext = current.ciphertext ?: return null
         val boundary = current.commitBoundary ?: return null
@@ -256,6 +268,7 @@ object SecureImeBridge {
         packageName: String?,
         uid: Int,
         connectionToken: IBinder?,
+        connectionIdentity: Any?,
         fieldId: Int,
         fieldName: String?,
         inputType: Int,
@@ -265,7 +278,7 @@ object SecureImeBridge {
         initialSelectionEnd: Int,
     ): HostEditorScope? {
         val normalizedPackage = packageName?.takeIf { it.isNotBlank() } ?: return null
-        if (uid < 0 || connectionToken == null) return null
+        if (uid < 0 || connectionIdentity == null) return null
         return HostEditorScope(
             normalizedPackage,
             uid,
@@ -276,6 +289,7 @@ object SecureImeBridge {
             privateImeOptions,
             initialSelectionStart,
             initialSelectionEnd,
+            connectionIdentity,
         )
     }
 

@@ -29,4 +29,12 @@ class SecureEditorExternalActionTest {
         }
         assertFalse(LatinIME.blocksExternalInputAction(true, KeyCode.LANGUAGE_SWITCH))
     }
+
+    @Test
+    fun embeddedEditorAllowsLocalLanguageSwitchWhilePlaintextInputIsUnavailable() {
+        assertFalse(LatinIME.blocksEmbeddedKeyWithoutPlaintextInput(KeyCode.SECURE_COMPOSER))
+        assertFalse(LatinIME.blocksEmbeddedKeyWithoutPlaintextInput(KeyCode.LANGUAGE_SWITCH))
+        assertTrue(LatinIME.blocksEmbeddedKeyWithoutPlaintextInput('a'.code))
+        assertTrue(LatinIME.blocksEmbeddedKeyWithoutPlaintextInput(KeyCode.DELETE))
+    }
 }

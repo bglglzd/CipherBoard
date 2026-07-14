@@ -928,10 +928,13 @@ public class LatinIME extends InputMethodService implements
             final int uid = binding == null ? -1 : binding.getUid();
             final android.os.IBinder connectionToken =
                     binding == null ? null : binding.getConnectionToken();
+            final InputConnection hostConnection = getCurrentInputConnection();
             final boolean returnedFromUnlock =
-                    mEmbeddedSecureComposer.consumeUnlockReturn(editorInfo, uid, connectionToken);
+                    mEmbeddedSecureComposer.consumeUnlockReturn(
+                            editorInfo, uid, connectionToken, hostConnection);
             if (!returnedFromUnlock
-                    && !mEmbeddedSecureComposer.acceptsHost(editorInfo, uid, connectionToken)) {
+                    && !mEmbeddedSecureComposer.acceptsHost(
+                            editorInfo, uid, connectionToken, hostConnection)) {
                 closeEmbeddedSecureComposer(false);
             }
         }
@@ -958,10 +961,13 @@ public class LatinIME extends InputMethodService implements
             final int uid = binding == null ? -1 : binding.getUid();
             final android.os.IBinder connectionToken =
                     binding == null ? null : binding.getConnectionToken();
+            final InputConnection hostConnection = getCurrentInputConnection();
             final boolean returnedFromUnlock =
-                    mEmbeddedSecureComposer.consumeUnlockReturn(editorInfo, uid, connectionToken);
+                    mEmbeddedSecureComposer.consumeUnlockReturn(
+                            editorInfo, uid, connectionToken, hostConnection);
             if (!returnedFromUnlock
-                    && !mEmbeddedSecureComposer.acceptsHost(editorInfo, uid, connectionToken)) {
+                    && !mEmbeddedSecureComposer.acceptsHost(
+                            editorInfo, uid, connectionToken, hostConnection)) {
                 closeEmbeddedSecureComposer(false);
             }
         }
@@ -1132,10 +1138,12 @@ public class LatinIME extends InputMethodService implements
             final int uid = binding == null ? -1 : binding.getUid();
             final android.os.IBinder connectionToken =
                     binding == null ? null : binding.getConnectionToken();
+            final InputConnection hostConnection = getCurrentInputConnection();
             final boolean returnedFromUnlock = mEmbeddedSecureComposer.consumeUnlockReturn(
-                    editorInfo, uid, connectionToken);
+                    editorInfo, uid, connectionToken, hostConnection);
             if (!returnedFromUnlock
-                    && !mEmbeddedSecureComposer.acceptsHost(editorInfo, uid, connectionToken)) {
+                    && !mEmbeddedSecureComposer.acceptsHost(
+                            editorInfo, uid, connectionToken, hostConnection)) {
                 closeEmbeddedSecureComposer(false);
                 return;
             }
@@ -1594,7 +1602,7 @@ public class LatinIME extends InputMethodService implements
     // completely replace #onCodeInput.
     public void onEvent(@NonNull final Event event) {
         if (isEmbeddedSecureComposerActive()
-                && event.getKeyCode() != KeyCode.SECURE_COMPOSER
+                && blocksEmbeddedKeyWithoutPlaintextInput(event.getKeyCode())
                 && !canAcceptEmbeddedPlaintextInput()) {
             return;
         }
@@ -1616,6 +1624,10 @@ public class LatinIME extends InputMethodService implements
         final SettingsValues current = mSettings.getCurrent();
         return isEmbeddedSecureComposerActive()
                 || current != null && current.mInputAttributes.mIsCipherBoardSecureEditor;
+    }
+
+    static boolean blocksEmbeddedKeyWithoutPlaintextInput(final int keyCode) {
+        return keyCode != KeyCode.SECURE_COMPOSER && keyCode != KeyCode.LANGUAGE_SWITCH;
     }
 
     static boolean blocksExternalInputAction(final boolean secureEditor, final int keyCode) {
@@ -1995,7 +2007,7 @@ public class LatinIME extends InputMethodService implements
         final InputConnection hostConnection = getCurrentInputConnection();
         if (hostEditor == null || binding == null || hostConnection == null
                 || !mEmbeddedSecureComposer.activate(
-                        hostEditor, binding.getUid(), binding.getConnectionToken())) {
+                        hostEditor, binding.getUid(), binding.getConnectionToken(), hostConnection)) {
             mKeyboardSwitcher.showToast(
                     getString(R.string.embedded_secure_unavailable), true);
             return;
@@ -2102,13 +2114,14 @@ public class LatinIME extends InputMethodService implements
         final InputConnection hostConnection = getCurrentInputConnection();
         if (editorInfo == null || binding == null || hostConnection == null
                 || !mEmbeddedSecureComposer.acceptsHost(
-                        editorInfo, binding.getUid(), binding.getConnectionToken())) {
+                        editorInfo, binding.getUid(), binding.getConnectionToken(), hostConnection)) {
             return CiphertextDeliveryResult.NO_HANDOFF;
         }
         final String token = SecureImeBridge.beginSession(
                 editorInfo.packageName,
                 binding.getUid(),
                 binding.getConnectionToken(),
+                hostConnection,
                 editorInfo.fieldId,
                 editorInfo.fieldName,
                 editorInfo.inputType,
@@ -2126,6 +2139,7 @@ public class LatinIME extends InputMethodService implements
                 editorInfo.packageName,
                 binding.getUid(),
                 binding.getConnectionToken(),
+                hostConnection,
                 editorInfo.fieldId,
                 editorInfo.fieldName,
                 editorInfo.inputType,
@@ -2163,6 +2177,7 @@ public class LatinIME extends InputMethodService implements
                 editorInfo.packageName,
                 binding.getUid(),
                 binding.getConnectionToken(),
+                connection,
                 editorInfo.fieldId,
                 editorInfo.fieldName,
                 editorInfo.inputType,

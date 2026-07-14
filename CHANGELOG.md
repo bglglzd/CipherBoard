@@ -4,6 +4,29 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.4.1] - 2026-07-14
+
+### Fixed
+
+- The language key now switches between enabled CipherBoard layouts while the
+  embedded Private panel is active, including while the Vault is locked or the
+  panel is temporarily unable to accept plaintext. It never opens another IME
+  from the protected editor.
+- Private mode can open after returning from another Android keyboard when the
+  framework supplies a live `InputConnection` but temporarily omits its Binder
+  connection token. `TYPE_NULL`, text, numeric, multiline and password editors
+  all use the same live-editor path; password editors retain their explicit
+  warning.
+
+### Security Notes
+
+- The null-token fallback is bound to the exact live `InputConnection` object,
+  host UID/package and editor metadata. A matching client Binder token alone
+  cannot authorize ciphertext insertion into a different field.
+- The one-shot ciphertext handoff independently requires the same live
+  `InputConnection`, so a lifecycle or focus change fails closed before
+  `commitText()`.
+
 ## [0.4.0] - 2026-07-14
 
 ### Added
@@ -206,6 +229,7 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.4.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.1
 [0.4.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.0
 [0.3.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.3.0
 [0.2.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.2.0

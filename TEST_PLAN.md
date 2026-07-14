@@ -48,7 +48,7 @@ As of 2026-07-14, stored/reported local evidence is:
 | dependency vulnerability scan | official SHA-pinned OSV-Scanner v2.4.0 scanned all 255 SBOM packages against fresh offline Maven/crates.io DBs; exit 0/zero findings, including the pre-public local signed-candidate run | repeat and archive against the final public release SBOM |
 | offline licenses | unit test requires GPL/Apache/BlueOak/BSD/CC/notices/provenance assets to exist and be nonempty | final APK asset/manual completeness review pending |
 | pairing/contact | state-machine tests cover one-shot state, bounded orphan cleanup, duplicate/expiry and blocking identity change | no live-camera/permission/pairing E2E or pairing-specific process-kill evidence |
-| pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass; v0.2 unit tests cover `READY` -> `COMMIT_UNCERTAIN`, no automatic retry, exact host-token scope and local draft routing | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
+| pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass; unit tests cover `READY` -> `COMMIT_UNCERTAIN`, no automatic retry, exact live-connection scope, nullable Binder tokens and local draft routing | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
 | v0.3 embedded decrypt controls | targeted tests pass for bounded ciphertext clipboard input, drawing-only/first-draw behavior, one-shot unlock, reply draft wipe, race-safe worker-result ownership, render-time Vault expiry, background cancellation and secure-IME lifecycle | manual API 36 English/Russian landscape/font-2.0 covers locked Encrypt and idle Decrypt only; no paired-contact decrypt, biometric, process-kill-at-first-draw or physical GrapheneOS evidence |
 | v0.4 word presentation source | pinned dictionary, Compact/Russian/English, malformed/limit/property, real Olm, JNI, pending-state and settings tests pass; fuzz uses nine reviewed seeds | rerun and archive every gate on the exact release commit; no paired-contact messenger or physical GrapheneOS E2E evidence |
 | Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/private-panel/live-camera E2E |
@@ -284,12 +284,12 @@ restart, toolbar actions, app completion, and race entry/exit. Expected:
 - only a one-use typed claim can call `commitText`, after the pending state
   became `COMMIT_UNCERTAIN`; the exact persisted canonical `CB1` parts and
   selected presentation must regenerate the validated delivery text;
-- false/stale editor/claim/bytes and any mismatched
-  `InputBinding.connectionToken` are rejected;
+- false/stale editor/claim/bytes and any different live `InputConnection` are
+  rejected even when the client Binder token and editor metadata match;
 - no printable key-event or alternate `InputConnection` path bypasses the gate;
 - successful accepted insertion leaves ciphertext only in the host while the
   plaintext remains visible in the panel until Clear/Close/field change;
-- explicit clear/close, host package/UID/field/token change, screen lock and IME
+- explicit clear/close, host package/UID/field/connection change, screen lock and IME
   destruction wipe the local draft best effort;
 - a false return/exception/crash after `COMMIT_UNCERTAIN` cannot auto-retry;
 - the IME window has `FLAG_SECURE` only while Private mode is active; and
@@ -349,7 +349,7 @@ may activate the non-exported unlock activity; activation and completion are
 one-shot; duplicate, cancelled, timed-out and unknown tokens fail closed. The
 Intent contains the token only, never ciphertext or plaintext. A successful
 callback still requires the exact metadata-matching host return before one
-connection-token rebind, and `decryptUnlocked()` must return `VAULT_LOCKED` if
+live-connection rebind, and `decryptUnlocked()` must return `VAULT_LOCKED` if
 the lease expired before worker execution.
 
 For IME selection, test `getSelectedText` success/null/timeout/oversize and
@@ -589,7 +589,7 @@ critical code vulnerability.
 | D08 Direct boot | Reboot without first unlock; direct-boot-disabled secure components do not access CE state; after unlock ordinary IME works and vault remains locked until authentication |
 | D09 Window protection | Hardware/system screenshot, screen recording, recents, screen-off and lock tests show no plaintext capture |
 | D10 Accessibility | Test Accessibility service/UiAutomation cannot extract protected plaintext; warning explains malicious services remain out of scope |
-| D11 Host interoperability | AOSP SMS draft and real messenger single/multiline hosts receive exact compact/Russian/English ciphertext; copy/decrypt auto-detects all three; 0.4 accepts legacy SMS-profile `CB1`; selection decrypt leaves source unchanged; exact-token field switches wipe/close; a physical-key sentinel demonstrates the documented bypass limitation |
+| D11 Host interoperability | AOSP SMS draft and real messenger single/multiline hosts receive exact compact/Russian/English ciphertext; copy/decrypt auto-detects all three; 0.4 accepts legacy SMS-profile `CB1`; selection decrypt leaves source unchanged; exact-live-connection field switches wipe/close; a physical-key sentinel demonstrates the documented bypass limitation |
 | D12 Camera permission | Camera is unrequested until Scan, grant/deny/revoke paths work fully offline |
 | D13 Destructive lifecycle | App data clear/reinstall changes identity and peer shows critical key change/pairing required |
 | D14 Locked-device theft model | With device locked/rebooted, CE vault unavailable; DB copy available to test harness contains only authenticated ciphertext |
@@ -606,7 +606,7 @@ At least one non-Play AOSP `x86_64` emulator is also required for repeatable
 | 2 Crypto | C01-C27 applicable host tests, golden vectors, property/fuzz smoke, Rust fmt/clippy/test/audit |
 | 3 Storage | atomic fault matrix, encryption/leak scans, backup/direct-boot separation, fake and real Keystore baseline |
 | 4 Pairing | signed QR negative matrix, two-device transcript/Safety match, camera permission and single-use tests |
-| 5 Secure keyboard | embedded-panel/local-draft recording-connection suite, ordinary regression, exact-token scope, password/hardware warnings, `READY`/`COMMIT_UNCERTAIN` ciphertext-only publication |
+| 5 Secure keyboard | embedded-panel/local-draft recording-connection suite, ordinary regression, exact-live-connection scope, password/hardware warnings, `READY`/`COMMIT_UNCERTAIN` ciphertext-only publication |
 | 6 Decryption | both entry points, viewer lifecycle, replay/reorder, no result/clipboard/plaintext leakage |
 | 7 UX/localization | en/ru, themes, font/orientation/RTL/accessibility and understandable error-state review |
 | 8 Hardening | full fuzz/static/dependency/native/log/manifest/security review; all findings resolved or release-blocked |

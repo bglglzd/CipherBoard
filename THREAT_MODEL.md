@@ -36,7 +36,7 @@ statements, the real `InputConnection.commitText()` acknowledgement window, or
 a complete IME/private-panel/live-camera flow. Live two-device camera exchange and
 GrapheneOS operation remain residual platform validation before high-risk use.
 Outbound publication uses a contact-bound exact pending ciphertext, a one-shot
-handoff scoped to the originating host/editor and exact connection token, and
+handoff scoped to the originating host/editor and exact live `InputConnection`, and
 a durable delivery-uncertain state that cannot auto-retry. Inbound recovery
 requires the exact ordered ciphertext digest and retains the encrypted pending
 display until the viewer has actually rendered it. Exact capability, routing,
@@ -279,8 +279,9 @@ For send:
 3. In one durable database transaction, store the new state and an encrypted
    pending record containing the exact ciphertext/envelope.
 4. Commit the transaction with outbound state `READY` before publication.
-5. Validate the exact `InputBinding.connectionToken`, then atomically change the
-   outbound record to `COMMIT_UNCERTAIN` before calling
+5. Validate the exact live `InputConnection`, host UID/package and editor
+   metadata, then atomically change the outbound record to `COMMIT_UNCERTAIN`
+   before calling
    `InputConnection.commitText()`.
 6. Delete the pending record only after an accepted insertion. A false return,
    exception, acknowledgement loss, or process death retains
@@ -374,10 +375,13 @@ In secure mode:
   that outlive the view, intents, files, databases, caches, and static fields;
 - the plaintext remains visible after a successful ciphertext insertion so the
   sender can verify it, and is cleared on explicit clear/close, host-field or
-  connection-token change, screen lock, IME destruction, or secure lifecycle
+  unapproved live-connection change, screen lock, IME destruction, or secure lifecycle
   exit;
-- the exact non-null `InputBinding.connectionToken` scopes the host. Only the
-  non-exported Vault-unlock return can perform one metadata-matching rebind;
+- the exact live `InputConnection`, host UID/package and editor metadata scope
+  the host. A Binder connection token is an additional check only when both
+  compared values are present. Only the non-exported, one-shot Vault-unlock
+  return can perform one metadata-matching live-connection rebind after the
+  locked draft has been wiped;
 - the IME window uses `FLAG_SECURE` while the panel is active.
 
 Ordinary static Russian/English dictionaries may be used locally, but secure
