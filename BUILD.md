@@ -28,8 +28,8 @@ The Gradle product identity is centralized in `gradle.properties`:
 ```text
 cipherboard.applicationId=org.cipherboard.securekeyboard
 cipherboard.productName=CipherBoard
-cipherboard.versionCode=40001
-cipherboard.versionName=0.4.1
+cipherboard.versionCode=40002
+cipherboard.versionName=0.4.2
 cipherboard.artifactName=CipherBoard
 ```
 

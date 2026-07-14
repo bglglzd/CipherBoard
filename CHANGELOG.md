@@ -4,6 +4,19 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.4.2] - 2026-07-14
+
+### Fixed
+
+- The clipboard-fallback instrumentation now waits for the protected Activity
+  to receive window focus before exercising Android's foreground-only clipboard
+  read. This removes a release-gate race without weakening the product's
+  clipboard policy or changing runtime behavior.
+- The upstream timestamp unit test now checks the generated second-resolution
+  value against the full key-press interval instead of a boundary-sensitive
+  point-in-time tolerance.
+- The two Private-panel lifecycle fixes from 0.4.1 are included unchanged.
+
 ## [0.4.1] - 2026-07-14
 
 ### Fixed
@@ -229,6 +242,7 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.4.2]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.2
 [0.4.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.1
 [0.4.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.0
 [0.3.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.3.0

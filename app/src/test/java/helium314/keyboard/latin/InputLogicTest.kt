@@ -826,9 +826,11 @@ class InputLogicTest {
 
     @Test fun timestamp() {
         chainInput("hello")
+        val beforeKeyPress = System.currentTimeMillis()
         functionalKeyPress(KeyCode.TIMESTAMP)
-        assertEquals(Calendar.getInstance().time.time.toDouble(),
-            getTimestampFormatter(latinIME).parse(text.substring(5))!!.time.toDouble(), 1000.0)
+        val afterKeyPress = System.currentTimeMillis()
+        val parsedTimestamp = getTimestampFormatter(latinIME).parse(text.substring(5))!!.time
+        assertTrue(parsedTimestamp in (beforeKeyPress - 999)..afterKeyPress)
     }
 
     @Test fun inlineEmojiSearchStart() {
