@@ -26,6 +26,7 @@ import helium314.keyboard.secure.decrypt.WipeablePlaintext
 import org.cipherboard.cryptocore.CipherBoardCrypto
 import org.cipherboard.cryptocore.CryptoCoreException
 import org.cipherboard.cryptocore.CryptoErrorCode
+import org.cipherboard.cryptocore.EnvelopeMetadata
 import org.cipherboard.securestorage.ContactVerificationStatus
 import org.cipherboard.securestorage.VaultLockedException
 import java.security.MessageDigest
@@ -46,17 +47,27 @@ class RuntimeSecureDecryptBackend(
     }
 
     override fun parse(parts: List<String>): ParseResult {
-        if (parts.isEmpty() || parts.size > MAX_PARTS) {
+        if (parts.isEmpty()) {
+            return ParseResult.Failure(ParseFailureReason.INVALID_FORMAT)
+        }
+        if (parts.size > MAX_PRESENTATION_TOKENS) {
             return ParseResult.Failure(ParseFailureReason.TOO_MANY_PARTS)
         }
         return try {
-            val metadata = parts.map(crypto::parseEnvelope)
+            val presentationText = joinBoundedPresentation(parts)
+                ?: return ParseResult.Failure(ParseFailureReason.TOO_MANY_PARTS)
+            val canonicalParts = crypto.decodePresentation(presentationText).parts
+            if (canonicalParts.isEmpty() || canonicalParts.size > MAX_PARTS) {
+                return ParseResult.Failure(ParseFailureReason.TOO_MANY_PARTS)
+            }
+            val metadata = ArrayList<EnvelopeMetadata>(canonicalParts.size)
             try {
+                canonicalParts.forEach { metadata += crypto.parseEnvelope(it) }
                 val first = metadata.first()
                 val partNumbers = metadata.map { it.partNumber }.toSet()
-                if (first.totalParts != parts.size ||
-                    partNumbers.size != parts.size ||
-                    (1..parts.size).any { it !in partNumbers } ||
+                if (first.totalParts != canonicalParts.size ||
+                    partNumbers.size != canonicalParts.size ||
+                    (1..canonicalParts.size).any { it !in partNumbers } ||
                     metadata.any {
                         it.totalParts != first.totalParts ||
                             !it.messageId.contentEquals(first.messageId) ||
@@ -65,7 +76,7 @@ class RuntimeSecureDecryptBackend(
                 ) {
                     ParseResult.Failure(ParseFailureReason.INCONSISTENT_PARTS)
                 } else {
-                    ParseResult.Success(RuntimeParsedCiphertext(parts))
+                    ParseResult.Success(RuntimeParsedCiphertext(canonicalParts))
                 }
             } finally {
                 metadata.forEach {
@@ -77,6 +88,28 @@ class RuntimeSecureDecryptBackend(
             ParseResult.Failure(error.reason.toParseFailure())
         } catch (_: RuntimeException) {
             ParseResult.Failure(ParseFailureReason.INVALID_FORMAT)
+        }
+    }
+
+    private fun joinBoundedPresentation(tokens: List<String>): String? {
+        if (tokens.size == 1) {
+            return tokens.single().takeIf { it.length <= MAX_PRESENTATION_CHARS }
+        }
+        var length = 0
+        tokens.forEachIndexed { index, token ->
+            length = try {
+                val tokenLength = Math.addExact(token.length, if (index == 0) 0 else 1)
+                Math.addExact(length, tokenLength)
+            } catch (_: ArithmeticException) {
+                return null
+            }
+            if (length > MAX_PRESENTATION_CHARS) return null
+        }
+        return buildString(length) {
+            tokens.forEachIndexed { index, token ->
+                if (index > 0) append('\n')
+                append(token)
+            }
         }
     }
 
@@ -334,6 +367,8 @@ class RuntimeSecureDecryptBackend(
 
     private companion object {
         const val MAX_PARTS = 128
+        const val MAX_PRESENTATION_TOKENS = 32 * 1024
+        const val MAX_PRESENTATION_CHARS = 384 * 1024
     }
 }
 

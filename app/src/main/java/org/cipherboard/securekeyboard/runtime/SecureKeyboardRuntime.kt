@@ -9,6 +9,7 @@ import org.cipherboard.cryptocore.CryptoErrorCode
 import org.cipherboard.cryptocore.EnvelopeMetadata
 import org.cipherboard.cryptocore.OwnedSecret as CryptoOwnedSecret
 import org.cipherboard.cryptocore.TransportMode
+import org.cipherboard.cryptocore.TransportPresentation
 import org.cipherboard.pairing.PairingQrPayload
 import org.cipherboard.securestorage.AndroidVaultKeyManager
 import org.cipherboard.securestorage.AtomicInboundResult
@@ -389,7 +390,7 @@ class SecureKeyboardRuntime private constructor(
     fun encrypt(
         contactId: ByteArray,
         plaintext: ByteArray,
-        mode: TransportMode = TransportMode.UNIVERSAL,
+        presentation: TransportPresentation = TransportPresentation.COMPACT,
         capabilities: Long = 0,
     ): PreparedOutbound = operationLock.withLock {
         val plaintextSecret = CryptoOwnedSecret.takeOwnership(plaintext)
@@ -407,14 +408,22 @@ class SecureKeyboardRuntime private constructor(
                     val encrypted = ratchet.secret.consume { stateBytes ->
                         val state = CryptoOwnedSecret.takeOwnership(stateBytes)
                         try {
-                            crypto.encrypt(state, plaintextSecret, capabilities, mode)
+                            crypto.encrypt(state, plaintextSecret, capabilities, TransportMode.UNIVERSAL)
                         } finally {
                             state.close()
                         }
                     }
                     try {
-                        val pendingBytes = PendingCiphertextCodec.encode(encrypted.parts)
-                        try {
+                        val delivery = ValidatedOutboundDelivery.encode(
+                            crypto,
+                            encrypted.parts,
+                            presentation,
+                        )
+                        val pendingBytes = PendingCiphertextCodec.encode(
+                            encrypted.parts,
+                            presentation,
+                        )
+                        val receipt = try {
                             val nextState = encrypted.sessionState.use { state ->
                                 StorageOwnedSecret.takeOwnership(state.copyOf())
                             }
@@ -440,12 +449,13 @@ class SecureKeyboardRuntime private constructor(
                         } finally {
                             pendingBytes.fill(0)
                         }
-                        PreparedOutbound(
-                            contactId,
-                            encrypted.messageId,
-                            encrypted.parts.toList(),
-                            markCommitUncertain = ::markOutboundCommitUncertain,
-                        )
+                        receipt.use {
+                            PreparedOutbound.fromCommitted(
+                                it,
+                                delivery,
+                                ::markOutboundCommitUncertain,
+                            )
+                        }
                     } finally {
                         encrypted.sessionState.close()
                         encrypted.messageId.fill(0)
@@ -477,14 +487,18 @@ class SecureKeyboardRuntime private constructor(
     fun pendingOutbound(): List<PreparedOutbound> = operationLock.withLock {
         recordStore.listPendingOutbound().map { pending ->
             try {
-                PreparedOutbound(
-                    pending.contactId,
-                    pending.operationId,
-                    PendingCiphertextCodec.decode(pending.ciphertext),
-                    pending.state,
+                val decoded = PendingCiphertextCodec.decode(pending.ciphertext)
+                val delivery = ValidatedOutboundDelivery.encode(
+                    crypto,
+                    decoded.parts,
+                    decoded.presentation,
+                )
+                PreparedOutbound.fromPending(
+                    pending,
+                    delivery,
                     ::markOutboundCommitUncertain,
                 )
-            } catch (error: IllegalArgumentException) {
+            } catch (error: RuntimeException) {
                 throw SecureRuntimeException(SecureRuntimeError.CORRUPT_STATE, error)
             } finally {
                 pending.operationId.fill(0)

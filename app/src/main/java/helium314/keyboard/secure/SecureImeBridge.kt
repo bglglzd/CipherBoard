@@ -118,10 +118,11 @@ object SecureImeBridge {
     fun arm(token: String, outbound: PreparedOutbound): Boolean {
         val current = liveSessionLocked() ?: return false
         if (current.token != token || !current.composerActivated || current.operationId != null) return false
-        if (outbound.parts.isEmpty() || outbound.parts.any { !it.startsWith(ENVELOPE_PREFIX) }) return false
+        val deliveryText = outbound.deliveryText
+        if (deliveryText.length !in 1..PreparedOutbound.MAX_DELIVERY_TEXT_CHARS) return false
         val boundary = outbound.claimCommitBoundary() ?: return false
         current.operationId = outbound.operationId()
-        current.ciphertext = outbound.parts.joinToString(separator = "\n")
+        current.ciphertext = deliveryText
         current.commitBoundary = boundary
         return true
     }
@@ -278,7 +279,6 @@ object SecureImeBridge {
         )
     }
 
-    private const val ENVELOPE_PREFIX = "CB1:"
     private const val SESSION_TTL_NANOS = 15L * 60L * 1_000_000_000L
 }
 

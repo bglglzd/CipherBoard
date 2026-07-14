@@ -2,6 +2,7 @@
 package helium314.keyboard.secure
 
 import android.os.IBinder
+import org.cipherboard.cryptocore.TransportPresentation
 import org.cipherboard.securekeyboard.runtime.PreparedOutbound
 import org.cipherboard.securestorage.PendingOutboundState
 import org.junit.After
@@ -67,6 +68,88 @@ class SecureImeBridgeTest {
         assertFalse(SecureImeBridge.hasSessionForTest())
         completedId?.fill(0)
         operationId.fill(0)
+    }
+
+    @Test
+    fun `bridge commits exact delivery text for every presentation`() {
+        val cases = listOf(
+            TransportCase(
+                TransportPresentation.COMPACT,
+                listOf("CB1:first", "CB1:second"),
+                "CB1:first\nCB1:second",
+            ),
+            TransportCase(
+                TransportPresentation.RUSSIAN_WORDS,
+                listOf("CB1:russian-canonical"),
+                "\u043c\u0435\u043d\u044f \u0442\u0435\u0431\u044f \u0435\u0441\u043b\u0438",
+            ),
+            TransportCase(
+                TransportPresentation.ENGLISH_WORDS,
+                listOf("CB1:english-canonical"),
+                "that what this",
+            ),
+        )
+
+        cases.forEachIndexed { index, case ->
+            val operationId = ByteArray(16) { (index + 1).toByte() }
+            val token = requireNotNull(begin())
+            assertTrue(SecureImeBridge.activateComposer(token))
+            assertTrue(
+                SecureImeBridge.arm(
+                    token,
+                    outbound(
+                        operationId = operationId,
+                        parts = case.parts,
+                        presentation = case.presentation,
+                        deliveryText = case.deliveryText,
+                    ),
+                ),
+            )
+            var committed: String? = null
+
+            assertEquals(
+                CiphertextDeliveryResult.COMMITTED_AND_COMPLETED,
+                deliver(committer = {
+                    committed = it
+                    true
+                }, completion = { true }),
+            )
+            assertEquals(case.deliveryText, committed)
+            operationId.fill(0)
+        }
+    }
+
+    @Test
+    fun `invalid delivery text never crosses durable boundary`() {
+        val invalidTexts = listOf(
+            "",
+            "a".repeat(PreparedOutbound.MAX_DELIVERY_TEXT_CHARS + 1),
+        )
+
+        invalidTexts.forEachIndexed { index, deliveryText ->
+            val operationId = ByteArray(16) { (index + 9).toByte() }
+            var boundaryCalls = 0
+            val token = requireNotNull(begin())
+            assertTrue(SecureImeBridge.activateComposer(token))
+
+            assertFalse(
+                SecureImeBridge.arm(
+                    token,
+                    outbound(
+                        operationId = operationId,
+                        parts = listOf("CB1:canonical"),
+                        marker = {
+                            boundaryCalls++
+                            true
+                        },
+                        deliveryText = deliveryText,
+                    ),
+                ),
+            )
+            assertEquals(0, boundaryCalls)
+            SecureImeBridge.cancelSession(token)
+            operationId.fill(0)
+        }
     }
 
     @Test
@@ -256,13 +339,33 @@ class SecureImeBridgeTest {
         operationId: ByteArray,
         parts: List<String>,
         state: PendingOutboundState = PendingOutboundState.READY,
+        presentation: TransportPresentation = TransportPresentation.COMPACT,
+        deliveryText: String = parts.joinToString(separator = "\n"),
         marker: (ByteArray) -> Boolean = { true },
-    ): PreparedOutbound = PreparedOutbound(
-        ByteArray(16) { 3 },
-        operationId,
-        parts,
-        state,
-        marker,
+    ): PreparedOutbound {
+        val deliveryClass = Class.forName(
+            "org.cipherboard.securekeyboard.runtime.ValidatedOutboundDelivery",
+        )
+        val deliveryConstructor = deliveryClass.declaredConstructors.single { it.parameterCount == 3 }
+        deliveryConstructor.isAccessible = true
+        val delivery = deliveryConstructor.newInstance(deliveryText, presentation, parts)
+
+        val outboundConstructor = PreparedOutbound::class.java.declaredConstructors
+            .single { it.parameterCount == 5 }
+        outboundConstructor.isAccessible = true
+        return outboundConstructor.newInstance(
+            ByteArray(16) { 3 },
+            operationId,
+            delivery,
+            state,
+            marker,
+        ) as PreparedOutbound
+    }
+
+    private data class TransportCase(
+        val presentation: TransportPresentation,
+        val parts: List<String>,
+        val deliveryText: String,
     )
 
     private fun begin(): String? = SecureImeBridge.beginSession(

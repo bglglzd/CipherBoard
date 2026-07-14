@@ -304,7 +304,7 @@ class ContactVaultRepository(
         newRatchetState: OwnedSecret,
         operationId: ByteArray,
         pendingCiphertext: ByteArray,
-    ) {
+    ): CommittedOutboundReceipt {
         try {
             require(expectedContactRevision > 0 && lastActiveAtEpochMillis >= 0)
             val current = readContact(contactId) ?: throw RatchetRevisionConflictException()
@@ -330,6 +330,7 @@ class ContactVaultRepository(
                     }
                 }
             }
+            return CommittedOutboundReceipt(contactId, operationId, pendingCiphertext)
         } finally {
             newRatchetState.close()
         }

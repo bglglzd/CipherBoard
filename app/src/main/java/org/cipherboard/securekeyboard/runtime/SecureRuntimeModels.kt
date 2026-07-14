@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package org.cipherboard.securekeyboard.runtime
 
+import org.cipherboard.cryptocore.CipherBoardCrypto
+import org.cipherboard.cryptocore.TransportPresentation
+import org.cipherboard.securestorage.CommittedOutboundReceipt
 import org.cipherboard.securestorage.ContactVerificationStatus
 import org.cipherboard.securestorage.KeyProtectionInfo
 import org.cipherboard.securestorage.PendingDisplay
+import org.cipherboard.securestorage.PendingOutbound
 import org.cipherboard.securestorage.PendingOutboundState
 import org.cipherboard.securestorage.VaultOperation
 import org.cipherboard.securestorage.VaultUnlockRequest
@@ -50,10 +54,34 @@ class SecureContactSummary internal constructor(
         "SecureContactSummary(status=$verificationStatus,protocolVersion=$protocolVersion)"
 }
 
-class PreparedOutbound internal constructor(
+internal class ValidatedOutboundDelivery private constructor(
+    val text: String,
+    val presentation: TransportPresentation,
+    parts: List<String>,
+) {
+    val parts: List<String> = parts.toList()
+
+    companion object {
+        fun encode(
+            crypto: CipherBoardCrypto,
+            parts: List<String>,
+            presentation: TransportPresentation,
+        ): ValidatedOutboundDelivery {
+            val text = crypto.encodePresentation(parts, presentation)
+            require(text.length in 1..PreparedOutbound.MAX_DELIVERY_TEXT_CHARS)
+            val decoded = crypto.decodePresentation(text)
+            check(decoded.presentation == presentation && decoded.parts == parts) {
+                "Crypto presentation round-trip mismatch"
+            }
+            return ValidatedOutboundDelivery(text, presentation, parts)
+        }
+    }
+}
+
+class PreparedOutbound private constructor(
     contactId: ByteArray,
     operationId: ByteArray,
-    parts: List<String>,
+    delivery: ValidatedOutboundDelivery,
     val deliveryState: PendingOutboundState = PendingOutboundState.READY,
     private val markCommitUncertain: ((ByteArray) -> Boolean)? = null,
 ) : Closeable {
@@ -61,10 +89,15 @@ class PreparedOutbound internal constructor(
     private val boundaryClaimed = AtomicBoolean(false)
     private val contact = contactId.copyOf()
     private val id = operationId.copyOf()
-    private var ciphertextParts = parts.toList()
+    private var ciphertextParts = delivery.parts
+    private var exactDeliveryText = delivery.text
+
+    val presentation: TransportPresentation = delivery.presentation
 
     val parts: List<String>
         get() = ciphertextParts
+    val deliveryText: String
+        get() = exactDeliveryText
 
     fun contactId(): ByteArray = contact.copyOf()
     fun operationId(): ByteArray = id.copyOf()
@@ -82,9 +115,67 @@ class PreparedOutbound internal constructor(
         contact.fill(0)
         id.fill(0)
         ciphertextParts = emptyList()
+        exactDeliveryText = ""
     }
 
-    override fun toString(): String = "PreparedOutbound(parts=${ciphertextParts.size})"
+    override fun toString(): String =
+        "PreparedOutbound(presentation=$presentation,parts=${ciphertextParts.size})"
+
+    internal companion object {
+        const val MAX_DELIVERY_TEXT_CHARS = 384 * 1024
+
+        fun fromCommitted(
+            receipt: CommittedOutboundReceipt,
+            delivery: ValidatedOutboundDelivery,
+            markCommitUncertain: (ByteArray) -> Boolean,
+        ): PreparedOutbound {
+            verifyStoredCiphertext(receipt.pendingCiphertext(), delivery)
+            val contactId = receipt.contactId()
+            val operationId = receipt.operationId()
+            return try {
+                PreparedOutbound(
+                    contactId,
+                    operationId,
+                    delivery,
+                    markCommitUncertain = markCommitUncertain,
+                )
+            } finally {
+                contactId.fill(0)
+                operationId.fill(0)
+            }
+        }
+
+        fun fromPending(
+            pending: PendingOutbound,
+            delivery: ValidatedOutboundDelivery,
+            markCommitUncertain: (ByteArray) -> Boolean,
+        ): PreparedOutbound {
+            verifyStoredCiphertext(pending.ciphertext.copyOf(), delivery)
+            return PreparedOutbound(
+                pending.contactId,
+                pending.operationId,
+                delivery,
+                pending.state,
+                markCommitUncertain,
+            )
+        }
+
+        private fun verifyStoredCiphertext(
+            stored: ByteArray,
+            delivery: ValidatedOutboundDelivery,
+        ) {
+            var expected = ByteArray(0)
+            try {
+                expected = PendingCiphertextCodec.encode(delivery.parts, delivery.presentation)
+                require(java.security.MessageDigest.isEqual(stored, expected)) {
+                    "Committed outbound ciphertext mismatch"
+                }
+            } finally {
+                stored.fill(0)
+                expected.fill(0)
+            }
+        }
+    }
 }
 
 internal class OutboundCommitBoundary(

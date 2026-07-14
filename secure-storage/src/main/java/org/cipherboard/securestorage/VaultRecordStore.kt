@@ -20,13 +20,41 @@ data class VersionedSecret(
     override fun close() = secret.close()
 }
 
-data class PendingOutbound(
+class PendingOutbound internal constructor(
     val contactId: ByteArray,
     val operationId: ByteArray,
     val ciphertext: ByteArray,
     val revision: Long,
     val state: PendingOutboundState,
 )
+
+/** Opaque proof that an outbound ratchet update and ciphertext were committed atomically. */
+class CommittedOutboundReceipt internal constructor(
+    contactId: ByteArray,
+    operationId: ByteArray,
+    pendingCiphertext: ByteArray,
+) : Closeable {
+    private var contact = contactId.copyOf()
+    private var operation = operationId.copyOf()
+    private var ciphertext = pendingCiphertext.copyOf()
+
+    fun contactId(): ByteArray = contact.copyOf()
+
+    fun operationId(): ByteArray = operation.copyOf()
+
+    fun pendingCiphertext(): ByteArray = ciphertext.copyOf()
+
+    override fun close() {
+        contact.wipe()
+        operation.wipe()
+        ciphertext.wipe()
+        contact = ByteArray(0)
+        operation = ByteArray(0)
+        ciphertext = ByteArray(0)
+    }
+
+    override fun toString(): String = "CommittedOutboundReceipt"
+}
 
 data class PendingDisplay(
     val messageId: ByteArray,
