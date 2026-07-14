@@ -13,6 +13,7 @@
 *.xml text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+crypto-core/native/data/*.txt text eol=lf
 gradlew text eol=lf
 *.bat text eol=crlf
 

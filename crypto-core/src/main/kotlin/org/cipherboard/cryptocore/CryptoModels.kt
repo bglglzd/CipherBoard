@@ -111,6 +111,33 @@ enum class TransportMode(internal val wireValue: Int) {
     SMS_COMPACT(1),
 }
 
+enum class TransportPresentation(internal val wireValue: Int) {
+    COMPACT(0),
+    RUSSIAN_WORDS(1),
+    ENGLISH_WORDS(2),
+    ;
+
+    companion object {
+        internal fun fromWire(value: Int): TransportPresentation =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("Unknown transport presentation")
+    }
+}
+
+class PresentationDecoded(
+    val presentation: TransportPresentation,
+    parts: List<String>,
+) {
+    val parts: List<String> = parts.toList()
+
+    init {
+        require(parts.isNotEmpty())
+    }
+
+    override fun toString(): String =
+        "PresentationDecoded(presentation=$presentation,parts=${parts.size})"
+}
+
 class EncryptionPrepared(
     val sessionState: OwnedSecret,
     val messageId: ByteArray,

@@ -12,6 +12,7 @@ mod envelope;
 mod error;
 pub mod ffi;
 mod pairing;
+mod presentation;
 mod secret;
 mod session;
 
@@ -26,6 +27,10 @@ pub use pairing::{
     parse_pairing_payload, PairingCompletion, PairingOffer, PairingPayloadMetadata,
     PairingPayloadType, PairingResponse, PreparedPairingResponse, SafetyCode,
     MAX_OFFER_TTL_SECONDS,
+};
+pub use presentation::{
+    decode_presentation, encode_presentation, DecodedPresentation, TransportPresentation,
+    MAX_PRESENTATION_TEXT_BYTES, MAX_PRESENTATION_WORDS, MAX_WORD_WRAPPER_BYTES,
 };
 pub use secret::SecretBytes;
 pub use session::{CipherSession, PreparedInbound, PreparedOutbound};

@@ -1,5 +1,6 @@
 package org.cipherboard.cryptocore
 
+import java.nio.charset.CharacterCodingException
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -70,5 +71,26 @@ class CborWireTest {
         assertFailsWith<IllegalArgumentException> {
             CborWriter().use { it.ascii("CB1:кириллица").finish() }
         }
+    }
+
+    @Test
+    fun utf8RoundTripsWithoutNormalizationAndEnforcesLimit() {
+        val value = "русский e\u0301 👨‍👩‍👧‍👦"
+        val encoded = CborWriter().use { it.utf8(value, 128).finish() }
+        val reader = CborReader(encoded)
+        assertEquals(value, reader.utf8(128))
+        reader.finish()
+        encoded.fill(0)
+
+        assertFailsWith<IllegalArgumentException> {
+            CborWriter().use { it.utf8(value, 4).finish() }
+        }
+    }
+
+    @Test
+    fun utf8ReaderRejectsMalformedInput() {
+        val malformed = CborWriter().use { it.bytes(byteArrayOf(0xc3.toByte(), 0x28)).finish() }
+        assertFailsWith<CharacterCodingException> { CborReader(malformed).utf8(2) }
+        malformed.fill(0)
     }
 }

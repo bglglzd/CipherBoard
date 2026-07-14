@@ -200,6 +200,39 @@ fn every_operation_round_trips_alice_and_bob() {
         parts.push(decoder.bytes().expect("part").to_vec());
     }
 
+    let word_payload = success(
+        9,
+        &request(3, |encoder| {
+            encoder.u8(1).expect("Russian presentation");
+            encoder.array(count).expect("parts");
+            for part in &parts {
+                encoder.bytes(part).expect("part");
+            }
+        }),
+    );
+    let mut decoder = Decoder::new(&word_payload);
+    assert_eq!(decoder.array().expect("word result"), Some(1));
+    let word_text = decoder.bytes().expect("word text").to_vec();
+    assert!(!word_text.starts_with(b"CB1:"));
+    assert!(core::str::from_utf8(&word_text)
+        .expect("UTF-8")
+        .contains(' '));
+
+    let decoded_payload = success(
+        10,
+        &request(2, |encoder| {
+            encoder.bytes(&word_text).expect("word text");
+        }),
+    );
+    let mut decoder = Decoder::new(&decoded_payload);
+    assert_eq!(decoder.array().expect("decoded result"), Some(2));
+    assert_eq!(decoder.u8().expect("presentation"), 1);
+    assert_eq!(decoder.array().expect("parts"), Some(count));
+    for part in &parts {
+        assert_eq!(decoder.bytes().expect("decoded part"), part);
+    }
+    assert_eq!(decoder.position(), decoded_payload.len());
+
     let metadata = success(
         7,
         &request(2, |encoder| {

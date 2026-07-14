@@ -89,6 +89,17 @@ class NativeBridgeSmokeTest {
             aliceSession.clear()
             aliceSession = encrypted.sessionState
 
+            for (presentation in TransportPresentation.entries) {
+                val presented = crypto.encodePresentation(encrypted.parts, presentation)
+                if (presentation != TransportPresentation.COMPACT) {
+                    assertTrue(!presented.startsWith("CB1:"))
+                    assertTrue(presented.contains(' '))
+                }
+                val decoded = crypto.decodePresentation(presented)
+                assertEquals(presentation, decoded.presentation)
+                assertEquals(encrypted.parts, decoded.parts)
+            }
+
             val decrypted = crypto.decrypt(bobSession, encrypted.parts)
             bobSession.clear()
             bobSession = decrypted.sessionState
