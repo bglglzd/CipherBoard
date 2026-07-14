@@ -23,7 +23,12 @@ Implemented source paths include:
 - an embedded Private mode panel above the keyboard keys, backed by a bounded
   process-local draft connection, with no-learning/clipboard-history gates,
   best-effort buffer clearing, contact/vault status, Universal/SMS selection,
-  and ciphertext-only publication through the active IME;
+  ciphertext-only publication through the active IME, and an **Encrypt /
+  Decrypt** mode selector;
+- an embedded copied-ciphertext receive flow that reads one bounded clipboard
+  item only after an explicit action, hides the ordinary keys, decrypts through
+  a hostless already-unlocked backend, and draws plaintext on a non-selectable
+  protected surface inside the IME;
 - bounded selected-text and `ACTION_PROCESS_TEXT` parsing, authenticated vault
   unlock, a drawing-only protected viewer, timeout/background clearing, and
   secure reply by internal contact ID;
@@ -42,9 +47,11 @@ was lost. The handoff is bound to the pending operation, exact ciphertext,
 original host package/UID, input field metadata, selection and exact
 `InputBinding.connectionToken`. `LatinIME` performs the only permitted host
 `commitText()` and completes the pending record after an accepted insertion.
-Inbound recovery is bound to the digest of the complete ordered ciphertext;
-an abandoned pre-render lease retains the encrypted pending display for an
-exact retry, while a rendered/closed lease deletes it under no-history policy.
+Inbound recovery is bound to the digest of the complete ordered ciphertext.
+The embedded surface acknowledges the pending display only after its first
+allowed plaintext draw. An abandoned or render-timed-out pre-draw lease retains
+the encrypted pending display for an exact retry, while an acknowledged and
+closed lease deletes it under no-history policy.
 
 The pairing/contact flow expires or cancels orphaned active operations in
 bounded cleanup batches and blocks a changed remote identity until explicit
@@ -63,9 +70,10 @@ CipherBoard is one offline Android APK with two user-facing roles:
    only inside CipherBoard.
 
 The host application is an untrusted text transport. The IME may read selected
-`CB1` ciphertext from it and may write an exact, already persisted `CB1`
-ciphertext to it. It MUST NOT write secure-composer plaintext, return decrypted
-text through `ACTION_PROCESS_TEXT`, or place plaintext on the system clipboard.
+`CB1` ciphertext from it, explicitly read copied `CB1` ciphertext from the
+system clipboard, and write an exact, already persisted `CB1` ciphertext to the
+host. It MUST NOT write secure-composer plaintext, return decrypted text through
+`ACTION_PROCESS_TEXT`, or place plaintext on the system clipboard.
 
 The application has no backend and no runtime network capability. Pairing is a
 physical, bidirectional QR ceremony. Message delivery, availability, ordering,
@@ -252,9 +260,10 @@ explicit warning before activation.
 
 The scope stores the exact non-null `InputBinding.connectionToken` as well as
 package/UID and editor metadata. Any field or token change closes the panel and
-wipes the draft. The Vault-unlock activity is non-exported and may cause Android
-to recreate the connection; one explicit, metadata-matching token rebind is
-allowed only for that unlock return.
+wipes the draft and embedded plaintext. The Vault-unlock activity is
+non-exported and may cause Android to recreate the connection; one explicit,
+metadata-matching token rebind is allowed only after its one-shot process-local
+handoff reports a successful unlock.
 
 Android physical-keyboard dispatch is outside this software-key routing
 boundary and may deliver characters directly to the focused host view. Private
@@ -275,6 +284,50 @@ return, exception or process death after the state transition leaves an
 explicit uncertain record: it is shown as delivery-unknown and MUST NOT be
 automatically retried. The draft stays visible after success; clearing it is a
 separate explicit/lifecycle operation and is never part of publication.
+
+### 6.3 Embedded copied-ciphertext receive gate
+
+The common receive flow is explicit: the user copies a complete `CB1` message,
+opens the shield panel, selects **Decrypt**, and presses **Paste and decrypt**.
+The controller reads exactly one clipboard text item with the existing
+allocation bounds, rejects malformed or incomplete envelopes before Vault
+access, and does not change the clipboard. Clipboard content is ciphertext; no
+plaintext clipboard API exists. The ordinary keyboard wrapper and suggestion
+strip are hidden in Decrypt mode, so software keys cannot look like an input
+path for the read-only message.
+
+Envelope parsing runs off the main thread. If authentication is required, the
+controller keeps only ciphertext and an opaque parsed handle in process memory.
+It creates a random one-shot `EmbeddedVaultUnlockBridge` token and sends only
+that token to the non-exported `SecureVaultUnlockActivity`; ciphertext and
+plaintext are never Intent extras. The activity must activate the token once
+and complete it once. Cancellation, duplicate activation, timeout, screen-off,
+or a failed/mismatched host-scope return invalidates the handoff and closes the
+panel. Only then may the exact editor metadata obtain its single authorised
+connection-token rebind. `decryptUnlocked()` never presents authentication UI
+and fails closed if the Vault expired between the handoff and worker execution.
+Parser and decrypt completions cross to the main thread through an owned-result
+handoff. Cancellation invalidates its generation and closes queued or late
+results before callbacks are removed, so a lifecycle race cannot orphan a
+plaintext owner in the main looper queue.
+
+After the atomic receive commit, plaintext is decoded into `WipeableText` and
+owned by `SecurePlaintextView`, a drawing-only view with no focus, selection,
+long-click action mode, saved state, Accessibility text, autofill, or content
+capture. Before the first draw, the controller rechecks that the secure IME and
+Vault are still active. Only an allowed completed draw calls
+`SecureDisplayLease.markDisplayed()` and starts the viewer timeout. A bounded
+render timeout clears the surface without marking the lease, retaining the
+encrypted pending display for exact recovery. **Reply securely** clears this
+surface, wipes any pre-existing outbound draft, resolves the opaque reply
+capability against local contacts, switches to Encrypt mode, and selects the
+same local contact without an Intent.
+
+The panel uses compact landscape and constrained-height/large-font dimensions.
+The received message lives in a bounded-height scroll view; summary/status text
+uses bounded lines and commands retain minimum touch targets. This reduces
+clipping risk but does not replace screenshot QA in portrait/landscape at font
+scales through 2.0 in both supported locales.
 
 ## 7. Atomic Ratchet Operations
 
@@ -329,11 +382,14 @@ Rust. The richer validation in step 3 remains a target protocol requirement.
    identity, routing tag, message ID, sequence, content type, and UTF-8.
 4. In one transaction, store session revision `n+1`, replay record, receive
    sequence/window, and a DEK-encrypted `READY_TO_DISPLAY` plaintext record.
-5. Only after commit, decrypt the pending display record into the secure viewer.
-6. Mark the lease displayed only after the protected view accepts the text. On
-   close/background/timeout after render, wipe UI buffers and delete the
-   pending display because v1 has no plaintext history. Abandon before render
-   wipes the temporary buffer but retains the encrypted record for exact retry.
+5. Only after commit, decrypt the pending display record into a secure viewer.
+6. Transfer plaintext to a drawing-only protected view without yet consuming
+   the display lease.
+7. Mark the lease displayed only after the first allowed draw. On close,
+   background, timeout, mode switch, or reply after that draw, wipe UI buffers
+   and delete the pending display because v1 has no plaintext history. Abandon
+   or render timeout before the draw wipes the temporary buffer but retains the
+   encrypted record for exact retry.
 
 A crash before step 4 changes nothing and the ciphertext may be tried again. A
 crash after step 4 leaves a recoverable encrypted pending display without
@@ -391,15 +447,22 @@ still absent.
 
 The IME window sets `FLAG_SECURE` while the embedded Private panel is active;
 the panel is not a separate task or activity and therefore has no recent-app
-entry. The process-text/viewer activity remains protected and excluded from
-recents by the source manifest. The viewer disables autofill/content capture
-and Android 13+ recents
-screenshots, clears on pause/stop/UI-hidden, and closes on a fixed 60-second
-backend timeout (bounded by the viewer to 10 seconds through five minutes).
-Viewer plaintext is drawn by a non-focusable, non-selectable view excluded from
-Accessibility; Assistant bundles are cleared. "Reply securely" carries only an
-internal contact ID and closes the display lease. Screen-off, screenshot,
-recents, Assistant and Accessibility behavior still requires device evidence.
+entry. Embedded Decrypt mode hides the ordinary keys and uses the same
+drawing-only plaintext class as the separate viewer. It clears on panel close,
+mode change, host-scope loss, screen off, Vault expiry, explicit hide, render
+failure, or configured timeout. Its reply capability is resolved locally and
+does not launch a plaintext-bearing Activity.
+
+The process-text/viewer activity remains protected and excluded from recents by
+the source manifest. Both viewers disable autofill/content capture; the
+activity also disables Android 13+ recents screenshots, clears on
+pause/stop/UI-hidden even while parse/decrypt work is in flight, and uses the
+same timeout preference bounded to 10 seconds through five minutes. Immediately
+before first draw it reapplies the Vault timeout policy and fails closed if the
+Vault locked. Plaintext is drawn by a non-focusable, non-selectable view
+excluded from Accessibility; Assistant bundles are cleared. Screen-off,
+screenshot, recents, Assistant and Accessibility behavior still requires
+device evidence.
 
 Kotlin uses `ByteArray`/`CharArray` where APIs permit, wipes arrays in `finally`,
 cancels work at lifecycle exit, and clears editable/spannable and IME caches.

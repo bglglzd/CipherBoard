@@ -20,7 +20,7 @@
 CipherBoard is an offline-first encrypted text keyboard for Android, designed
 primarily for current GrapheneOS devices. It combines a HeliBoard-based input
 method with local identities, physical QR pairing, an embedded Private panel,
-and a protected message viewer.
+an embedded protected reader, and an alternative protected Activity viewer.
 
 CipherBoard is an unofficial modified fork of HeliBoard. It is not an official
 HeliBoard release and is not endorsed or supported by the HeliBoard project.
@@ -35,14 +35,14 @@ HeliBoard release and is not endorsed or supported by the HeliBoard project.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.2.0` |
+| Maturity | Pre-1.0; current version `0.3.0` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
 | Runtime network | No Internet or network-state permission; no runtime network feature |
 | Interface languages | English and Russian |
 
-See the bilingual [CipherBoard 0.2.0 release notes](docs/releases/v0.2.0.md).
+See the bilingual [CipherBoard 0.3.0 release notes](docs/releases/v0.3.0.md).
 
 ## What It Does
 
@@ -55,13 +55,15 @@ accounts, phone numbers, email addresses, or a CipherBoard server:
    code.
 3. Both people compare the same Safety Number before marking the contact as
    verified.
-4. The sender taps the shield to switch the keyboard into Private mode and
-   writes in the CipherBoard-owned panel above the keys.
+4. The sender taps the shield, keeps the panel in **Encrypt** mode, and writes
+   in the CipherBoard-owned field above the keys.
 5. CipherBoard advances and durably stores the Olm ratchet, then commits only a
    `CB1:` ciphertext envelope to the external app.
-6. The recipient selects the ciphertext and uses **Decrypt in CipherBoard**.
-   Plaintext is displayed in a protected, read-only CipherBoard window and is
-   not returned to the transport app.
+6. The recipient copies the complete `CB1:` text, taps the shield, switches the
+   same panel to **Decrypt**, and taps **Paste and decrypt**.
+7. Plaintext is drawn read-only inside the `FLAG_SECURE` IME panel. It is not
+   returned to the transport app or written to the clipboard; **Reply
+   securely** selects the same local contact in **Encrypt** mode.
 
 The transport can be SMS, email, a messenger, or any other application that
 can carry text. CipherBoard does not send messages itself.
@@ -93,6 +95,16 @@ can carry text. CipherBoard does not send messages itself.
   and content capture, and protects the IME window with `FLAG_SECURE`. Software
   key input is routed to the local draft; only persisted ciphertext can reach
   the host `InputConnection`.
+- The embedded **Decrypt** mode reads exactly one bounded clipboard item only
+  after the explicit **Paste and decrypt** action, accepts only complete `CB1:`
+  ciphertext, leaves that ciphertext in the clipboard, and hides the ordinary
+  keys while plaintext is visible. Plaintext uses a drawing-only surface with
+  no focus, selection, clipboard action mode, autofill, content capture, or
+  Accessibility text.
+- Inbound ratchet, replay marker, and encrypted pending-display plaintext are
+  committed together. The pending display is acknowledged only after the first
+  allowed plaintext draw; abandoning the surface before that point retains the
+  encrypted recovery record rather than consuming the Olm message again.
 - The protected viewer uses `FLAG_SECURE`, disables plaintext selection and
   sharing, clears on backgrounding, and does not return plaintext through
   `ACTION_PROCESS_TEXT`.
@@ -130,14 +142,14 @@ project and assume it is CipherBoard.
 Verify the release checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.2.0-release.apk.sha256
+sha256sum --check CipherBoard-0.3.0-release.apk.sha256
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.2.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.2.0-release.apk.sha256
+(Get-FileHash .\CipherBoard-0.3.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.3.0-release.apk.sha256
 ```
 
 If Android Build Tools are installed, also verify the APK signature and compare
@@ -146,13 +158,13 @@ the reported SHA-256 certificate digest with
 digest through a channel you trust independently of the APK download.
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.2.0-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.3.0-release.apk
 ```
 
 Install or update the verified APK:
 
 ```sh
-adb install -r CipherBoard-0.2.0-release.apk
+adb install -r CipherBoard-0.3.0-release.apk
 ```
 
 Debug APKs are developer artifacts signed with a public debug key. Do not use
@@ -213,10 +225,16 @@ insertion so you can confirm what was sent; it is wiped when you clear or close
 the panel or move to another host field. The host field receives only text
 beginning with `CB1:`. Do not type a private draft with a hardware keyboard.
 
-To receive, select all ciphertext parts in the transport app and choose
-**Decrypt in CipherBoard** from Android's text actions. Confirm decryption,
-unlock the Vault, and read the result in the protected viewer. Ciphertext may be
-copied as a fallback; plaintext is never copied automatically.
+To receive from Telegram, SMS, email, or another text transport, copy the full
+`CB1:` ciphertext, focus a text field so CipherBoard is visible, and tap the
+shield. Switch the embedded panel to **Decrypt**, then tap **Paste and
+decrypt**. This explicit action reads one bounded clipboard item; it does not
+modify the ciphertext clip. Unlock the Vault when requested and read the
+plaintext directly in the protected IME panel. The ordinary keys are hidden in
+this mode, and the drawing-only plaintext cannot be selected or copied. Tap
+**Reply securely** to clear the received plaintext, switch to **Encrypt**, and
+select the same local contact. Android's **Decrypt in CipherBoard** text action
+remains available in apps that expose it, but it is not required for this flow.
 
 By default CipherBoard does not keep plaintext history or message keys for
 convenient re-reading. A previously viewed message may therefore be impossible
@@ -226,9 +244,10 @@ to decrypt again after its temporary local display record is removed.
 
 CipherBoard - офлайн-клавиатура для обмена зашифрованным текстом без аккаунтов,
 телефонных номеров и сервера CipherBoard. Обычный режим основан на HeliBoard. В
-приватном режиме над клавишами открывается собственная панель CipherBoard:
-программные клавиши пишут в локальный черновик, а внешнему приложению передаётся
-только шифротекст `CB1:`.
+приватном режиме над клавишами открывается собственная панель CipherBoard с
+режимами **Зашифровать** и **Расшифровать**. При отправке программные клавиши
+пишут в локальный черновик, а внешнему приложению передаётся только шифротекст
+`CB1:`.
 
 Для начала:
 
@@ -252,7 +271,13 @@ CipherBoard - офлайн-клавиатура для обмена зашифр
    `CB1:`-шифротекст. Черновик очищается при очистке/закрытии панели или смене
    внешнего поля. Не используйте для приватного черновика физическую клавиатуру:
    Android может направить её ввод прямо во внешнее приложение.
-8. Для чтения выделите шифротекст и выберите **Расшифровать в CipherBoard**.
+8. Для чтения скопируйте целиком полученный `CB1:`-шифротекст, откройте
+   CipherBoard в любом поле, нажмите щит, выберите **Расшифровать**, затем
+   **Вставить и расшифровать**. После разблокировки Vault открытый текст будет
+   показан прямо в защищённой панели клавиатуры; обычные клавиши в этом режиме
+   скрыты. Буфер обмена останется шифротекстом. Кнопка **Ответить защищённо**
+   очистит показанное сообщение, переключит панель на отправку и выберет того
+   же локального контакта.
 
 CipherBoard не проверяет и не устанавливает обновления самостоятельно: у него
 нет разрешений `android.permission.INTERNET` и
@@ -294,7 +319,7 @@ session state.
 
 | Path | Responsibility |
 | --- | --- |
-| `app/` | HeliBoard-based IME, embedded Private panel, onboarding, contacts, protected viewer, and Android integration |
+| `app/` | HeliBoard-based IME, embedded Encrypt/Decrypt panel, onboarding, contacts, protected Activity viewer, and Android integration |
 | `crypto-core/` | Minimal Kotlin/JNI boundary and Rust `vodozemac` protocol core |
 | `secure-storage/` | Keystore key management, encrypted records, replay state, and atomic operations |
 | `pairing/` | Offline pairing state machine and local QR integration |
