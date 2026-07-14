@@ -377,7 +377,7 @@
     <string name="floating" tools:keep="@string/floating">Floating Keyboard</string>
     <string name="secure_composer_title">Secure Composer</string>
     <string name="close_secure_composer">Close</string>
-    <string name="secure_composer_privacy_note">Text stays in this protected editor. Only encrypted CB1 text is inserted into the other app.</string>
+    <string name="secure_composer_privacy_note">Text stays in this protected editor. Only CipherBoard ciphertext is inserted into the other app.</string>
     <string name="secure_cipherboard_ime_required">CipherBoard must be the current keyboard before protected text entry is enabled.</string>
     <string name="secure_vault_locked">Vault locked</string>
     <string name="secure_vault_unlocked_level">Vault unlocked · Keystore: %1$s</string>
@@ -396,9 +396,19 @@
     <string name="secure_no_contacts">No paired contacts</string>
     <string name="secure_pair_contact_first">Pair and verify a contact in CipherBoard settings first.</string>
     <string name="secure_message_hint">Message</string>
-    <string name="secure_transport_universal">Universal</string>
-    <string name="secure_transport_sms">SMS compact</string>
-    <string name="secure_size_estimate">%1$d characters · about %2$d encrypted characters · about %3$d SMS segments</string>
+    <string name="secure_size_estimate">%1$s · %2$s</string>
+    <plurals name="secure_character_count">
+        <item quantity="one">%d character</item>
+        <item quantity="other">%d characters</item>
+    </plurals>
+    <plurals name="secure_estimated_encrypted_characters">
+        <item quantity="one">about %d encrypted character</item>
+        <item quantity="other">about %d encrypted characters</item>
+    </plurals>
+    <plurals name="secure_estimated_encoded_words">
+        <item quantity="one">about %d encoded word</item>
+        <item quantity="other">about %d encoded words</item>
+    </plurals>
     <string name="secure_encrypt_and_insert">Encrypt and insert</string>
     <string name="secure_encrypt_save_for_reply">Encrypt reply</string>
     <string name="secure_clear">Clear</string>
@@ -416,7 +426,7 @@
         <item quantity="other">Retry %d pending encrypted messages</item>
     </plurals>
     <string name="secure_invalid_unicode">The message contains invalid Unicode and cannot be encoded.</string>
-    <string name="secure_message_too_large">The message is too large for the selected transport.</string>
+    <string name="secure_message_too_large">The message is too large for the selected message format.</string>
     <string name="secure_message_replay">This encrypted message was already processed.</string>
     <string name="secure_vault_corrupt">Encrypted local storage could not be read safely.</string>
     <string name="secure_operation_failed">The secure operation could not be completed.</string>
@@ -424,7 +434,6 @@
     <string name="embedded_secure_encrypt_mode">Encrypt</string>
     <string name="embedded_secure_decrypt_mode">Decrypt</string>
     <string name="embedded_secure_draft_hint">Write a private message here</string>
-    <string name="embedded_secure_draft_count">%1$d characters · about %2$d encrypted</string>
     <string name="embedded_secure_encrypt">Encrypt</string>
     <string name="embedded_secure_unlock_to_encrypt">Unlock the Vault to load recipients and encrypt.</string>
     <string name="embedded_secure_no_identity">Create your local identity before pairing a recipient.</string>
@@ -439,7 +448,7 @@
     <string name="embedded_secure_uncertain_cleared">The delivery record was removed without another insertion. Edit the draft before encrypting it as a new message.</string>
     <string name="embedded_secure_password_warning">This is a password field. CipherBoard will keep plaintext inside the keyboard, but the resulting ciphertext will be visible to the current app.</string>
     <string name="embedded_secure_continue">Continue</string>
-    <string name="embedded_secure_message_too_large">The draft is too large for the selected transport mode.</string>
+    <string name="embedded_secure_message_too_large">The draft is too large for the selected message format.</string>
     <string name="embedded_secure_unavailable">Private mode is unavailable for this field.</string>
     <string name="embedded_secure_unlocking">Unlocking the Vault…</string>
     <string name="embedded_secure_unlock_failed">The Vault could not be unlocked.</string>
@@ -448,7 +457,7 @@
     <string name="embedded_secure_clear_description">Clear private draft</string>
     <string name="embedded_secure_close_description">Close Private mode</string>
     <string name="embedded_secure_encrypt_description">Encrypt and insert ciphertext</string>
-    <string name="embedded_secure_decrypt_clipboard_prompt">Copy the complete CB1 message, then tap Paste and decrypt.</string>
+    <string name="embedded_secure_decrypt_clipboard_prompt">Copy the complete CipherBoard message, then tap Paste and decrypt.</string>
     <string name="embedded_secure_decrypt_loaded">%1$d encrypted characters · %2$d parts loaded</string>
     <string name="embedded_secure_paste_and_decrypt">Paste and decrypt</string>
     <string name="embedded_secure_unlock_and_decrypt">Unlock and decrypt</string>
@@ -459,11 +468,11 @@
     <string name="embedded_secure_decrypted_verified">From: %1$s · Verified contact</string>
     <string name="embedded_secure_decrypted_unverified">From: %1$s · Safety Number not verified</string>
     <string name="embedded_secure_clear_decrypt_description">Hide decrypted message and clear imported ciphertext</string>
-    <string name="secure_select_ciphertext_hint">Select the complete CB1 ciphertext. If this app cannot expose a selection, copy ciphertext only and use “Decrypt in CipherBoard”.</string>
+    <string name="secure_select_ciphertext_hint">Select the complete CipherBoard ciphertext, compact or words. If this app cannot expose a selection, copy ciphertext only and use “Decrypt in CipherBoard”.</string>
     <string name="secure_clipboard_decrypt_title">Decrypt copied ciphertext</string>
-    <string name="secure_clipboard_decrypt_description">Copy only the complete CB1 encrypted text in the source app. CipherBoard reads the clipboard only after the button below is pressed and never places decrypted text there.</string>
+    <string name="secure_clipboard_decrypt_description">Copy only the complete CipherBoard ciphertext in the source app. CipherBoard reads the clipboard only after the button below is pressed and never places decrypted text there.</string>
     <string name="secure_clipboard_decrypt_action">Use ciphertext from clipboard</string>
-    <string name="secure_clipboard_decrypt_invalid">The clipboard does not contain one complete, valid-looking CB1 ciphertext selection.</string>
+    <string name="secure_clipboard_decrypt_invalid">The clipboard does not contain one complete CipherBoard ciphertext in a supported format.</string>
     <string name="cipherboard_process_text_label">Decrypt in CipherBoard</string>
     <string name="secure_viewer_title">Protected message</string>
     <string name="secure_viewer_contact">From: %1$s</string>

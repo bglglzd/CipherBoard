@@ -34,6 +34,16 @@
     <string name="cipherboard_home_add_contact">Добавить контакт</string>
     <string name="cipherboard_home_no_contacts">Сопряжённых контактов пока нет. Добавьте контакт и лично выполните взаимное сканирование QR-кодов.</string>
     <string name="cipherboard_home_keyboard_settings">Настройки клавиатуры</string>
+    <string name="cipherboard_message_format_title">Формат сообщения</string>
+    <string name="cipherboard_message_format_description">Выберите, как будут выглядеть новые зашифрованные сообщения после вставки во внешнее приложение. При расшифровке CipherBoard автоматически распознаёт все поддерживаемые форматы.</string>
+    <string name="cipherboard_message_format_compact">Компактный (CB1)</string>
+    <string name="cipherboard_message_format_compact_description">Самый короткий и устойчивый формат. Сообщение заметно начинается с CB1.</string>
+    <string name="cipherboard_message_format_russian">Русские слова</string>
+    <string name="cipherboard_message_format_russian_description">Представляет тот же шифротекст более длинной последовательностью русских слов.</string>
+    <string name="cipherboard_message_format_english">Английские слова</string>
+    <string name="cipherboard_message_format_english_description">Представляет тот же шифротекст более длинной последовательностью английских слов.</string>
+    <string name="cipherboard_message_format_warning">Словесные форматы меняют только внешний вид шифротекста. Они не скрывают шифрование от автоматического анализа и не обеспечивают правдоподобного отрицания. Такие сообщения значительно длиннее и не расшифруются, если слово изменить, удалить, добавить или переставить. Для расшифровки словесного формата у получателя должен быть CipherBoard 0.4 или новее. Полученные слова не образуют осмысленную фразу.</string>
+    <string name="cipherboard_message_format_save_failed">Не удалось сохранить вид сообщения.</string>
     <string name="cipherboard_home_security">Безопасность</string>
     <string name="cipherboard_home_licenses">Лицензии и исходный код</string>
     <string name="cipherboard_home_updates">Обновления</string>

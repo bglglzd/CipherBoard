@@ -106,6 +106,7 @@ class CipherBoardHomeActivity : FragmentActivity() {
                         onAddContact = ::openPairing,
                         onOpenContact = ::openContact,
                         onKeyboardSettings = ::openKeyboardSettings,
+                        onMessageFormatSettings = ::openMessageFormatSettings,
                         onVaultSettings = ::openVaultSettings,
                         onLockVault = ::lockVault,
                         onSecurity = ::openSecurity,
@@ -313,6 +314,10 @@ class CipherBoardHomeActivity : FragmentActivity() {
         startActivity(Intent(this, SettingsActivity::class.java))
     }
 
+    private fun openMessageFormatSettings() {
+        startActivity(Intent(this, MessagePresentationSettingsActivity::class.java))
+    }
+
     private fun openVaultSettings() {
         startActivity(Intent(this, VaultSettingsActivity::class.java))
     }
@@ -432,6 +437,7 @@ private fun HomeScreen(
     onAddContact: () -> Unit,
     onOpenContact: (ContactUiModel) -> Unit,
     onKeyboardSettings: () -> Unit,
+    onMessageFormatSettings: () -> Unit,
     onVaultSettings: () -> Unit,
     onLockVault: () -> Unit,
     onSecurity: () -> Unit,
@@ -447,7 +453,6 @@ private fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.cipherboard_home_title)) },
-                windowInsets = WindowInsets(0),
             )
         },
     ) { padding ->
@@ -462,6 +467,7 @@ private fun HomeScreen(
                 state,
                 padding,
                 onUnlock,
+                onMessageFormatSettings,
                 onSecurity,
                 onLicenses,
                 onUpdates,
@@ -472,6 +478,7 @@ private fun HomeScreen(
                 padding,
                 onCreateIdentity,
                 onLockVault,
+                onMessageFormatSettings,
                 onLicenses,
                 onUpdates,
             )
@@ -481,6 +488,7 @@ private fun HomeScreen(
                 onAddContact,
                 onOpenContact,
                 onKeyboardSettings,
+                onMessageFormatSettings,
                 onVaultSettings,
                 onLockVault,
                 onSecurity,
@@ -516,51 +524,83 @@ private fun LockedContent(
     state: HomeScreenState.Locked,
     padding: PaddingValues,
     onUnlock: () -> Unit,
+    onMessageFormatSettings: () -> Unit,
     onSecurity: () -> Unit,
     onLicenses: () -> Unit,
     onUpdates: () -> Unit,
     onResetInvalidatedVault: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(stringResource(R.string.cipherboard_home_vault_locked), style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.cipherboard_home_vault_locked_description),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        state.message?.let {
-            Spacer(Modifier.height(16.dp))
+        item {
             Text(
-                it,
-                color = if (state.isCritical) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                stringResource(R.string.cipherboard_home_vault_locked),
+                style = MaterialTheme.typography.headlineSmall,
             )
         }
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.secure_unlock_vault))
-        }
-        if (state.canResetInvalidatedVault) {
-            OutlinedButton(
-                onClick = onResetInvalidatedVault,
+        item { Spacer(Modifier.height(8.dp)) }
+        item {
+            Text(
+                stringResource(R.string.cipherboard_home_vault_locked_description),
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) {
-                Text(stringResource(R.string.cipherboard_home_reset_action))
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        state.message?.let {
+            item { Spacer(Modifier.height(16.dp)) }
+            item {
+                Text(
+                    it,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (state.isCritical) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
             }
         }
-        TextButton(onClick = onSecurity) {
-            Text(stringResource(R.string.cipherboard_home_security))
+        item { Spacer(Modifier.height(24.dp)) }
+        item {
+            Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.secure_unlock_vault))
+            }
         }
-        TextButton(onClick = onLicenses) {
-            Text(stringResource(R.string.cipherboard_home_licenses))
+        if (state.canResetInvalidatedVault) {
+            item {
+                OutlinedButton(
+                    onClick = onResetInvalidatedVault,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text(stringResource(R.string.cipherboard_home_reset_action))
+                }
+            }
         }
-        TextButton(onClick = onUpdates) {
-            Text(stringResource(R.string.cipherboard_home_updates))
+        item {
+            TextButton(onClick = onMessageFormatSettings, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cipherboard_message_format_title))
+            }
+        }
+        item {
+            TextButton(onClick = onSecurity, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cipherboard_home_security))
+            }
+        }
+        item {
+            TextButton(onClick = onLicenses, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cipherboard_home_licenses))
+            }
+        }
+        item {
+            TextButton(onClick = onUpdates, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cipherboard_home_updates))
+            }
         }
     }
 }
@@ -571,6 +611,7 @@ private fun IdentityContent(
     padding: PaddingValues,
     onCreateIdentity: (String) -> Unit,
     onLockVault: () -> Unit,
+    onMessageFormatSettings: () -> Unit,
     onLicenses: () -> Unit,
     onUpdates: () -> Unit,
 ) {
@@ -618,6 +659,9 @@ private fun IdentityContent(
             TextButton(onClick = onLockVault, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.cipherboard_home_lock_vault))
             }
+            TextButton(onClick = onMessageFormatSettings, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cipherboard_message_format_title))
+            }
             TextButton(onClick = onLicenses, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.cipherboard_home_licenses))
             }
@@ -635,6 +679,7 @@ private fun ReadyContent(
     onAddContact: () -> Unit,
     onOpenContact: (ContactUiModel) -> Unit,
     onKeyboardSettings: () -> Unit,
+    onMessageFormatSettings: () -> Unit,
     onVaultSettings: () -> Unit,
     onLockVault: () -> Unit,
     onSecurity: () -> Unit,
@@ -709,6 +754,9 @@ private fun ReadyContent(
             ) {
                 OutlinedButton(onClick = onKeyboardSettings, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.cipherboard_home_keyboard_settings))
+                }
+                OutlinedButton(onClick = onMessageFormatSettings, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.cipherboard_message_format_title))
                 }
                 OutlinedButton(onClick = onVaultSettings, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.cipherboard_vault_settings_title))

@@ -502,7 +502,7 @@
     <string name="floating" tools:keep="@string/floating">Плавающая клавиатура</string>
     <string name="secure_composer_title">Безопасный редактор</string>
     <string name="close_secure_composer">Закрыть</string>
-    <string name="secure_composer_privacy_note">Текст остаётся в этом защищённом редакторе. Во внешнее приложение вставляется только зашифрованный текст CB1.</string>
+    <string name="secure_composer_privacy_note">Текст остаётся в этом защищённом редакторе. Во внешнее приложение вставляется только шифротекст CipherBoard.</string>
     <string name="secure_cipherboard_ime_required">Чтобы ввести защищённый текст, сначала выберите CipherBoard как текущую клавиатуру.</string>
     <string name="secure_vault_locked">Хранилище заблокировано</string>
     <string name="secure_vault_unlocked_level">Хранилище разблокировано · Keystore: %1$s</string>
@@ -521,9 +521,25 @@
     <string name="secure_no_contacts">Нет сопряжённых контактов</string>
     <string name="secure_pair_contact_first">Сначала сопрягите и проверьте контакт в настройках CipherBoard.</string>
     <string name="secure_message_hint">Сообщение</string>
-    <string name="secure_transport_universal">Универсальный</string>
-    <string name="secure_transport_sms">Компактный SMS</string>
-    <string name="secure_size_estimate">Символов: %1$d · шифротекст: около %2$d символов · SMS-частей: около %3$d</string>
+    <string name="secure_size_estimate">%1$s · %2$s</string>
+    <plurals name="secure_character_count">
+        <item quantity="one">%d символ</item>
+        <item quantity="few">%d символа</item>
+        <item quantity="many">%d символов</item>
+        <item quantity="other">%d символа</item>
+    </plurals>
+    <plurals name="secure_estimated_encrypted_characters">
+        <item quantity="one">около %d знака шифротекста</item>
+        <item quantity="few">около %d знаков шифротекста</item>
+        <item quantity="many">около %d знаков шифротекста</item>
+        <item quantity="other">около %d знаков шифротекста</item>
+    </plurals>
+    <plurals name="secure_estimated_encoded_words">
+        <item quantity="one">около %d кодового слова</item>
+        <item quantity="few">около %d кодовых слов</item>
+        <item quantity="many">около %d кодовых слов</item>
+        <item quantity="other">около %d кодовых слов</item>
+    </plurals>
     <string name="secure_encrypt_and_insert">Зашифровать и вставить</string>
     <string name="secure_encrypt_save_for_reply">Зашифровать ответ</string>
     <string name="secure_clear">Очистить</string>
@@ -543,7 +559,7 @@
         <item quantity="other">Повторить вставку %d сохранённого шифротекста</item>
     </plurals>
     <string name="secure_invalid_unicode">Сообщение содержит некорректный Unicode и не может быть закодировано.</string>
-    <string name="secure_message_too_large">Сообщение слишком велико для выбранного транспорта.</string>
+    <string name="secure_message_too_large">Сообщение слишком велико для выбранного вида сообщения.</string>
     <string name="secure_message_replay">Это зашифрованное сообщение уже было обработано.</string>
     <string name="secure_vault_corrupt">Защищённое локальное хранилище не удалось безопасно прочитать.</string>
     <string name="secure_operation_failed">Не удалось завершить защищённую операцию.</string>
@@ -551,7 +567,6 @@
     <string name="embedded_secure_encrypt_mode">Зашифровать</string>
     <string name="embedded_secure_decrypt_mode">Расшифровать</string>
     <string name="embedded_secure_draft_hint">Напишите приватное сообщение здесь</string>
-    <string name="embedded_secure_draft_count">%1$d символов · около %2$d после шифрования</string>
     <string name="embedded_secure_encrypt">Зашифровать</string>
     <string name="embedded_secure_unlock_to_encrypt">Разблокируйте хранилище, чтобы загрузить получателей и зашифровать сообщение.</string>
     <string name="embedded_secure_no_identity">Создайте локальную криптографическую личность перед сопряжением с получателем.</string>
@@ -566,7 +581,7 @@
     <string name="embedded_secure_uncertain_cleared">Запись о доставке удалена без повторной вставки. Измените черновик, прежде чем зашифровать его как новое сообщение.</string>
     <string name="embedded_secure_password_warning">Это поле пароля. CipherBoard оставит открытый текст внутри клавиатуры, но полученный шифротекст будет виден текущему приложению.</string>
     <string name="embedded_secure_continue">Продолжить</string>
-    <string name="embedded_secure_message_too_large">Черновик слишком велик для выбранного режима передачи.</string>
+    <string name="embedded_secure_message_too_large">Черновик слишком велик для выбранного вида сообщения.</string>
     <string name="embedded_secure_unavailable">Приватный режим недоступен для этого поля.</string>
     <string name="embedded_secure_unlocking">Разблокировка хранилища…</string>
     <string name="embedded_secure_unlock_failed">Не удалось разблокировать хранилище.</string>
@@ -575,7 +590,7 @@
     <string name="embedded_secure_clear_description">Очистить приватный черновик</string>
     <string name="embedded_secure_close_description">Закрыть приватный режим</string>
     <string name="embedded_secure_encrypt_description">Зашифровать и вставить шифротекст</string>
-    <string name="embedded_secure_decrypt_clipboard_prompt">Скопируйте сообщение CB1 целиком, затем нажмите «Вставить и расшифровать».</string>
+    <string name="embedded_secure_decrypt_clipboard_prompt">Скопируйте сообщение CipherBoard целиком, затем нажмите «Вставить и расшифровать».</string>
     <string name="embedded_secure_decrypt_loaded">Загружено: %1$d символов шифротекста · частей: %2$d</string>
     <string name="embedded_secure_paste_and_decrypt">Вставить и расшифровать</string>
     <string name="embedded_secure_unlock_and_decrypt">Разблокировать и расшифровать</string>
@@ -586,11 +601,11 @@
     <string name="embedded_secure_decrypted_verified">От: %1$s · Контакт проверен</string>
     <string name="embedded_secure_decrypted_unverified">От: %1$s · Safety Number не проверен</string>
     <string name="embedded_secure_clear_decrypt_description">Скрыть расшифрованное сообщение и удалить загруженный шифротекст</string>
-    <string name="secure_select_ciphertext_hint">Выделите шифротекст CB1 целиком. Если приложение не предоставляет выделение, скопируйте только шифротекст и выберите «Расшифровать в CipherBoard».</string>
+    <string name="secure_select_ciphertext_hint">Выделите шифротекст CipherBoard целиком: компактный или словесный. Если приложение не предоставляет выделение, скопируйте только шифротекст и выберите «Расшифровать в CipherBoard».</string>
     <string name="secure_clipboard_decrypt_title">Расшифровать скопированный шифротекст</string>
-    <string name="secure_clipboard_decrypt_description">Скопируйте в исходном приложении только полный шифротекст CB1. CipherBoard прочитает буфер обмена лишь после нажатия кнопки ниже и никогда не поместит туда открытый текст.</string>
+    <string name="secure_clipboard_decrypt_description">Скопируйте в исходном приложении только полный шифротекст CipherBoard. CipherBoard прочитает буфер обмена лишь после нажатия кнопки ниже и никогда не поместит туда открытый текст.</string>
     <string name="secure_clipboard_decrypt_action">Взять шифротекст из буфера обмена</string>
-    <string name="secure_clipboard_decrypt_invalid">Буфер обмена не содержит одного полного шифротекста CB1 допустимого формата.</string>
+    <string name="secure_clipboard_decrypt_invalid">Буфер обмена не содержит одного полного шифротекста CipherBoard поддерживаемого формата.</string>
     <string name="cipherboard_process_text_label">Расшифровать в CipherBoard</string>
     <string name="secure_viewer_title">Защищённое сообщение</string>
     <string name="secure_viewer_contact">От: %1$s</string>
