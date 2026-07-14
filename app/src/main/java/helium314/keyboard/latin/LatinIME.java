@@ -747,6 +747,10 @@ public class LatinIME extends InputMethodService implements
     @Override
     public void onDestroy() {
         closeEmbeddedSecureComposer(false);
+        if (mEmbeddedSecureComposer != null) {
+            mEmbeddedSecureComposer.destroy();
+            mEmbeddedSecureComposer = null;
+        }
         SecureImeBridge.clear();
         mClipboardHistoryManager.onDestroy();
         mDictionaryFacilitator.closeDictionaries();
@@ -2051,18 +2055,16 @@ public class LatinIME extends InputMethodService implements
 
     public void launchEmbeddedVaultUnlock() {
         if (!isEmbeddedSecureComposerActive()) return;
-        mEmbeddedSecureComposer.markUnlockStarted();
+        final String unlockToken = mEmbeddedSecureComposer.markUnlockStarted();
+        if (unlockToken == null) return;
         final Intent intent = new Intent(this, SecureVaultUnlockActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+                        | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                .putExtra(SecureVaultUnlockActivity.EXTRA_BRIDGE_TOKEN, unlockToken);
         try {
             startActivity(intent);
         } catch (RuntimeException error) {
-            final InputBinding binding = getCurrentInputBinding();
-            mEmbeddedSecureComposer.consumeUnlockReturn(
-                    getCurrentInputEditorInfo(),
-                    binding == null ? -1 : binding.getUid(),
-                    binding == null ? null : binding.getConnectionToken());
+            mEmbeddedSecureComposer.cancelUnlockLaunch(unlockToken);
         }
     }
 

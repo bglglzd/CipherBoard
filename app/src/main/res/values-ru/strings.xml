@@ -548,6 +548,8 @@
     <string name="secure_vault_corrupt">Защищённое локальное хранилище не удалось безопасно прочитать.</string>
     <string name="secure_operation_failed">Не удалось завершить защищённую операцию.</string>
     <string name="embedded_secure_mode">Приватный режим</string>
+    <string name="embedded_secure_encrypt_mode">Зашифровать</string>
+    <string name="embedded_secure_decrypt_mode">Расшифровать</string>
     <string name="embedded_secure_draft_hint">Напишите приватное сообщение здесь</string>
     <string name="embedded_secure_draft_count">%1$d символов · около %2$d после шифрования</string>
     <string name="embedded_secure_encrypt">Зашифровать</string>
@@ -573,6 +575,17 @@
     <string name="embedded_secure_clear_description">Очистить приватный черновик</string>
     <string name="embedded_secure_close_description">Закрыть приватный режим</string>
     <string name="embedded_secure_encrypt_description">Зашифровать и вставить шифротекст</string>
+    <string name="embedded_secure_decrypt_clipboard_prompt">Скопируйте сообщение CB1 целиком, затем нажмите «Вставить и расшифровать».</string>
+    <string name="embedded_secure_decrypt_loaded">Загружено: %1$d символов шифротекста · частей: %2$d</string>
+    <string name="embedded_secure_paste_and_decrypt">Вставить и расшифровать</string>
+    <string name="embedded_secure_unlock_and_decrypt">Разблокировать и расшифровать</string>
+    <string name="embedded_secure_decrypting">Расшифровка защищённого сообщения…</string>
+    <string name="embedded_secure_hide_message">Скрыть сообщение</string>
+    <string name="embedded_secure_message_hidden">Сообщение скрыто. Скопируйте другой шифротекст, чтобы продолжить.</string>
+    <string name="embedded_secure_decrypt_action_description">Прочитать шифротекст из буфера обмена и расшифровать его внутри CipherBoard</string>
+    <string name="embedded_secure_decrypted_verified">От: %1$s · Контакт проверен</string>
+    <string name="embedded_secure_decrypted_unverified">От: %1$s · Safety Number не проверен</string>
+    <string name="embedded_secure_clear_decrypt_description">Скрыть расшифрованное сообщение и удалить загруженный шифротекст</string>
     <string name="secure_select_ciphertext_hint">Выделите шифротекст CB1 целиком. Если приложение не предоставляет выделение, скопируйте только шифротекст и выберите «Расшифровать в CipherBoard».</string>
     <string name="secure_clipboard_decrypt_title">Расшифровать скопированный шифротекст</string>
     <string name="secure_clipboard_decrypt_description">Скопируйте в исходном приложении только полный шифротекст CB1. CipherBoard прочитает буфер обмена лишь после нажатия кнопки ниже и никогда не поместит туда открытый текст.</string>

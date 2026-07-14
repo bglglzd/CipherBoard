@@ -421,6 +421,8 @@
     <string name="secure_vault_corrupt">Encrypted local storage could not be read safely.</string>
     <string name="secure_operation_failed">The secure operation could not be completed.</string>
     <string name="embedded_secure_mode">Private mode</string>
+    <string name="embedded_secure_encrypt_mode">Encrypt</string>
+    <string name="embedded_secure_decrypt_mode">Decrypt</string>
     <string name="embedded_secure_draft_hint">Write a private message here</string>
     <string name="embedded_secure_draft_count">%1$d characters · about %2$d encrypted</string>
     <string name="embedded_secure_encrypt">Encrypt</string>
@@ -446,6 +448,17 @@
     <string name="embedded_secure_clear_description">Clear private draft</string>
     <string name="embedded_secure_close_description">Close Private mode</string>
     <string name="embedded_secure_encrypt_description">Encrypt and insert ciphertext</string>
+    <string name="embedded_secure_decrypt_clipboard_prompt">Copy the complete CB1 message, then tap Paste and decrypt.</string>
+    <string name="embedded_secure_decrypt_loaded">%1$d encrypted characters · %2$d parts loaded</string>
+    <string name="embedded_secure_paste_and_decrypt">Paste and decrypt</string>
+    <string name="embedded_secure_unlock_and_decrypt">Unlock and decrypt</string>
+    <string name="embedded_secure_decrypting">Decrypting protected message…</string>
+    <string name="embedded_secure_hide_message">Hide message</string>
+    <string name="embedded_secure_message_hidden">Message hidden. Copy another encrypted message to continue.</string>
+    <string name="embedded_secure_decrypt_action_description">Read ciphertext from the clipboard and decrypt it inside CipherBoard</string>
+    <string name="embedded_secure_decrypted_verified">From: %1$s · Verified contact</string>
+    <string name="embedded_secure_decrypted_unverified">From: %1$s · Safety Number not verified</string>
+    <string name="embedded_secure_clear_decrypt_description">Hide decrypted message and clear imported ciphertext</string>
     <string name="secure_select_ciphertext_hint">Select the complete CB1 ciphertext. If this app cannot expose a selection, copy ciphertext only and use “Decrypt in CipherBoard”.</string>
     <string name="secure_clipboard_decrypt_title">Decrypt copied ciphertext</string>
     <string name="secure_clipboard_decrypt_description">Copy only the complete CB1 encrypted text in the source app. CipherBoard reads the clipboard only after the button below is pressed and never places decrypted text there.</string>

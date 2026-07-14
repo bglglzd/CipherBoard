@@ -3,9 +3,18 @@
     <item name="secure_transport_universal" type="id" />
     <item name="secure_transport_sms" type="id" />
     <item name="secure_decrypt_confirm_button" type="id" />
+    <item name="secure_viewer_plaintext" type="id" />
     <item name="embedded_secure_composer_panel" type="id" />
     <item name="embedded_secure_contact" type="id" />
     <item name="embedded_secure_draft" type="id" />
+    <item name="embedded_secure_mode_group" type="id" />
+    <item name="embedded_secure_encrypt_mode" type="id" />
+    <item name="embedded_secure_decrypt_mode" type="id" />
+    <item name="embedded_secure_encrypt_section" type="id" />
+    <item name="embedded_secure_decrypt_section" type="id" />
+    <item name="embedded_secure_ciphertext_summary" type="id" />
+    <item name="embedded_secure_decrypt_action" type="id" />
+    <item name="embedded_secure_plaintext" type="id" />
     <item name="embedded_secure_status" type="id" />
     <item name="embedded_secure_count" type="id" />
     <item name="embedded_secure_encrypt" type="id" />

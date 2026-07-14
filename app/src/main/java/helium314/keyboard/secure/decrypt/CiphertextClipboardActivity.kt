@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package helium314.keyboard.secure.decrypt
 
-import android.content.ClipboardManager
-import android.content.Context
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Button
@@ -45,17 +43,7 @@ class CiphertextClipboardActivity : FragmentActivity() {
     }
 
     private fun readCiphertextAfterConfirmation() {
-        val selected = try {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            val clip = clipboard?.primaryClip
-            if (clip != null && clip.itemCount == 1) {
-                CiphertextSelection.copyBoundedUntrustedText(clip.getItemAt(0).text)
-            } else {
-                null
-            }
-        } catch (_: RuntimeException) {
-            null
-        }
+        val selected = CiphertextClipboardReader.read(this)
         when (selected?.let(CiphertextSelection::parse)) {
             is CiphertextSelection.Result.Valid -> {
                 runCatching {

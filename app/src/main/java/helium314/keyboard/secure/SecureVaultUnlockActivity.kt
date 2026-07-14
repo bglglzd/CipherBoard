@@ -25,6 +25,8 @@ import org.cipherboard.securekeyboard.runtime.VaultUnlockAction
 class SecureVaultUnlockActivity : FragmentActivity() {
     private lateinit var runtime: SecureKeyboardRuntime
     private lateinit var status: TextView
+    private var bridgeToken: String? = null
+    private var bridgeCompleted = false
     private var pendingPromptAction: VaultUnlockAction.AuthenticationRequired? = null
     private var biometricPrompt: BiometricPrompt? = null
 
@@ -40,6 +42,12 @@ class SecureVaultUnlockActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val token = intent.getStringExtra(EXTRA_BRIDGE_TOKEN)
+        if (token == null || !EmbeddedVaultUnlockBridge.activate(token)) {
+            finish()
+            return
+        }
+        bridgeToken = token
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         status = TextView(this).apply {
             gravity = Gravity.CENTER
@@ -60,6 +68,7 @@ class SecureVaultUnlockActivity : FragmentActivity() {
         setContentView(status)
         runtime = SecureKeyboardRuntime.get()
         if (runtime.isVaultUnlocked) {
+            completeBridge(unlocked = true)
             finish()
         } else {
             requestUnlock()
@@ -70,6 +79,20 @@ class SecureVaultUnlockActivity : FragmentActivity() {
 
     override fun onProvideAssistContent(outContent: AssistContent) = Unit
 
+    override fun onUserLeaveHint() {
+        if (SecureVaultUnlockLifecyclePolicy.cancelOnUserLeave(pendingPromptAction != null)) {
+            completeBridge(unlocked = false)
+            biometricPrompt?.cancelAuthentication()
+            finish()
+        }
+        super.onUserLeaveHint()
+    }
+
+    override fun onDestroy() {
+        completeBridge(unlocked = false)
+        super.onDestroy()
+    }
+
     private fun requestUnlock() {
         runCatching { runtime.prepareUnlock() }
             .onSuccess(::handleUnlockAction)
@@ -78,7 +101,10 @@ class SecureVaultUnlockActivity : FragmentActivity() {
 
     private fun handleUnlockAction(action: VaultUnlockAction) {
         when (action) {
-            is VaultUnlockAction.Unlocked -> finish()
+            is VaultUnlockAction.Unlocked -> {
+                completeBridge(unlocked = true)
+                finish()
+            }
             is VaultUnlockAction.AuthenticationRequired -> authenticate(action)
             is VaultUnlockAction.CryptoObjectAuthenticationRequired -> authenticate(action)
             is VaultUnlockAction.KeyInvalidated -> failAndFinish()
@@ -149,9 +175,22 @@ class SecureVaultUnlockActivity : FragmentActivity() {
         status.postDelayed({ finish() }, FAILURE_VISIBLE_MILLIS)
     }
 
+    private fun completeBridge(unlocked: Boolean) {
+        if (bridgeCompleted) return
+        bridgeCompleted = true
+        bridgeToken?.let { EmbeddedVaultUnlockBridge.complete(it, unlocked) }
+        bridgeToken = null
+    }
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        const val EXTRA_BRIDGE_TOKEN = "cipherboard.unlock.BRIDGE_TOKEN"
         private const val FAILURE_VISIBLE_MILLIS = 900L
     }
+}
+
+internal object SecureVaultUnlockLifecyclePolicy {
+    fun cancelOnUserLeave(legacyCredentialPromptPending: Boolean): Boolean =
+        !legacyCredentialPromptPending
 }

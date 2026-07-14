@@ -1,23 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package helium314.keyboard.secure.decrypt
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.KeyguardManager
 import android.app.assist.AssistContent
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
-import android.graphics.Canvas
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextDirectionHeuristics
-import android.text.TextPaint
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -38,7 +32,6 @@ import helium314.keyboard.latin.R
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
-import kotlin.math.max
 
 /**
  * Non-exported secure viewer. It accepts ciphertext only and performs decryption in this window.
@@ -66,6 +59,7 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
     private var generation = 0L
     private var isForeground = false
     private var isPlaintextVisible = false
+    private var plaintextMarkedDisplayed = false
     private var pendingLegacyCredentialResult: ((Boolean) -> Unit)? = null
 
     private val legacyCredentialLauncher = registerForActivityResult(
@@ -77,6 +71,9 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
     }
 
     private val timeoutAction = Runnable { hideAndFinish() }
+    private val renderTimeoutAction = Runnable {
+        if (isPlaintextVisible && !plaintextMarkedDisplayed) hideAndFinish()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(null)
@@ -121,28 +118,34 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
     override fun onResume() {
         super.onResume()
         isForeground = true
-        if (isPlaintextVisible) scheduleTimeout()
+        if (isPlaintextVisible && plaintextMarkedDisplayed) scheduleTimeout()
     }
 
     override fun onPause() {
         isForeground = false
-        if (isPlaintextVisible || pendingConfirmationCiphertext != null) hideAndFinish()
+        if (hasSensitiveWork() && !isLegacyCredentialTransitionActive()) hideAndFinish()
         super.onPause()
     }
 
     override fun onStop() {
-        if (isPlaintextVisible) hideAndFinish()
+        if (hasSensitiveWork() && !isLegacyCredentialTransitionActive()) hideAndFinish()
         super.onStop()
     }
 
     override fun onUserLeaveHint() {
-        if (isPlaintextVisible) hideAndFinish()
+        if (hasSensitiveWork() && !isLegacyCredentialTransitionActive()) hideAndFinish()
         super.onUserLeaveHint()
     }
 
     override fun onTrimMemory(level: Int) {
         @Suppress("DEPRECATION")
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && isPlaintextVisible) hideAndFinish()
+        if (
+            level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN &&
+            hasSensitiveWork() &&
+            !isLegacyCredentialTransitionActive()
+        ) {
+            hideAndFinish()
+        }
         super.onTrimMemory(level)
     }
 
@@ -161,7 +164,13 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (isPlaintextVisible && event.actionMasked == MotionEvent.ACTION_DOWN) scheduleTimeout()
+        if (
+            isPlaintextVisible &&
+            plaintextMarkedDisplayed &&
+            event.actionMasked == MotionEvent.ACTION_DOWN
+        ) {
+            scheduleTimeout()
+        }
         return super.dispatchTouchEvent(event)
     }
 
@@ -251,7 +260,10 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
             isSaveEnabled = false
         }
         plaintextView = SecurePlaintextView(this).apply {
+            id = R.id.secure_viewer_plaintext
             visibility = View.GONE
+            beforeSecureTextDraw = ::beforePlaintextDraw
+            onSecureTextDrawn = ::onPlaintextDrawn
         }
         val messageScroller = ScrollView(this).apply {
             isFillViewport = true
@@ -382,10 +394,8 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
         }
 
         decryptedMessage = message
+        plaintextMarkedDisplayed = false
         plaintextView.setSecureText(wipeableText)
-        // From this point the user-facing surface owns the plaintext. Closing the message may now
-        // delete its encrypted one-shot recovery record.
-        message.markDisplayed()
         plaintextView.visibility = View.VISIBLE
         progressView.visibility = View.GONE
         contactView.text = getString(R.string.secure_viewer_contact, message.localContactLabel)
@@ -398,6 +408,40 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
         )
         replyButton.visibility = if (message.replyToken == null) View.GONE else View.VISIBLE
         isPlaintextVisible = true
+        mainHandler.removeCallbacks(renderTimeoutAction)
+        mainHandler.postDelayed(renderTimeoutAction, RENDER_TIMEOUT_MILLIS)
+    }
+
+    private fun beforePlaintextDraw(): Boolean {
+        val allowed = isForeground &&
+            isPlaintextVisible &&
+            !isFinishing &&
+            !isDestroyed &&
+            SecureDecryptRuntime.canDisplayPlaintext()
+        if (!allowed) mainHandler.post { hideAndFinish() }
+        return allowed
+    }
+
+    private fun hasSensitiveWork(): Boolean =
+        parseFuture != null ||
+            parsedCiphertext != null ||
+            decryptOperation != null ||
+            decryptedMessage != null ||
+            pendingConfirmationCiphertext != null ||
+            isPlaintextVisible
+
+    private fun isLegacyCredentialTransitionActive(): Boolean =
+        pendingLegacyCredentialResult != null
+
+    private fun onPlaintextDrawn() {
+        val message = decryptedMessage ?: return
+        if (!isPlaintextVisible || plaintextMarkedDisplayed) return
+        if (runCatching { message.markDisplayed() }.isFailure) {
+            mainHandler.post { hideAndFinish() }
+            return
+        }
+        plaintextMarkedDisplayed = true
+        mainHandler.removeCallbacks(renderTimeoutAction)
         scheduleTimeout()
     }
 
@@ -438,6 +482,7 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
     private fun clearSensitiveState() {
         generation++
         mainHandler.removeCallbacks(timeoutAction)
+        mainHandler.removeCallbacks(renderTimeoutAction)
         parseFuture?.cancel(true)
         parseFuture = null
         runCatching { decryptOperation?.cancel() }
@@ -450,6 +495,7 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
         runCatching { decryptedMessage?.close() }
         decryptedMessage = null
         isPlaintextVisible = false
+        plaintextMarkedDisplayed = false
         if (::contactView.isInitialized) {
             contactView.text = null
             contactView.visibility = View.GONE
@@ -494,6 +540,7 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
         private const val EXTRA_CIPHERTEXT = "org.cipherboard.securekeyboard.extra.CIPHERTEXT"
         private const val MIN_VIEWER_TIMEOUT_MILLIS = 10_000L
         private const val MAX_VIEWER_TIMEOUT_MILLIS = 5 * 60_000L
+        private const val RENDER_TIMEOUT_MILLIS = 3_000L
 
         fun createCiphertextIntent(context: Context, ciphertext: CharSequence): Intent =
             Intent(context, SecureMessageViewerActivity::class.java).apply {
@@ -501,105 +548,5 @@ open class SecureMessageViewerActivity : FragmentActivity(), LegacyDeviceCredent
                 action = "${context.packageName}.action.VIEW_CIPHERTEXT"
                 putExtra(EXTRA_CIPHERTEXT, ciphertext.toString())
             }
-    }
-}
-
-/** Drawing-only plaintext surface: no selection, clipboard action mode, autofill or accessibility text. */
-private class SecurePlaintextView(context: Context) : View(context) {
-    private val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-        textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            18f,
-            resources.displayMetrics,
-        )
-        color = resolveTextColor(context)
-    }
-    private var secureText: WipeableText? = null
-    private var textLayout: StaticLayout? = null
-    private var layoutWidth = 0
-
-    init {
-        minimumHeight = dp(context, 160)
-        setPadding(0, dp(context, 12), 0, dp(context, 12))
-        isSaveEnabled = false
-        isFocusable = false
-        isFocusableInTouchMode = false
-        isLongClickable = false
-        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        if (Build.VERSION.SDK_INT >= 26) {
-            importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-        }
-        if (Build.VERSION.SDK_INT >= 30) {
-            importantForContentCapture = IMPORTANT_FOR_CONTENT_CAPTURE_NO_EXCLUDE_DESCENDANTS
-        }
-        contentDescription = null
-    }
-
-    fun setSecureText(text: WipeableText) {
-        clearSecureText()
-        secureText = text
-        requestLayout()
-        invalidate()
-    }
-
-    fun clearSecureText() {
-        secureText?.close()
-        secureText = null
-        textLayout = null
-        layoutWidth = 0
-        invalidate()
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val measuredWidth = resolveSize(suggestedMinimumWidth, widthMeasureSpec)
-        val contentWidth = max(1, measuredWidth - paddingLeft - paddingRight)
-        rebuildLayout(contentWidth)
-        val desiredHeight = max(
-            minimumHeight,
-            (textLayout?.height ?: 0) + paddingTop + paddingBottom,
-        )
-        setMeasuredDimension(measuredWidth, resolveSize(desiredHeight, heightMeasureSpec))
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val layout = textLayout ?: return
-        canvas.save()
-        canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
-        layout.draw(canvas)
-        canvas.restore()
-    }
-
-    @SuppressLint("WrongConstant")
-    private fun rebuildLayout(width: Int) {
-        val text = secureText ?: run {
-            textLayout = null
-            return
-        }
-        if (textLayout != null && layoutWidth == width) return
-        layoutWidth = width
-        textLayout = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setIncludePad(true)
-            .setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
-            .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
-            .build()
-    }
-
-    companion object {
-        private fun resolveTextColor(context: Context): Int {
-            val attributes = context.obtainStyledAttributes(intArrayOf(android.R.attr.textColorPrimary))
-            return try {
-                attributes.getColor(0, 0xff202124.toInt())
-            } finally {
-                attributes.recycle()
-            }
-        }
-
-        private fun dp(context: Context, value: Int): Int = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            value.toFloat(),
-            context.resources.displayMetrics,
-        ).toInt()
     }
 }

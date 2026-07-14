@@ -8,7 +8,9 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.text.TextUtils
 import android.text.InputType
 import android.util.TypedValue
@@ -25,6 +27,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.view.ViewCompat
@@ -34,6 +37,19 @@ import helium314.keyboard.latin.R
 import helium314.keyboard.latin.common.ColorType
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.InputTypeUtils
+import helium314.keyboard.secure.decrypt.CiphertextClipboardReader
+import helium314.keyboard.secure.decrypt.CiphertextSelection
+import helium314.keyboard.secure.decrypt.DecryptFailureReason
+import helium314.keyboard.secure.decrypt.DecryptOperation
+import helium314.keyboard.secure.decrypt.DecryptResult
+import helium314.keyboard.secure.decrypt.DecryptedContactStatus
+import helium314.keyboard.secure.decrypt.DecryptedMessage
+import helium314.keyboard.secure.decrypt.ParseFailureReason
+import helium314.keyboard.secure.decrypt.ParseResult
+import helium314.keyboard.secure.decrypt.ParsedCiphertext
+import helium314.keyboard.secure.decrypt.SecureDecryptRuntime
+import helium314.keyboard.secure.decrypt.SecurePlaintextView
+import helium314.keyboard.secure.decrypt.WipeableText
 import org.cipherboard.cryptocore.CipherBoardCrypto
 import org.cipherboard.cryptocore.TransportMode
 import org.cipherboard.securekeyboard.runtime.PreparedOutbound
@@ -42,6 +58,8 @@ import org.cipherboard.securekeyboard.runtime.SecureKeyboardRuntime
 import org.cipherboard.securekeyboard.runtime.SecureRuntimeError
 import org.cipherboard.securekeyboard.runtime.SecureRuntimeException
 import org.cipherboard.securestorage.ContactVerificationStatus
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 private const val AUTOFILL_NO_EXCLUDE_DESCENDANTS = 8
 
@@ -51,9 +69,23 @@ class EmbeddedSecureComposerController(
 ) {
     private val runtime by lazy(LazyThreadSafetyMode.NONE) { SecureKeyboardRuntime.get() }
     private val stableInputTarget = View(ime)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val parserExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "cipherboard-ime-parse").apply { isDaemon = true }
+    }
+    private val workerResultHandoffs = OwnedMainThreadResultHandoffs(
+        postToMain = { callback -> mainHandler.post(callback) },
+        removeFromMain = { callback -> mainHandler.removeCallbacks(callback) },
+    )
 
     private var container: FrameLayout? = null
     private var panel: LinearLayout? = null
+    private var standardStripContainer: View? = null
+    private var keyboardViewWrapper: View? = null
+    private var compactLayout = false
+    private var modeGroup: RadioGroup? = null
+    private var encryptSection: LinearLayout? = null
+    private var decryptSection: LinearLayout? = null
     private var draftView: SecureDraftView? = null
     private var contactSpinner: Spinner? = null
     private var contactStatus: TextView? = null
@@ -61,12 +93,19 @@ class EmbeddedSecureComposerController(
     private var encryptButton: Button? = null
     private var contextButton: Button? = null
     private var transportGroup: RadioGroup? = null
+    private var ciphertextSummary: TextView? = null
+    private var decryptButton: Button? = null
+    private var clearButton: ImageButton? = null
+    private var plaintextScroller: ScrollView? = null
+    private var plaintextView: SecurePlaintextView? = null
 
     private var inputConnection: EmbeddedSecureInputConnection? = null
     private var contacts: List<SecureContactSummary> = emptyList()
     private var active = false
     private var passwordAcknowledged = true
     private var awaitingUnlock = false
+    private var unlockActivityCompleted = false
+    private var unlockBridgeToken: String? = null
     private var hostScope: EmbeddedHostScope? = null
     private var pendingCount = 0
     private var uncertainPendingCount = 0
@@ -76,11 +115,49 @@ class EmbeddedSecureComposerController(
     private var ownerExists: Boolean? = null
     private var runtimeStateError: Int? = null
     private var pendingStateError: Int? = null
+    private var mode = EmbeddedMode.ENCRYPT
+    private var decryptStage = EmbeddedDecryptStage.IDLE
+    private var decryptStatusResource = R.string.embedded_secure_decrypt_clipboard_prompt
+    private var decryptGeneration = 0L
+    private var loadedCiphertextCharacters = 0
+    private var loadedCiphertextParts = 0
+    private var parseFuture: Future<*>? = null
+    private var parseRequestGeneration: Long? = null
+    private var parsedCiphertext: ParsedCiphertext? = null
+    private var decryptOperation: DecryptOperation? = null
+    private var decryptRequestToken: Any? = null
+    private var decryptedMessage: DecryptedMessage? = null
+    private var decryptedMessageMarkedDisplayed = false
+    private val decryptTimeout = Runnable {
+        if (active && mode == EmbeddedMode.DECRYPT) {
+            hideDecryptedMessage(R.string.embedded_secure_message_hidden)
+        }
+    }
+    private val decryptRenderTimeout = Runnable {
+        if (
+            active &&
+            mode == EmbeddedMode.DECRYPT &&
+            decryptStage == EmbeddedDecryptStage.DISPLAYED &&
+            !decryptedMessageMarkedDisplayed
+        ) {
+            hideDecryptedMessage(R.string.secure_decrypt_unavailable)
+        }
+    }
+    private val unlockReturnTimeout = Runnable {
+        if (active && awaitingUnlock) {
+            unlockBridgeToken?.let(EmbeddedVaultUnlockBridge::cancel)
+            unlockBridgeToken = null
+            awaitingUnlock = false
+            ime.forceCloseEmbeddedSecureComposer()
+        }
+    }
 
     fun attach(inputView: View) {
         val newContainer = inputView.findViewById<FrameLayout>(R.id.embedded_secure_composer_container)
         detachPanelViews()
         container = newContainer
+        standardStripContainer = inputView.findViewById(R.id.standard_strip_container)
+        keyboardViewWrapper = inputView.findViewById(R.id.keyboard_view_wrapper)
         buildPanel(newContainer)
         newContainer.visibility = if (active) View.VISIBLE else View.GONE
         if (active) {
@@ -103,10 +180,14 @@ class EmbeddedSecureComposerController(
         hostScope = scope
         passwordAcknowledged = !isPasswordInput(hostInfo.inputType)
         awaitingUnlock = false
+        unlockActivityCompleted = false
+        mode = EmbeddedMode.ENCRYPT
+        clearEmbeddedDecryptState(resetLoaded = true)
         insertedRevision = Long.MIN_VALUE
         pendingDraftRevision = null
         active = true
-        runtime.onForegrounded()
+        workerResultHandoffs.open()
+        runtime.onSecureImeForegrounded()
         inputConnection = EmbeddedSecureInputConnection(
             stableInputTarget,
             acceptsInput = ::acceptsPlaintextInput,
@@ -114,15 +195,22 @@ class EmbeddedSecureComposerController(
         )
         container?.visibility = View.VISIBLE
         panel?.visibility = View.VISIBLE
+        applyModeVisibility()
         refreshRuntimeState()
         return true
     }
 
     /** Called only after InputLogic has finished against the local connection. */
     fun deactivate() {
+        workerResultHandoffs.close()
         if (!active && inputConnection == null) return
         awaitingUnlock = false
+        unlockActivityCompleted = false
+        mainHandler.removeCallbacks(unlockReturnTimeout)
+        unlockBridgeToken?.let(EmbeddedVaultUnlockBridge::cancel)
+        unlockBridgeToken = null
         active = false
+        clearEmbeddedDecryptState(resetLoaded = true)
         inputConnection?.wipe()
         inputConnection = null
         wipeDisplayedDraft()
@@ -138,15 +226,23 @@ class EmbeddedSecureComposerController(
         pendingStateError = null
         container?.visibility = View.GONE
         panel?.visibility = View.GONE
+        restoreStandardKeyboardSurfaces()
         SecureImeBridge.clear()
-        runtime.onBackgrounded()
+        runtime.onSecureImeBackgrounded()
+    }
+
+    fun destroy() {
+        deactivate()
+        detachPanelViews()
+        mainHandler.removeCallbacksAndMessages(null)
+        parserExecutor.shutdownNow()
     }
 
     fun acceptsHost(editorInfo: EditorInfo?, uid: Int, connectionToken: IBinder?): Boolean =
         hostScope?.matches(editorInfo, uid, connectionToken) == true
 
-    fun markUnlockStarted() {
-        if (!active) return
+    fun markUnlockStarted(): String? {
+        if (!active) return null
         // Authentication temporarily backgrounds the IME. A draft left behind after the vault
         // timed out must not survive that transition.
         if (!runtime.isVaultUnlocked && inputConnection?.isEmpty() == false) {
@@ -154,15 +250,50 @@ class EmbeddedSecureComposerController(
         }
         hostScope?.armUnlockRebind()
         awaitingUnlock = true
+        unlockActivityCompleted = false
+        unlockBridgeToken?.let(EmbeddedVaultUnlockBridge::cancel)
+        val token = EmbeddedVaultUnlockBridge.begin(::onVaultUnlockActivityFinished)
+        unlockBridgeToken = token
+        mainHandler.removeCallbacks(unlockReturnTimeout)
+        mainHandler.postDelayed(unlockReturnTimeout, UNLOCK_ACTIVITY_TIMEOUT_MILLIS)
+        return token
+    }
+
+    private fun onVaultUnlockActivityFinished(unlocked: Boolean) {
+        unlockBridgeToken = null
+        mainHandler.removeCallbacks(unlockReturnTimeout)
+        if (!active || !awaitingUnlock) return
+        if (!unlocked) {
+            awaitingUnlock = false
+            unlockActivityCompleted = false
+            ime.forceCloseEmbeddedSecureComposer()
+            return
+        }
+        unlockActivityCompleted = true
+        runtime.onSecureImeForegrounded()
+        mainHandler.postDelayed(unlockReturnTimeout, UNLOCK_HOST_RETURN_TIMEOUT_MILLIS)
+    }
+
+    fun cancelUnlockLaunch(token: String) {
+        if (unlockBridgeToken != token) return
+        EmbeddedVaultUnlockBridge.cancel(token)
+        unlockBridgeToken = null
+        awaitingUnlock = false
+        unlockActivityCompleted = false
+        mainHandler.removeCallbacks(unlockReturnTimeout)
+        ime.forceCloseEmbeddedSecureComposer()
     }
 
     fun consumeUnlockReturn(editorInfo: EditorInfo?, uid: Int, connectionToken: IBinder?): Boolean {
-        if (!active || !awaitingUnlock) return false
+        if (!active || !awaitingUnlock || !unlockActivityCompleted) return false
         val scope = hostScope ?: return false
         if (!scope.rebindAfterUnlock(editorInfo, uid, connectionToken)) return false
         awaitingUnlock = false
-        runtime.onForegrounded()
+        unlockActivityCompleted = false
+        mainHandler.removeCallbacks(unlockReturnTimeout)
+        runtime.onSecureImeForegrounded()
         refreshRuntimeState()
+        maybeStartPendingDecrypt()
         return true
     }
 
@@ -171,19 +302,24 @@ class EmbeddedSecureComposerController(
     fun onScreenOff() {
         if (!active) return
         awaitingUnlock = false
+        unlockActivityCompleted = false
+        mainHandler.removeCallbacks(unlockReturnTimeout)
+        unlockBridgeToken?.let(EmbeddedVaultUnlockBridge::cancel)
+        unlockBridgeToken = null
         ime.forceCloseEmbeddedSecureComposer()
     }
 
     fun refreshAfterInputStarted() {
         if (!active) return
-        runtime.onForegrounded()
+        runtime.onSecureImeForegrounded()
         refreshRuntimeState()
+        maybeStartPendingDecrypt()
     }
 
     fun currentDraftUtf8Length(): Int? = inputConnection?.utf8Length()
 
     fun acceptsPlaintextInput(): Boolean {
-        if (!active || !passwordAcknowledged) return false
+        if (!active || mode != EmbeddedMode.ENCRYPT || !passwordAcknowledged) return false
         runtime.lockIfExpired()
         return runtime.isVaultUnlocked
     }
@@ -207,13 +343,23 @@ class EmbeddedSecureComposerController(
     }
 
     private fun detachPanelViews() {
+        clearEmbeddedDecryptState(resetLoaded = true)
+        restoreStandardKeyboardSurfaces()
         contactSpinner?.onItemSelectedListener = null
         draftView?.onLocalCursorRequested = null
         encryptButton?.setOnClickListener(null)
+        decryptButton?.setOnClickListener(null)
+        clearButton?.setOnClickListener(null)
+        modeGroup?.setOnCheckedChangeListener(null)
         contextButton?.setOnClickListener(null)
         wipeDisplayedDraft()
         container?.removeAllViews()
         panel = null
+        standardStripContainer = null
+        keyboardViewWrapper = null
+        modeGroup = null
+        encryptSection = null
+        decryptSection = null
         draftView = null
         contactSpinner = null
         contactStatus = null
@@ -221,20 +367,454 @@ class EmbeddedSecureComposerController(
         encryptButton = null
         contextButton = null
         transportGroup = null
+        ciphertextSummary = null
+        decryptButton = null
+        clearButton = null
+        plaintextScroller = null
+        plaintextView?.beforeSecureTextDraw = null
+        plaintextView?.onSecureTextDrawn = null
+        plaintextView = null
     }
 
     fun clearDraftFromIme() {
         inputConnection?.wipe()
         insertedRevision = Long.MIN_VALUE
         pendingDraftRevision = null
-        setStatus(defaultStatus())
+        if (mode == EmbeddedMode.ENCRYPT) setStatus(defaultStatus())
         updateCountsAndActions()
+    }
+
+    private fun setMode(next: EmbeddedMode) {
+        if (mode == next) return
+        if (next == EmbeddedMode.DECRYPT) {
+            ime.prepareEmbeddedDraftForEncryption()
+            draftView?.hideLocalCursor()
+        } else {
+            clearEmbeddedDecryptState(resetLoaded = true)
+        }
+        mode = next
+        applyModeVisibility()
+        renderStatusAndContext()
+        updateCountsAndActions()
+    }
+
+    private fun clearCurrentMode() {
+        if (mode == EmbeddedMode.ENCRYPT) {
+            ime.clearEmbeddedSecureDraft()
+        } else {
+            clearEmbeddedDecryptState(resetLoaded = true)
+            renderStatusAndContext()
+        }
+    }
+
+    private fun applyModeVisibility() {
+        val encrypting = mode == EmbeddedMode.ENCRYPT
+        updateSectionVisibility()
+        modeGroup?.check(
+            if (encrypting) R.id.embedded_secure_encrypt_mode else R.id.embedded_secure_decrypt_mode,
+        )
+        clearButton?.let { button ->
+            button.contentDescription = ime.getString(
+                if (encrypting) {
+                    R.string.embedded_secure_clear_description
+                } else {
+                    R.string.embedded_secure_clear_decrypt_description
+                },
+            )
+            ViewCompat.setTooltipText(button, button.contentDescription)
+        }
+        if (encrypting) syncDraftView() else draftView?.hideLocalCursor()
+        updateStandardKeyboardSurfaces()
+        updateDecryptUi()
+    }
+
+    private fun updateStandardKeyboardSurfaces() {
+        if (!active) {
+            restoreStandardKeyboardSurfaces()
+            return
+        }
+        standardStripContainer?.visibility = View.GONE
+        val canTypePrivateDraft = mode == EmbeddedMode.ENCRYPT && canComposePrivateDraft()
+        keyboardViewWrapper?.visibility =
+            if (canTypePrivateDraft) View.VISIBLE else View.GONE
+    }
+
+    private fun updateSectionVisibility() {
+        val encrypting = mode == EmbeddedMode.ENCRYPT
+        val showEncryptControls = encrypting &&
+            (!active || !compactLayout || canComposePrivateDraft())
+        encryptSection?.visibility = if (showEncryptControls) View.VISIBLE else View.GONE
+        decryptSection?.visibility = if (encrypting) View.GONE else View.VISIBLE
+    }
+
+    private fun canComposePrivateDraft(): Boolean =
+            passwordAcknowledged &&
+            runtime.isVaultUnlocked &&
+            ownerExists == true &&
+            contacts.isNotEmpty()
+
+    private fun restoreStandardKeyboardSurfaces() {
+        standardStripContainer?.visibility = View.VISIBLE
+        keyboardViewWrapper?.visibility = View.VISIBLE
+    }
+
+    private fun onDecryptAction() {
+        if (!active || mode != EmbeddedMode.DECRYPT) return
+        when (decryptStage) {
+            EmbeddedDecryptStage.DISPLAYED -> {
+                hideDecryptedMessage(R.string.embedded_secure_message_hidden)
+                return
+            }
+            EmbeddedDecryptStage.CHECKING,
+            EmbeddedDecryptStage.DECRYPTING,
+            -> return
+            else -> Unit
+        }
+        if (parsedCiphertext != null) {
+            if (runtime.isVaultUnlocked) {
+                maybeStartPendingDecrypt()
+            } else {
+                decryptStage = EmbeddedDecryptStage.WAITING_FOR_UNLOCK
+                decryptStatusResource = R.string.secure_decrypt_unlocking
+                updateDecryptUi()
+                renderStatusAndContext()
+                ime.launchEmbeddedVaultUnlock()
+            }
+            return
+        }
+        readClipboardAndParse()
+    }
+
+    private fun readClipboardAndParse() {
+        clearEmbeddedDecryptState(resetLoaded = true)
+        val source = CiphertextClipboardReader.read(ime)
+        if (source == null) {
+            showDecryptFailure(R.string.secure_clipboard_decrypt_invalid)
+            return
+        }
+        val selection = CiphertextSelection.parse(source)
+        if (selection !is CiphertextSelection.Result.Valid) {
+            showDecryptFailure(R.string.secure_clipboard_decrypt_invalid)
+            return
+        }
+        loadedCiphertextCharacters = source.length
+        loadedCiphertextParts = selection.parts.size
+        decryptStage = EmbeddedDecryptStage.CHECKING
+        decryptStatusResource = R.string.secure_decrypt_checking
+        val requestGeneration = ++decryptGeneration
+        updateDecryptUi()
+        renderStatusAndContext()
+        parseRequestGeneration = requestGeneration
+        val resultHandoffToken = workerResultHandoffs.capture()
+        parseFuture = parserExecutor.submit {
+            val result = SecureDecryptRuntime.parse(selection.parts)
+            workerResultHandoffs.post(
+                token = resultHandoffToken,
+                value = result,
+                deliver = { delivered -> onParsedCiphertext(requestGeneration, delivered) },
+                abandon = ::closeParseResult,
+            )
+        }
+    }
+
+    private fun onParsedCiphertext(requestGeneration: Long, result: ParseResult) {
+        if (parseRequestGeneration == requestGeneration) {
+            parseFuture = null
+            parseRequestGeneration = null
+        }
+        if (requestGeneration != decryptGeneration || !active || mode != EmbeddedMode.DECRYPT) {
+            if (result is ParseResult.Success) runCatching { result.parsed.close() }
+            return
+        }
+        when (result) {
+            is ParseResult.Failure -> showDecryptFailure(result.reason.decryptStringResource())
+            is ParseResult.Success -> {
+                parsedCiphertext = result.parsed
+                decryptStage = EmbeddedDecryptStage.WAITING_FOR_UNLOCK
+                if (runtime.isVaultUnlocked) {
+                    maybeStartPendingDecrypt()
+                } else {
+                    decryptStatusResource = R.string.secure_decrypt_unlocking
+                    updateDecryptUi()
+                    renderStatusAndContext()
+                    ime.launchEmbeddedVaultUnlock()
+                }
+            }
+        }
+    }
+
+    private fun maybeStartPendingDecrypt() {
+        if (!active || mode != EmbeddedMode.DECRYPT || decryptOperation != null) return
+        val parsed = parsedCiphertext ?: return
+        runtime.lockIfExpired()
+        if (!runtime.isVaultUnlocked) {
+            decryptStage = EmbeddedDecryptStage.WAITING_FOR_UNLOCK
+            decryptStatusResource = if (awaitingUnlock) {
+                R.string.secure_decrypt_unlocking
+            } else {
+                R.string.secure_decrypt_vault_locked
+            }
+            updateDecryptUi()
+            renderStatusAndContext()
+            return
+        }
+        if (ownerExists == false || runtimeStateError != null) {
+            renderStatusAndContext()
+            updateDecryptUi()
+            return
+        }
+        decryptStage = EmbeddedDecryptStage.DECRYPTING
+        decryptStatusResource = R.string.embedded_secure_decrypting
+        val requestGeneration = decryptGeneration
+        val requestToken = Any()
+        decryptRequestToken = requestToken
+        val resultHandoffToken = workerResultHandoffs.capture()
+        updateDecryptUi()
+        renderStatusAndContext()
+        decryptOperation = SecureDecryptRuntime.decryptUnlocked(parsed) { result ->
+            workerResultHandoffs.post(
+                token = resultHandoffToken,
+                value = result,
+                deliver = { delivered ->
+                    onDecryptedMessage(requestToken, requestGeneration, parsed, delivered)
+                },
+                abandon = { abandoned -> closeDecryptResult(parsed, abandoned) },
+            )
+        }
+    }
+
+    private fun onDecryptedMessage(
+        requestToken: Any,
+        requestGeneration: Long,
+        requestParsed: ParsedCiphertext,
+        result: DecryptResult,
+    ) {
+        if (
+            requestToken !== decryptRequestToken ||
+            requestGeneration != decryptGeneration ||
+            !active ||
+            mode != EmbeddedMode.DECRYPT
+        ) {
+            closeDecryptResult(requestParsed, result)
+            return
+        }
+        decryptOperation = null
+        decryptRequestToken = null
+        if (parsedCiphertext === requestParsed) {
+            parsedCiphertext = null
+        }
+        runCatching { requestParsed.close() }
+        when (result) {
+            is DecryptResult.Failure -> showDecryptFailure(result.reason.decryptStringResource())
+            is DecryptResult.Success -> {
+                runtime.lockIfExpired()
+                if (!runtime.isVaultUnlocked) {
+                    result.message.close()
+                    showDecryptFailure(R.string.secure_decrypt_vault_locked)
+                } else {
+                    showDecryptedMessage(result.message)
+                }
+            }
+        }
+    }
+
+    private fun showDecryptedMessage(message: DecryptedMessage) {
+        val view = plaintextView
+        val text = try {
+            WipeableText.decodeUtf8(message.plaintext)
+        } catch (_: RuntimeException) {
+            null
+        } finally {
+            message.plaintext.close()
+        }
+        if (view == null || text == null) {
+            text?.close()
+            message.close()
+            showDecryptFailure(R.string.secure_decrypt_invalid_ciphertext)
+            return
+        }
+        try {
+            plaintextScroller?.scrollTo(0, 0)
+            view.setSecureText(text)
+        } catch (_: RuntimeException) {
+            view.clearSecureText()
+            message.close()
+            showDecryptFailure(R.string.secure_decrypt_unavailable)
+            return
+        }
+        decryptedMessage = message
+        decryptedMessageMarkedDisplayed = false
+        decryptStage = EmbeddedDecryptStage.DISPLAYED
+        decryptStatusResource = R.string.secure_viewer_verified
+        updateDecryptUi()
+        renderStatusAndContext()
+        mainHandler.removeCallbacks(decryptTimeout)
+        mainHandler.removeCallbacks(decryptRenderTimeout)
+        mainHandler.postDelayed(decryptRenderTimeout, DECRYPT_RENDER_TIMEOUT_MILLIS)
+    }
+
+    private fun beforeDecryptedPlaintextDraw(): Boolean {
+        if (
+            !active ||
+            mode != EmbeddedMode.DECRYPT ||
+            decryptStage != EmbeddedDecryptStage.DISPLAYED ||
+            decryptedMessage == null
+        ) {
+            return false
+        }
+        runtime.lockIfExpired()
+        if (runtime.isVaultUnlocked) return true
+        mainHandler.post {
+            if (active && mode == EmbeddedMode.DECRYPT && decryptedMessage != null) {
+                hideDecryptedMessage(R.string.secure_decrypt_vault_locked)
+            }
+        }
+        return false
+    }
+
+    private fun onDecryptedPlaintextDrawn() {
+        val message = decryptedMessage ?: return
+        if (
+            !active ||
+            mode != EmbeddedMode.DECRYPT ||
+            decryptStage != EmbeddedDecryptStage.DISPLAYED ||
+            decryptedMessageMarkedDisplayed
+        ) {
+            return
+        }
+        runtime.lockIfExpired()
+        if (!runtime.isVaultUnlocked) {
+            mainHandler.post {
+                if (decryptedMessage === message) {
+                    hideDecryptedMessage(R.string.secure_decrypt_vault_locked)
+                }
+            }
+            return
+        }
+        if (runCatching { message.markDisplayed() }.isFailure) {
+            mainHandler.post {
+                if (decryptedMessage === message) {
+                    hideDecryptedMessage(R.string.secure_decrypt_unavailable)
+                }
+            }
+            return
+        }
+        decryptedMessageMarkedDisplayed = true
+        mainHandler.removeCallbacks(decryptRenderTimeout)
+        mainHandler.postDelayed(
+            decryptTimeout,
+            SecureDecryptRuntime.viewerTimeoutMillis().coerceIn(
+                MIN_VIEWER_TIMEOUT_MILLIS,
+                MAX_VIEWER_TIMEOUT_MILLIS,
+            ),
+        )
+    }
+
+    private fun showDecryptFailure(resource: Int) {
+        decryptStage = EmbeddedDecryptStage.FAILED
+        decryptStatusResource = resource
+        updateDecryptUi()
+        renderStatusAndContext()
+    }
+
+    private fun hideDecryptedMessage(statusResource: Int) {
+        clearEmbeddedDecryptState(resetLoaded = true, statusResource = statusResource)
+        renderStatusAndContext()
+    }
+
+    private fun clearEmbeddedDecryptState(
+        resetLoaded: Boolean,
+        statusResource: Int = R.string.embedded_secure_decrypt_clipboard_prompt,
+    ) {
+        decryptGeneration++
+        workerResultHandoffs.drain()
+        mainHandler.removeCallbacks(decryptTimeout)
+        mainHandler.removeCallbacks(decryptRenderTimeout)
+        parseFuture?.cancel(true)
+        parseFuture = null
+        parseRequestGeneration = null
+        decryptRequestToken = null
+        decryptOperation?.cancel()
+        decryptOperation = null
+        runCatching { parsedCiphertext?.close() }
+        parsedCiphertext = null
+        plaintextView?.clearSecureText()
+        plaintextScroller?.scrollTo(0, 0)
+        runCatching { decryptedMessage?.close() }
+        decryptedMessage = null
+        decryptedMessageMarkedDisplayed = false
+        decryptStage = EmbeddedDecryptStage.IDLE
+        decryptStatusResource = statusResource
+        if (resetLoaded) {
+            loadedCiphertextCharacters = 0
+            loadedCiphertextParts = 0
+        }
+        updateDecryptUi()
+    }
+
+    private fun closeParseResult(result: ParseResult) {
+        if (result is ParseResult.Success) runCatching { result.parsed.close() }
+    }
+
+    private fun closeDecryptResult(parsed: ParsedCiphertext, result: DecryptResult) {
+        runCatching { parsed.close() }
+        if (result is DecryptResult.Success) runCatching { result.message.close() }
+    }
+
+    private fun updateDecryptUi() {
+        ciphertextSummary?.text = if (loadedCiphertextCharacters > 0) {
+            ime.getString(
+                R.string.embedded_secure_decrypt_loaded,
+                loadedCiphertextCharacters,
+                loadedCiphertextParts,
+            )
+        } else {
+            ime.getString(R.string.embedded_secure_decrypt_clipboard_prompt)
+        }
+        plaintextScroller?.visibility =
+            if (decryptStage == EmbeddedDecryptStage.DISPLAYED) View.VISIBLE else View.INVISIBLE
+        decryptButton?.apply {
+            text = ime.getString(
+                when (decryptStage) {
+                    EmbeddedDecryptStage.CHECKING -> R.string.secure_decrypt_checking
+                    EmbeddedDecryptStage.WAITING_FOR_UNLOCK ->
+                        if (runtime.isVaultUnlocked) {
+                            R.string.secure_decrypt_confirm
+                        } else {
+                            R.string.embedded_secure_unlock_and_decrypt
+                        }
+                    EmbeddedDecryptStage.DECRYPTING -> R.string.embedded_secure_decrypting
+                    EmbeddedDecryptStage.DISPLAYED -> R.string.embedded_secure_hide_message
+                    EmbeddedDecryptStage.IDLE,
+                    EmbeddedDecryptStage.FAILED,
+                    -> R.string.embedded_secure_paste_and_decrypt
+                },
+            )
+            contentDescription = ime.getString(
+                if (decryptStage == EmbeddedDecryptStage.DISPLAYED) {
+                    R.string.embedded_secure_hide_message
+                } else {
+                    R.string.embedded_secure_decrypt_action_description
+                },
+            )
+            isEnabled = active && mode == EmbeddedMode.DECRYPT && passwordAcknowledged &&
+                ownerExists != false && runtimeStateError == null &&
+                decryptStage != EmbeddedDecryptStage.CHECKING &&
+                decryptStage != EmbeddedDecryptStage.DECRYPTING
+            alpha = if (isEnabled) 1f else DISABLED_CONTROL_ALPHA
+        }
     }
 
     private fun refreshRuntimeState() {
         if (!active) return
         runtime.lockIfExpired()
         val unlocked = runtime.isVaultUnlocked
+        if (!unlocked && (decryptOperation != null || decryptedMessage != null)) {
+            clearEmbeddedDecryptState(
+                resetLoaded = true,
+                statusResource = R.string.secure_decrypt_vault_locked,
+            )
+        }
         val previousId = selectedContact()?.internalId()
         ownerExists = null
         runtimeStateError = null
@@ -254,6 +834,9 @@ class EmbeddedSecureComposerController(
         refreshPendingState()
         renderStatusAndContext()
         updateCountsAndActions()
+        updateDecryptUi()
+        updateSectionVisibility()
+        updateStandardKeyboardSurfaces()
     }
 
     private fun updateContactSpinner(previousId: ByteArray?) {
@@ -346,6 +929,7 @@ class EmbeddedSecureComposerController(
 
     private fun renderStatusAndContext() {
         val context = contextButton ?: return
+        contactStatus?.visibility = View.VISIBLE
         context.visibility = View.VISIBLE
         when {
             !passwordAcknowledged -> {
@@ -355,8 +939,11 @@ class EmbeddedSecureComposerController(
                     passwordAcknowledged = true
                     renderStatusAndContext()
                     updateCountsAndActions()
+                    updateDecryptUi()
+                    updateStandardKeyboardSurfaces()
                 }
             }
+            mode == EmbeddedMode.DECRYPT -> renderDecryptStatusAndContext(context)
             !runtime.isVaultUnlocked -> {
                 setStatus(R.string.embedded_secure_unlock_to_encrypt)
                 context.setText(R.string.secure_unlock_vault)
@@ -382,6 +969,81 @@ class EmbeddedSecureComposerController(
                 setStatus(defaultStatus())
             }
         }
+    }
+
+    private fun renderDecryptStatusAndContext(context: Button) {
+        when {
+            !runtime.isVaultUnlocked -> {
+                context.visibility = View.INVISIBLE
+                if (decryptStage == EmbeddedDecryptStage.IDLE) {
+                    contactStatus?.visibility = View.INVISIBLE
+                } else {
+                    setStatus(decryptStatusResource)
+                }
+            }
+            runtimeStateError != null -> {
+                setStatus(runtimeStateError ?: R.string.secure_operation_failed)
+                context.setText(R.string.embedded_secure_open_cipherboard)
+                context.setOnClickListener { ime.openCipherBoardHomeFromEmbeddedComposer() }
+            }
+            ownerExists == false -> {
+                setStatus(R.string.embedded_secure_no_identity)
+                context.setText(R.string.embedded_secure_open_cipherboard)
+                context.setOnClickListener { ime.openCipherBoardHomeFromEmbeddedComposer() }
+            }
+            else -> {
+                val message = decryptedMessage
+                if (decryptStage == EmbeddedDecryptStage.DISPLAYED && message != null) {
+                    setStatus(
+                        ime.getString(
+                            when (message.contactStatus) {
+                                DecryptedContactStatus.VERIFIED ->
+                                    R.string.embedded_secure_decrypted_verified
+                                DecryptedContactStatus.UNVERIFIED ->
+                                    R.string.embedded_secure_decrypted_unverified
+                            },
+                            message.localContactLabel,
+                        ),
+                    )
+                    if (message.replyToken == null) {
+                        context.visibility = View.INVISIBLE
+                    } else {
+                        context.visibility = View.VISIBLE
+                        context.setText(R.string.secure_viewer_reply)
+                        context.setOnClickListener { replyToDecryptedContact() }
+                    }
+                } else if (decryptStage == EmbeddedDecryptStage.IDLE) {
+                    context.visibility = View.INVISIBLE
+                    contactStatus?.visibility = View.INVISIBLE
+                } else {
+                    context.visibility = View.INVISIBLE
+                    setStatus(decryptStatusResource)
+                }
+            }
+        }
+    }
+
+    private fun replyToDecryptedContact() {
+        val token = decryptedMessage?.replyToken ?: return
+        val index = contacts.indexOfFirst { contact ->
+            val candidate = contact.internalId()
+            try {
+                token.matchesContact(candidate)
+            } finally {
+                candidate.fill(0)
+            }
+        }
+        if (index < 0) {
+            setStatus(R.string.secure_reply_unavailable)
+            return
+        }
+        performSecureReplyTransition(
+            clearPrivateDraft = ime::clearEmbeddedSecureDraft,
+            enterEncryptMode = { setMode(EmbeddedMode.ENCRYPT) },
+            selectReplyContact = { contactSpinner?.setSelection(index) },
+        )
+        renderStatusAndContext()
+        updateCountsAndActions()
     }
 
     private fun defaultStatus(): CharSequence = when {
@@ -427,6 +1089,7 @@ class EmbeddedSecureComposerController(
                 else -> ime.getString(R.string.embedded_secure_encrypt_description)
             }
             isEnabled = active && passwordAcknowledged && runtime.isVaultUnlocked && selectedContactReady() &&
+                mode == EmbeddedMode.ENCRYPT &&
                 pendingStateKnown &&
                 if (uncertainPendingCount > 0 || pendingCount > 0) {
                     true
@@ -435,7 +1098,9 @@ class EmbeddedSecureComposerController(
                 }
             alpha = if (isEnabled) 1f else DISABLED_CONTROL_ALPHA
         }
-        if (hasDraft && !withinLimit) setStatus(R.string.embedded_secure_message_too_large)
+        if (mode == EmbeddedMode.ENCRYPT && hasDraft && !withinLimit) {
+            setStatus(R.string.embedded_secure_message_too_large)
+        }
     }
 
     private fun encryptOrRetry() {
@@ -610,12 +1275,38 @@ class EmbeddedSecureComposerController(
             else -> R.string.secure_operation_failed
         }
 
+    private fun ParseFailureReason.decryptStringResource(): Int = when (this) {
+        ParseFailureReason.UNSUPPORTED_VERSION -> R.string.secure_decrypt_unsupported_version
+        ParseFailureReason.MISSING_PART -> R.string.secure_decrypt_missing_part
+        ParseFailureReason.TOO_MANY_PARTS -> R.string.secure_decrypt_too_many_parts
+        ParseFailureReason.WRONG_CONTACT -> R.string.secure_decrypt_wrong_contact
+        ParseFailureReason.INVALID_FORMAT,
+        ParseFailureReason.INCONSISTENT_PARTS,
+        -> R.string.secure_decrypt_invalid_selection
+        ParseFailureReason.INTERNAL_ERROR -> R.string.secure_decrypt_unavailable
+    }
+
+    private fun DecryptFailureReason.decryptStringResource(): Int = when (this) {
+        DecryptFailureReason.VAULT_LOCKED -> R.string.secure_decrypt_vault_locked
+        DecryptFailureReason.AUTHENTICATION_CANCELLED -> R.string.secure_decrypt_auth_cancelled
+        DecryptFailureReason.WRONG_CONTACT -> R.string.secure_decrypt_wrong_contact
+        DecryptFailureReason.REPLAY -> R.string.secure_decrypt_replay
+        DecryptFailureReason.MISSING_PART -> R.string.secure_decrypt_missing_part
+        DecryptFailureReason.KEY_CHANGED -> R.string.secure_decrypt_key_changed
+        DecryptFailureReason.SESSION_ERROR -> R.string.secure_decrypt_session_error
+        DecryptFailureReason.INVALID_CIPHERTEXT -> R.string.secure_decrypt_invalid_ciphertext
+        DecryptFailureReason.INTERNAL_ERROR -> R.string.secure_decrypt_unavailable
+    }
+
     @SuppressLint("WrongConstant")
     private fun buildPanel(parent: FrameLayout) {
         val context = parent.context
         val configuration = context.resources.configuration
         val compact = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        compactLayout = compact
         val wide = configuration.screenWidthDp >= WIDE_LAYOUT_MIN_WIDTH_DP
+        val constrainedHeight = configuration.screenHeightDp < CONSTRAINED_HEIGHT_DP ||
+            configuration.fontScale >= LARGE_FONT_SCALE
         val root = LinearLayout(context).apply {
             id = R.id.embedded_secure_composer_panel
             orientation = LinearLayout.VERTICAL
@@ -629,21 +1320,52 @@ class EmbeddedSecureComposerController(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(ImageView(context).apply {
-            setImageResource(R.drawable.ic_secure_composer)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(6) })
-        header.addView(TextView(context).apply {
-            text = context.getString(R.string.embedded_secure_mode)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(iconButton(
+        val modeControl = RadioGroup(context).apply {
+            id = R.id.embedded_secure_mode_group
+            orientation = RadioGroup.HORIZONTAL
+            addView(modeButton(
+                context,
+                R.id.embedded_secure_encrypt_mode,
+                R.string.embedded_secure_encrypt_mode,
+            ), weightedModeButtonParams())
+            addView(modeButton(
+                context,
+                R.id.embedded_secure_decrypt_mode,
+                R.string.embedded_secure_decrypt_mode,
+            ), weightedModeButtonParams())
+            check(
+                if (mode == EmbeddedMode.ENCRYPT) {
+                    R.id.embedded_secure_encrypt_mode
+                } else {
+                    R.id.embedded_secure_decrypt_mode
+                },
+            )
+        }
+        modeGroup = modeControl
+        if (compact) {
+            header.addView(
+                modeControl,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
+        } else {
+            header.addView(ImageView(context).apply {
+                setImageResource(R.drawable.ic_secure_composer)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(6) })
+            header.addView(TextView(context).apply {
+                text = context.getString(R.string.embedded_secure_mode)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        val clear = iconButton(
             context,
             R.id.embedded_secure_clear,
             R.drawable.sym_keyboard_clear_clipboard_rounded,
             R.string.embedded_secure_clear_description,
-        ) { ime.clearEmbeddedSecureDraft() })
+        ) { clearCurrentMode() }
+        clearButton = clear
+        header.addView(clear)
         header.addView(iconButton(
             context,
             R.id.embedded_secure_close,
@@ -651,6 +1373,15 @@ class EmbeddedSecureComposerController(
             R.string.embedded_secure_close_description,
         ) { ime.requestCloseEmbeddedSecureComposer() })
         root.addView(header, matchWidth())
+        if (!compact) {
+            root.addView(modeControl, matchWidth().apply { topMargin = dp(2) })
+        }
+
+        val encryptRoot = LinearLayout(context).apply {
+            id = R.id.embedded_secure_encrypt_section
+            orientation = LinearLayout.VERTICAL
+        }
+        encryptSection = encryptRoot
 
         contactSpinner = Spinner(context).apply {
             id = R.id.embedded_secure_contact
@@ -672,13 +1403,11 @@ class EmbeddedSecureComposerController(
                 }
             }
         }
-        root.addView(contactSpinner, matchWidth().apply { topMargin = dp(2) })
-
         draftView = SecureDraftView(context).apply {
             id = R.id.embedded_secure_draft
             hint = context.getString(R.string.embedded_secure_draft_hint)
             minLines = if (compact) 1 else 2
-            maxLines = if (compact) 2 else 3
+            maxLines = if (compact) 1 else 3
             gravity = Gravity.TOP or Gravity.START
             isFocusable = false
             isFocusableInTouchMode = false
@@ -698,27 +1427,32 @@ class EmbeddedSecureComposerController(
                 setAccessibilityDataSensitive(View.ACCESSIBILITY_DATA_SENSITIVE_YES)
             }
         }
-        root.addView(draftView, matchWidth().apply {
-            topMargin = dp(3)
-            bottomMargin = dp(3)
-        })
-
-        contactStatus = TextView(context).apply {
-            id = R.id.embedded_secure_status
-            maxLines = if (compact) 3 else 4
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        if (compact) {
+            val editorRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    contactSpinner,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.36f).apply {
+                        marginEnd = dp(6)
+                    },
+                )
+                addView(
+                    draftView,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.64f),
+                )
+            }
+            encryptRoot.addView(editorRow, matchWidth().apply {
+                topMargin = dp(2)
+                bottomMargin = dp(2)
+            })
+        } else {
+            encryptRoot.addView(contactSpinner, matchWidth().apply { topMargin = dp(2) })
+            encryptRoot.addView(draftView, matchWidth().apply {
+                topMargin = dp(3)
+                bottomMargin = dp(3)
+            })
         }
-        root.addView(contactStatus, matchWidth())
-
-        contextButton = Button(context).apply {
-            id = R.id.embedded_secure_context_action
-            minHeight = dp(MINIMUM_TOUCH_TARGET_DP)
-            minimumHeight = dp(MINIMUM_TOUCH_TARGET_DP)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setPadding(dp(10), dp(3), dp(10), dp(3))
-        }
-        root.addView(contextButton, matchWidth().apply { topMargin = dp(2) })
 
         val actions = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -781,14 +1515,97 @@ class EmbeddedSecureComposerController(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                 ),
             )
-            root.addView(actions, matchWidth().apply { topMargin = dp(2) })
+            encryptRoot.addView(actions, matchWidth().apply { topMargin = dp(2) })
         } else {
-            root.addView(transportGroup, matchWidth())
-            root.addView(actions, matchWidth().apply { topMargin = dp(2) })
+            encryptRoot.addView(transportGroup, matchWidth())
+            encryptRoot.addView(actions, matchWidth().apply { topMargin = dp(2) })
+        }
+        root.addView(encryptRoot, matchWidth())
+
+        val decryptRoot = LinearLayout(context).apply {
+            id = R.id.embedded_secure_decrypt_section
+            orientation = LinearLayout.VERTICAL
+        }
+        decryptSection = decryptRoot
+        ciphertextSummary = TextView(context).apply {
+            id = R.id.embedded_secure_ciphertext_summary
+            maxLines = if (compact || constrainedHeight) 1 else 3
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            text = context.getString(R.string.embedded_secure_decrypt_clipboard_prompt)
+        }
+        decryptRoot.addView(ciphertextSummary, matchWidth().apply {
+            topMargin = dp(4)
+            bottomMargin = dp(3)
+        })
+        decryptButton = Button(context).apply {
+            id = R.id.embedded_secure_decrypt_action
+            minHeight = dp(MINIMUM_TOUCH_TARGET_DP)
+            minimumHeight = dp(MINIMUM_TOUCH_TARGET_DP)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            setOnClickListener { onDecryptAction() }
+        }
+        decryptRoot.addView(decryptButton, matchWidth())
+        plaintextView = SecurePlaintextView(context).apply {
+            id = R.id.embedded_secure_plaintext
+            beforeSecureTextDraw = ::beforeDecryptedPlaintextDraw
+            onSecureTextDrawn = ::onDecryptedPlaintextDrawn
+        }
+        plaintextScroller = ScrollView(context).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            visibility = View.INVISIBLE
+            addView(
+                plaintextView,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+        decryptRoot.addView(plaintextScroller, matchWidth().apply {
+            height = dp(
+                when {
+                    compact -> DECRYPT_VIEW_HEIGHT_LANDSCAPE_DP
+                    constrainedHeight -> DECRYPT_VIEW_HEIGHT_CONSTRAINED_DP
+                    else -> DECRYPT_VIEW_HEIGHT_PORTRAIT_DP
+                },
+            )
+            topMargin = dp(3)
+        })
+        root.addView(decryptRoot, matchWidth())
+
+        contactStatus = TextView(context).apply {
+            id = R.id.embedded_secure_status
+            maxLines = if (compact) 1 else 4
+            minHeight = dp(20)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        root.addView(contactStatus, matchWidth().apply { topMargin = dp(2) })
+
+        contextButton = Button(context).apply {
+            id = R.id.embedded_secure_context_action
+            minHeight = dp(MINIMUM_TOUCH_TARGET_DP)
+            minimumHeight = dp(MINIMUM_TOUCH_TARGET_DP)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(10), dp(3), dp(10), dp(3))
+        }
+        root.addView(contextButton, matchWidth().apply { topMargin = dp(2) })
+
+        modeGroup?.setOnCheckedChangeListener { _, checkedId ->
+            setMode(
+                if (checkedId == R.id.embedded_secure_decrypt_mode) {
+                    EmbeddedMode.DECRYPT
+                } else {
+                    EmbeddedMode.ENCRYPT
+                },
+            )
         }
 
         applyKeyboardColors(root)
         parent.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        applyModeVisibility()
     }
 
     private fun iconButton(
@@ -808,6 +1625,26 @@ class EmbeddedSecureComposerController(
         minimumWidth = dp(MINIMUM_TOUCH_TARGET_DP)
         minimumHeight = dp(MINIMUM_TOUCH_TARGET_DP)
     }
+
+    private fun modeButton(
+        context: android.content.Context,
+        id: Int,
+        label: Int,
+    ): RadioButton = RadioButton(context).apply {
+        this.id = id
+        text = context.getString(label)
+        gravity = Gravity.CENTER
+        minHeight = dp(MINIMUM_TOUCH_TARGET_DP)
+        minimumHeight = dp(MINIMUM_TOUCH_TARGET_DP)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        buttonTintList = ColorStateList.valueOf(Settings.getValues().mColors.get(ColorType.KEY_TEXT))
+    }
+
+    private fun weightedModeButtonParams() = LinearLayout.LayoutParams(
+        0,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        1f,
+    )
 
     private fun applyKeyboardColors(root: ViewGroup) {
         val colors = Settings.getValues().mColors
@@ -833,7 +1670,9 @@ class EmbeddedSecureComposerController(
         }
         draftView?.background = background
         draftView?.setHintTextColor(colors.get(ColorType.KEY_HINT_TEXT))
+        plaintextView?.setSecureTextColor(colors.get(ColorType.KEY_TEXT))
         encryptButton?.let { colors.setBackground(it, ColorType.KEY_BACKGROUND) }
+        decryptButton?.let { colors.setBackground(it, ColorType.KEY_BACKGROUND) }
         contextButton?.let { colors.setBackground(it, ColorType.KEY_BACKGROUND) }
     }
 
@@ -904,6 +1743,16 @@ class EmbeddedSecureComposerController(
         private const val DISABLED_LABEL_ALPHA = 0.72f
         private const val MINIMUM_TOUCH_TARGET_DP = 44
         private const val WIDE_LAYOUT_MIN_WIDTH_DP = 600
+        private const val CONSTRAINED_HEIGHT_DP = 560
+        private const val LARGE_FONT_SCALE = 1.5f
+        private const val DECRYPT_VIEW_HEIGHT_PORTRAIT_DP = 132
+        private const val DECRYPT_VIEW_HEIGHT_CONSTRAINED_DP = 88
+        private const val DECRYPT_VIEW_HEIGHT_LANDSCAPE_DP = 84
+        private const val MIN_VIEWER_TIMEOUT_MILLIS = 10_000L
+        private const val MAX_VIEWER_TIMEOUT_MILLIS = 5 * 60_000L
+        private const val DECRYPT_RENDER_TIMEOUT_MILLIS = 3_000L
+        private const val UNLOCK_ACTIVITY_TIMEOUT_MILLIS = 2 * 60_000L
+        private const val UNLOCK_HOST_RETURN_TIMEOUT_MILLIS = 5_000L
         private const val OLM_OVERHEAD_ESTIMATE = 256
         private const val UNIVERSAL_ENVELOPE_OVERHEAD_ESTIMATE = 80
         private const val SMS_CHUNK_BYTES = 48
@@ -914,9 +1763,144 @@ class EmbeddedSecureComposerController(
     }
 }
 
+private enum class EmbeddedMode {
+    ENCRYPT,
+    DECRYPT,
+}
+
+internal inline fun performSecureReplyTransition(
+    clearPrivateDraft: () -> Unit,
+    enterEncryptMode: () -> Unit,
+    selectReplyContact: () -> Unit,
+) {
+    clearPrivateDraft()
+    enterEncryptMode()
+    selectReplyContact()
+}
+
+private enum class EmbeddedDecryptStage {
+    IDLE,
+    CHECKING,
+    WAITING_FOR_UNLOCK,
+    DECRYPTING,
+    DISPLAYED,
+    FAILED,
+}
+
 private data class PendingCounts(val ready: Int, val uncertain: Int) {
     companion object {
         val EMPTY = PendingCounts(0, 0)
+    }
+}
+
+/**
+ * Transfers ownership of worker results to the main thread without leaving closeable values in
+ * callbacks that lifecycle teardown can remove. The queue starts closed and must be reopened for
+ * each active controller lifetime.
+ */
+internal class OwnedMainThreadResultHandoffs(
+    private val postToMain: (Runnable) -> Boolean,
+    private val removeFromMain: (Runnable) -> Unit,
+) {
+    private val lock = Any()
+    private val pending = mutableSetOf<OwnedDelivery<*>>()
+    private var accepting = false
+    private var generation = 0L
+
+    fun open() {
+        synchronized(lock) {
+            generation++
+            accepting = true
+        }
+    }
+
+    fun capture(): Long? = synchronized(lock) { if (accepting) generation else null }
+
+    fun close() {
+        val abandoned = synchronized(lock) {
+            generation++
+            accepting = false
+            pending.toList().also { pending.clear() }
+        }
+        abandon(abandoned)
+    }
+
+    fun drain() {
+        val abandoned = synchronized(lock) {
+            generation++
+            pending.toList().also { pending.clear() }
+        }
+        abandon(abandoned)
+    }
+
+    fun <T : Any> post(
+        token: Long?,
+        value: T,
+        deliver: (T) -> Unit,
+        abandon: (T) -> Unit,
+    ) {
+        val delivery = OwnedDelivery(value, deliver, abandon, ::onDeliveryClaimed)
+        val accepted = synchronized(lock) {
+            if (accepting && token == generation) pending.add(delivery) else false
+        }
+        if (!accepted) {
+            delivery.abandon()
+            return
+        }
+        if (!postToMain(delivery)) {
+            synchronized(lock) { pending.remove(delivery) }
+            delivery.abandon()
+        }
+    }
+
+    private fun onDeliveryClaimed(delivery: OwnedDelivery<*>) {
+        synchronized(lock) { pending.remove(delivery) }
+    }
+
+    private fun abandon(deliveries: List<OwnedDelivery<*>>) {
+        deliveries.forEach { delivery ->
+            runCatching { removeFromMain(delivery) }
+            runCatching { delivery.abandon() }
+        }
+    }
+
+    private class OwnedDelivery<T : Any>(
+        value: T,
+        deliver: (T) -> Unit,
+        abandon: (T) -> Unit,
+        private val onClaimed: (OwnedDelivery<*>) -> Unit,
+    ) : Runnable {
+        private val lock = Any()
+        private var value: T? = value
+        private var deliver: ((T) -> Unit)? = deliver
+        private var abandon: ((T) -> Unit)? = abandon
+
+        override fun run() {
+            val claimedValue: T
+            val delivery: (T) -> Unit
+            synchronized(lock) {
+                claimedValue = value ?: return
+                delivery = deliver ?: return
+                value = null
+                deliver = null
+                abandon = null
+            }
+            onClaimed(this)
+            delivery(claimedValue)
+        }
+
+        fun abandon() {
+            val claimedValue: T
+            val cleanup: (T) -> Unit
+            synchronized(lock) {
+                claimedValue = value ?: return
+                cleanup = abandon ?: return
+                value = null
+                deliver = null
+                abandon = null
+            }
+            cleanup(claimedValue)
+        }
     }
 }
 
