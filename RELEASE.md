@@ -119,29 +119,25 @@ $env:CIPHERBOARD_OSV_SCANNER = "$HOME/.local/share/cipherboard/tools/osv-scanner
 ```
 
 The scripts build an unsigned/aligned intermediate in temporary storage and
-write only the signed result and release metadata to `dist/`. They do not
-create signing material. A pre-existing destination APK may be replaced, but
-the keystore is opened read-only by `apksigner` and is never replaced.
+replace `dist/` with the three public release assets below. They do not create
+signing material. The keystore is opened read-only by `apksigner` and is never
+replaced.
 
 Expected outputs produced by the current release script are:
 
 ```text
 dist/CipherBoard-<version>-release.apk
 dist/CipherBoard-<version>-release.apk.sha256
-dist/CipherBoard-<version>-source.tar.gz
-dist/SBOM.json
-dist/VULNERABILITY_SCAN.json
-dist/RELEASE_ARTIFACTS.sha256
-dist/BUILD_INFO.txt
-dist/THIRD_PARTY_NOTICES.txt
-dist/LICENSE
-dist/LICENSE-Apache-2.0
-dist/LICENSE-BSD-3-Clause-NOTICES
-dist/LICENSE-BlueOak-1.0.0
-dist/LICENSE-CC-BY-SA-4.0
-dist/LICENSE-MIT
-dist/LICENSES.md
+dist/CipherBoard-<version>-verification.zip
 ```
+
+The verification ZIP contains the exact-commit source archive, `SBOM.json`,
+`VULNERABILITY_SCAN.json`, `BUILD_INFO.txt`, `THIRD_PARTY_NOTICES.txt`, all
+listed license and notice files, and `RELEASE_ARTIFACTS.sha256`. The manifest
+hashes the public APK, its standalone hash file, and every evidence file inside
+the ZIP. The ZIP has deterministic names, order, timestamps, permissions and
+compression settings. Creation and verification reject missing, additional,
+empty or non-regular files.
 
 `SBOM.json` is CycloneDX 1.5 and is generated from the resolved Gradle release
 runtime graph plus the locked Android Cargo graph. The release fails if the
@@ -158,7 +154,9 @@ The vulnerability report is produced only after an official OSV-Scanner v2.4.0
 binary matches a pinned release SHA-256, both local Maven and crates.io databases
 are present and no more than seven days old, every SBOM package is scanned
 offline, and the result contains zero findings. `RELEASE_ARTIFACTS.sha256`
-hashes every staged output and is verified again after publication.
+is verified against both public files and the safely extracted evidence after
+publication. GitHub's SHA-256 digest and size are also required for each of the
+three immutable public assets.
 
 The source archive is created with `git archive` from the exact clean commit
 that produced the APK. The APK also packages GPLv3, Apache-2.0, BlueOak-1.0.0,
@@ -174,8 +172,18 @@ Run verification again in a separate clean environment:
 ```sh
 scripts/verify-apk.sh dist/CipherBoard-<version>-release.apk
 sha256sum dist/CipherBoard-<version>-release.apk
-(cd dist && sha256sum --check RELEASE_ARTIFACTS.sha256)
+python scripts/release_bundle.py extract \
+  --assets-dir dist \
+  --output-dir verification-evidence \
+  --artifact CipherBoard \
+  --version <version>
 ```
+
+The extractor accepts exactly the three named public assets and a flat ZIP
+containing exactly the expected regular files. It rejects absolute, nested,
+traversal, duplicate, encrypted and unsupported entries, limits names to 255
+bytes and entries to 32, and caps each expanded file at 512 MiB and both the ZIP
+and total expanded content at 768 MiB.
 
 Record:
 
@@ -192,12 +200,13 @@ same potentially compromised channel.
 
 ## Distribution and Installation
 
-Publish the signed APK, SHA-256, signing certificate fingerprint, generated
-source archive, GPL/Apache/BlueOak/CC license texts, BSD notices, SBOM,
-vulnerability report, artifact hash manifest and build information through the
-intended trusted channel. Users should verify the hash and certificate, keep the
-bootloader locked, use a strong device credential, and disable the GrapheneOS
-Network permission for CipherBoard as defense in depth.
+Publish exactly the signed APK, its `.sha256` file, and the verification ZIP
+through the intended trusted channel. The ZIP carries the signing certificate
+fingerprint, generated source archive, GPL/Apache/BlueOak/CC license texts, BSD
+notices, SBOM, vulnerability report, artifact hash manifest and build
+information. Users should verify the hash and certificate, keep the bootloader
+locked, use a strong device credential, and disable the GrapheneOS Network
+permission for CipherBoard as defense in depth.
 
 Updates must be signed by the same release key and use a greater version code.
 Test upgrade behavior without restoring or rolling back ratchet state.
@@ -205,11 +214,20 @@ Test upgrade behavior without restoring or rolling back ratchet state.
 Publish stable user builds as normal GitHub Releases, not pre-releases. A
 release intended for Obtainium must contain exactly one installable production
 APK named `CipherBoard-<version>-release.apk`; debug and unsigned APKs must not
-be attached. The supported Obtainium source is:
+be attached. The only other assets must be
+`CipherBoard-<version>-release.apk.sha256` and
+`CipherBoard-<version>-verification.zip`. The supported Obtainium source is:
 
 ```text
 https://github.com/bglglzd/CipherBoard
 ```
+
+Start every release note with a direct link named **Download
+CipherBoard-<version>-release.apk**, state that it is the only installable file,
+and identify the checksum and verification ZIP as non-installable evidence.
+Follow with an install-in-place warning, a plain-language change summary, and
+the current audit status. Keep the reviewed note in `docs/releases/` and publish
+that exact file with `gh release create --notes-file`.
 
 Leave pre-releases disabled. An optional APK link filter is:
 
@@ -241,10 +259,10 @@ integration, secure viewer, and final reproducible build.
 Only after the exact release artifact has passed the recorded automated suite
 may the final report include this required, narrowly scoped statement:
 
-> Сборка реализует проверенные криптографические примитивы и прошла
-> автоматические тесты, но весь продукт не следует считать независимо
-> аудированным до проверки внешним специалистом по прикладной криптографии и
-> Android security.
+> This build uses reviewed cryptographic primitives and passed automated tests,
+> but the complete product must not be considered independently audited until it
+> has been reviewed by an external applied-cryptography and Android security
+> specialist.
 
 At the 2026-07-14 verification snapshot, full app/library unit and module lint
 gates, 43 native Rust tests, 3 JNI tests, and a 236,453-input
@@ -254,7 +272,7 @@ official OSV-Scanner v2.4.0, fresh offline Maven/crates.io databases, all 255
 SBOM packages, release signing, the merged APK policy, and artifact hashes. Its
 local evidence bundle is neither tracked nor published and is not evidence for
 the rewritten public history. The final public tag must repeat the complete run
-and publish its own `BUILD_INFO.txt` and release assets.
+and publish its own verification bundle and release assets.
 
 Targeted API 36 x86_64 AOSP no-Play instrumentation passes 7/7 with zero
 failures/skips, including two vault reopen tests and three actual debug-only

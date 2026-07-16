@@ -32,11 +32,11 @@ words_ru_v1.txt  6163eddf094c8c426959c1bb36d95dca3d7cbe4bdecc13bd13077279b7ccc8a
 
 Selection preserves source frequency order, removes duplicates, accepts only
 lowercase alphabetic words of four through ten characters, excludes Russian
-`ё`, and applies the explicit and fragment deny-lists in
+U+0451, and applies the explicit and fragment deny-lists in
 `generate_wordlists.ps1`. Those deny-lists remove profanity, explicit sexual
 terms, slurs, and high-impact terms related to violence, weapons, drugs, and
 terrorism. Exact forms are used where a broad substring would remove ordinary
-words (for example, Russian `кровать`). This is a best-effort content filter,
+words where a blocked fragment has an unrelated everyday use. This is a best-effort content filter,
 not a linguistic safety guarantee.
 
 Run `generate_wordlists.ps1`, review samples and the deny-list scan, then run

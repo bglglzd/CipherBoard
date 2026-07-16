@@ -108,7 +108,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --dir "$assets"
 
-      - name: Verify artifact inventory and hashes
+      - name: Verify public assets and extract evidence
         env:
           ARTIFACT_NAME: ${{ steps.source.outputs.artifact }}
           VERSION_NAME: ${{ steps.source.outputs.version }}
@@ -118,84 +118,74 @@ jobs:
           import hashlib
           import json
           import pathlib
-          import re
           import sys
 
           assets = pathlib.Path(sys.argv[1])
           release_api = pathlib.Path(sys.argv[2])
           artifact = sys.argv[3]
           version = sys.argv[4]
-          manifest_name = "RELEASE_ARTIFACTS.sha256"
-          manifest = assets / manifest_name
-          if not manifest.is_file():
-              raise SystemExit("release hash manifest is missing")
-
-          entries: dict[str, str] = {}
-          line_pattern = re.compile(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]*)")
-          for line_number, line in enumerate(manifest.read_text(encoding="ascii").splitlines(), 1):
-              match = line_pattern.fullmatch(line)
-              if not match:
-                  raise SystemExit(f"invalid release manifest line {line_number}")
-              digest, name = match.groups()
-              if name == manifest_name or name in entries:
-                  raise SystemExit(f"invalid or duplicate release asset: {name}")
-              entries[name] = digest
-
           apk_name = f"{artifact}-{version}-release.apk"
-          required = {
+          bundle_name = f"{artifact}-{version}-verification.zip"
+          read_chunk_bytes = 1024 * 1024
+          expected = {
               apk_name,
               f"{apk_name}.sha256",
-              f"{artifact}-{version}-source.tar.gz",
-              "SBOM.json",
-              "VULNERABILITY_SCAN.json",
-              "BUILD_INFO.txt",
-              "THIRD_PARTY_NOTICES.txt",
-              "LICENSE",
-              "LICENSE-Apache-2.0",
-              "LICENSE-BSD-3-Clause-NOTICES",
-              "LICENSE-BlueOak-1.0.0",
-              "LICENSE-CC-BY-SA-4.0",
-              "LICENSE-MIT",
-              "LICENSES.md",
+              bundle_name,
           }
-          missing = sorted(required - entries.keys())
-          if missing:
-              raise SystemExit("required release assets are missing: " + ", ".join(missing))
-
-          downloaded = {path.name for path in assets.iterdir() if path.is_file()}
-          expected = set(entries) | {manifest_name}
+          size_limits = {
+              apk_name: 512 * 1024 * 1024,
+              f"{apk_name}.sha256": 1024,
+              bundle_name: 768 * 1024 * 1024,
+          }
+          downloaded = {path.name for path in assets.iterdir()}
           if downloaded != expected:
               raise SystemExit(
-                  "release asset inventory mismatch; missing="
+                  "public release asset inventory mismatch; missing="
                   + repr(sorted(expected - downloaded))
                   + ", unexpected="
                   + repr(sorted(downloaded - expected))
               )
-
-          for name, expected_digest in entries.items():
-              path = assets / name
-              actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
-              if actual_digest != expected_digest:
-                  raise SystemExit(f"release asset hash mismatch: {name}")
-
-          apk_digest = entries[apk_name]
-          apk_hash_line = (assets / f"{apk_name}.sha256").read_text(encoding="ascii").strip()
-          if apk_hash_line != f"{apk_digest}  {apk_name}":
-              raise SystemExit("standalone APK hash file is inconsistent")
 
           api = json.loads(release_api.read_text(encoding="utf-8"))
           if api.get("draft") is not False or api.get("tag_name") != f"v{version}":
               raise SystemExit("release API metadata does not describe the expected published tag")
           if api.get("immutable") is not True:
               raise SystemExit("GitHub Release immutability must be enabled before publication")
-          api_assets = {item.get("name"): item for item in api.get("assets", [])}
+          api_items = api.get("assets")
+          if not isinstance(api_items, list):
+              raise SystemExit("release API asset inventory is invalid")
+          api_assets: dict[str, dict[str, object]] = {}
+          for item in api_items:
+              if not isinstance(item, dict):
+                  raise SystemExit("release API contains an invalid asset")
+              name = item.get("name")
+              if not isinstance(name, str) or name in api_assets:
+                  raise SystemExit("release API contains an invalid or duplicate asset")
+              api_assets[name] = item
           if set(api_assets) != downloaded:
               raise SystemExit("release API and downloaded asset inventories differ")
           for name, item in api_assets.items():
-              api_digest = item.get("digest")
-              if api_digest and api_digest != "sha256:" + hashlib.sha256((assets / name).read_bytes()).hexdigest():
+              path = assets / name
+              if not path.is_file() or path.is_symlink():
+                  raise SystemExit(f"downloaded release asset is not a regular file: {name}")
+              size = path.stat().st_size
+              if size <= 0 or size > size_limits[name]:
+                  raise SystemExit(f"public release asset size limit exceeded: {name}")
+              if item.get("size") != size:
+                  raise SystemExit(f"GitHub asset size mismatch: {name}")
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  while chunk := handle.read(read_chunk_bytes):
+                      digest.update(chunk)
+              api_digest = "sha256:" + digest.hexdigest()
+              if item.get("digest") != api_digest:
                   raise SystemExit(f"GitHub asset digest mismatch: {name}")
           PY
+          python scripts/release_bundle.py extract \
+            --assets-dir "$RUNNER_TEMP/release-assets" \
+            --output-dir "$RUNNER_TEMP/release-bundle" \
+            --artifact "$ARTIFACT_NAME" \
+            --version "$VERSION_NAME"
 
       - name: Verify signed APK and native hardening
         env:
@@ -237,9 +227,10 @@ jobs:
         run: |
           set -euo pipefail
           assets="$RUNNER_TEMP/release-assets"
+          evidence="$RUNNER_TEMP/release-bundle"
           apk="$assets/$ARTIFACT_NAME-$VERSION_NAME-release.apk"
           expected_source="$RUNNER_TEMP/$ARTIFACT_NAME-$VERSION_NAME-source.tar"
-          released_source="$assets/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz"
+          released_source="$evidence/$ARTIFACT_NAME-$VERSION_NAME-source.tar.gz"
           # Reproduce the Windows release host's checkout transform and archive modes.
           git -c core.autocrlf=false -c core.eol=crlf -c tar.umask=0002 archive --format=tar \
             --prefix="$ARTIFACT_NAME-$VERSION_NAME-source/" \
@@ -329,7 +320,7 @@ jobs:
               raise SystemExit("released source archive inventory length mismatch")
           PY
 
-          python - "$assets" "$apk" "$SOURCE_COMMIT" "$VERSION_NAME" <<'PY'
+          python - "$evidence" "$apk" "$SOURCE_COMMIT" "$VERSION_NAME" <<'PY'
           import hashlib
           import json
           import pathlib
@@ -396,7 +387,7 @@ jobs:
           printf '%s  %s\n' "$OSV_SCANNER_LINUX_SHA256" "$scanner" | sha256sum --check --strict
           chmod 500 "$scanner"
           export XDG_CACHE_HOME="$cache"
-          cp -- "$RUNNER_TEMP/release-assets/SBOM.json" "$input"
+          cp -- "$RUNNER_TEMP/release-bundle/SBOM.json" "$input"
           "$scanner" scan source \
             --offline-vulnerabilities \
             --download-offline-databases \
@@ -406,7 +397,7 @@ jobs:
           python scripts/osv_offline_scan.py \
             --scanner "$scanner" \
             --database-root "$cache/osv-scanner" \
-            --sbom "$RUNNER_TEMP/release-assets/SBOM.json" \
+            --sbom "$RUNNER_TEMP/release-bundle/SBOM.json" \
             --output "$RUNNER_TEMP/verification-evidence/osv-independent.json"
 
       - name: Upload public verification evidence

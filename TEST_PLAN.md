@@ -408,9 +408,9 @@ and must explain that both peers need version 0.4+ for word messages.
 The v0.3 embedded panel has a release-specific responsive matrix. At minimum,
 capture Encrypt and Decrypt states at a phone portrait viewport, phone
 landscape, and font scale 2.0 in both English and Russian. Verify the two mode
-labels, clear/close controls, ciphertext summary, **Paste and decrypt** or
-**Вставить и расшифровать**, status text, scrollable plaintext, and **Reply
-securely / Ответить защищённо** do not overlap or leave the IME viewport. In
+labels, clear/close controls, ciphertext summary, localized **Paste and
+decrypt**, status text, scrollable plaintext, and localized **Reply securely**
+do not overlap or leave the IME viewport. In
 Decrypt mode verify the ordinary keys are hidden; in Encrypt mode verify they
 return. Long plaintext must scroll without resizing the command controls. This
 visual matrix is a release QA requirement, not established by the drawing-only
@@ -540,7 +540,9 @@ aapt dump permissions CipherBoard-<version>-release.apk
 apkanalyzer manifest permissions CipherBoard-<version>-release.apk
 apksigner verify --verbose --print-certs CipherBoard-<version>-release.apk
 sha256sum CipherBoard-<version>-release.apk
-sha256sum --check RELEASE_ARTIFACTS.sha256
+python ../scripts/release_bundle.py extract --assets-dir . \
+  --output-dir ../verification-evidence --artifact CipherBoard \
+  --version <version>
 ```
 
 Also dump the complete manifest and certificate, install with `adb install`,
@@ -563,7 +565,10 @@ Checks require:
   revision in `BUILD_INFO.txt` match independent tool output;
 - `VULNERABILITY_SCAN.json` records the approved scanner/database/SBOM hashes,
   255 packages and zero findings; and
-- every staged file matches `RELEASE_ARTIFACTS.sha256` after publication.
+- the three public assets are the production APK, its `.sha256` file, and the
+  verification ZIP; and
+- every public or bundled file matches `RELEASE_ARTIFACTS.sha256` after bounded,
+  path-safe extraction.
 
 Any INTERNET occurrence, debug certificate, signature failure, plaintext test
 key, or sensitive unvalidated exported component blocks release.

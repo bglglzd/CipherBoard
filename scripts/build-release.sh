@@ -158,29 +158,26 @@ git -C "$ROOT_DIR" archive --format=tar.gz \
     --database-root "$osv_database_root" \
     --sbom "$staging_dir/SBOM.json" \
     --output "$staging_dir/VULNERABILITY_SCAN.json"
-release_manifest="$staging_dir/RELEASE_ARTIFACTS.sha256"
-for file in "$staging_dir"/*; do
-    [ "$(basename -- "$file")" = "RELEASE_ARTIFACTS.sha256" ] && continue
-    artifact_hash_line=$(sha256_file "$file")
-    artifact_hash=${artifact_hash_line%% *}
-    printf '%s  %s\n' "$artifact_hash" "$(basename -- "$file")"
-done | sort >"$release_manifest"
+public_dir="$temp_dir/public"
+mkdir -p "$public_dir"
+cp -- "$staged_apk" "$staged_apk.sha256" "$public_dir/"
+bundle="$public_dir/$artifact-$version-verification.zip"
+"$python" "$SCRIPT_DIR/release_bundle.py" create \
+    --staging-dir "$staging_dir" \
+    --output "$bundle" \
+    --artifact "$artifact" \
+    --version "$version"
 assert_clean_git_state "$source_commit"
+rm -rf -- "$ROOT_DIR/dist"
 mkdir -p "$ROOT_DIR/dist"
-published_manifest="$ROOT_DIR/dist/RELEASE_ARTIFACTS.sha256"
-rm -f -- "$published_manifest"
-for file in "$staging_dir"/*; do
-    [ "$(basename -- "$file")" = "RELEASE_ARTIFACTS.sha256" ] && continue
-    cp -- "$file" "$ROOT_DIR/dist/"
-done
-cp -- "$release_manifest" "$published_manifest"
-while read -r expected_hash artifact_name; do
-    [ -n "$expected_hash" ] && [ -n "$artifact_name" ] || die "invalid release artifact manifest"
-    actual_hash_line=$(sha256_file "$ROOT_DIR/dist/$artifact_name")
-    actual_hash=${actual_hash_line%% *}
-    [ "$actual_hash" = "$expected_hash" ] || die "published artifact hash mismatch: $artifact_name"
-done <"$published_manifest"
+cp -- "$public_dir"/* "$ROOT_DIR/dist/"
+"$python" "$SCRIPT_DIR/release_bundle.py" extract \
+    --assets-dir "$ROOT_DIR/dist" \
+    --output-dir "$temp_dir/published-evidence" \
+    --artifact "$artifact" \
+    --version "$version"
 published_hash_line=$(sha256_file "$destination")
 published_hash=${published_hash_line%% *}
 [ "$published_hash" = "$hash" ] || die "published release APK hash differs from verified staging APK"
-printf 'Release APK: %s\nSHA-256: %s\n' "$destination" "$hash"
+printf 'Release APK: %s\nSHA-256: %s\nVerification bundle: %s\n' \
+    "$destination" "$hash" "$ROOT_DIR/dist/$(basename -- "$bundle")"

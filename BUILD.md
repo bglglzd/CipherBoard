@@ -154,14 +154,16 @@ PowerShell 7:
 `dist/`, and applies the APK policy verifier. Two inherited HeliBoard regression
 tests are explicitly `@Ignore`d with issue-specific reasons; no build type
 conditionally bypasses these two tests. `build-release` additionally runs all
-module release lint tasks, Rust format/Clippy/test/audit with locked graphs, requires
-external signing material, signs with `apksigner`, and writes the APK SHA-256,
-CycloneDX `SBOM.json`, offline `VULNERABILITY_SCAN.json`,
-`RELEASE_ARTIFACTS.sha256`, `BUILD_INFO.txt`, notices, and an exact-commit GPL
-source archive. It accepts only an official OSV-Scanner v2.4.0 binary with a
-pinned SHA-256, requires fresh local Maven/crates.io databases, scans without
-network access, and fails on a finding or package-count mismatch. It rechecks
-the same clean Git HEAD before signing and publication.
+module release lint tasks, Rust format/Clippy/test/audit with locked graphs,
+requires external signing material, signs with `apksigner`, and writes exactly
+three public files to `dist/`: the production APK, its SHA-256 file, and a
+verification ZIP. The ZIP contains CycloneDX `SBOM.json`, offline
+`VULNERABILITY_SCAN.json`, `RELEASE_ARTIFACTS.sha256`, `BUILD_INFO.txt`, notices,
+licenses, and an exact-commit GPL source archive. The release process accepts
+only an official OSV-Scanner v2.4.0 binary with a pinned SHA-256, requires fresh
+local Maven/crates.io databases, scans without network access, and fails on a
+finding or package-count mismatch. It rechecks the same clean Git HEAD before
+signing and publication.
 Neither release script creates or overwrites a keystore.
 
 The APK includes complete local license/provenance texts as generated assets;
