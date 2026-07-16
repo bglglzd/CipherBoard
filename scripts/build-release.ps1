@@ -151,30 +151,30 @@ try {
             "--sbom", (Join-Path $Staging "SBOM.json"),
             "--output", (Join-Path $Staging "VULNERABILITY_SCAN.json")
         )
-        $ReleaseManifest = Join-Path $Staging "RELEASE_ARTIFACTS.sha256"
-        $ReleaseHashes = @(Get-ChildItem -LiteralPath $Staging -File | Sort-Object Name | ForEach-Object {
-            $FileHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
-            "$FileHash  $($_.Name)"
-        })
-        [IO.File]::WriteAllText($ReleaseManifest, ($ReleaseHashes -join "`n") + "`n", $Utf8NoBom)
+        $Public = Join-Path $Temp "public"
+        New-Item -ItemType Directory -Path $Public | Out-Null
+        Copy-Item -LiteralPath $StagedApk, "$StagedApk.sha256" -Destination $Public
+        $BundleName = "$Artifact-$Version-verification.zip"
+        $Bundle = Join-Path $Public $BundleName
+        Invoke-Checked $Python @(
+            (Join-Path $PSScriptRoot "release_bundle.py"), "create",
+            "--staging-dir", $Staging, "--output", $Bundle,
+            "--artifact", $Artifact, "--version", $Version
+        )
         Assert-CleanGitState $Root $SourceCommit
-        New-Item -ItemType Directory -Force -Path $Dist | Out-Null
-        $PublishedManifest = Join-Path $Dist "RELEASE_ARTIFACTS.sha256"
-        Remove-Item -LiteralPath $PublishedManifest -Force -ErrorAction SilentlyContinue
-        Get-ChildItem -LiteralPath $Staging -File | Where-Object { $_.Name -ne "RELEASE_ARTIFACTS.sha256" } | ForEach-Object {
-            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $Dist $_.Name) -Force
-        }
-        Copy-Item -LiteralPath $ReleaseManifest -Destination $PublishedManifest -Force
-        foreach ($Line in Get-Content -LiteralPath $PublishedManifest) {
-            if ($Line -notmatch '^([0-9a-f]{64})  ([^\\/]+)$') { Fail "invalid release artifact manifest" }
-            $PublishedArtifact = Join-Path $Dist $Matches[2]
-            $ActualArtifactHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $PublishedArtifact).Hash.ToLowerInvariant()
-            if ($ActualArtifactHash -ne $Matches[1]) { Fail "published artifact hash mismatch: $($Matches[2])" }
-        }
+        Remove-Item -LiteralPath $Dist -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $Dist | Out-Null
+        Copy-Item -LiteralPath $StagedApk, "$StagedApk.sha256", $Bundle -Destination $Dist
+        Invoke-Checked $Python @(
+            (Join-Path $PSScriptRoot "release_bundle.py"), "extract",
+            "--assets-dir", $Dist, "--output-dir", (Join-Path $Temp "published-evidence"),
+            "--artifact", $Artifact, "--version", $Version
+        )
         $PublishedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Destination).Hash.ToLowerInvariant()
         if ($PublishedHash -ne $Hash) { Fail "published release APK hash differs from verified staging APK" }
         Write-Output "Release APK: $Destination"
         Write-Output "SHA-256: $Hash"
+        Write-Output "Verification bundle: $(Join-Path $Dist $BundleName)"
     } finally {
         Pop-Location
     }

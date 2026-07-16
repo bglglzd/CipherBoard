@@ -328,5 +328,5 @@ jobs:
             echo "Tag: \`$RELEASE_TAG\`"
             echo "Commit: \`$RELEASE_COMMIT\`"
             echo
-            echo 'GitHub did not receive or use the production keystore. From a clean checkout of this exact tag, run the local release script, review dist, enable immutable GitHub Releases, and publish only RELEASE_ARTIFACTS.sha256 plus every file named by that manifest. The Verify published release workflow will independently check the published snapshot.'
+            echo 'GitHub did not receive or use the production keystore. From a clean checkout of this exact tag, run the local release script, review dist, enable immutable GitHub Releases, and publish exactly the production APK, its .sha256 file, and the verification bundle ZIP from dist. The Verify published release workflow will independently check the published snapshot.'
           } >>"$GITHUB_STEP_SUMMARY"

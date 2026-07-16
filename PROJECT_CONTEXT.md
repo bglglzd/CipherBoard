@@ -214,7 +214,7 @@ release.
 
 The final user-facing report must state:
 
-> Сборка реализует проверенные криптографические примитивы и прошла
-> автоматические тесты, но весь продукт не следует считать независимо
-> аудированным до проверки внешним специалистом по прикладной криптографии и
-> Android security.
+> The build uses reviewed cryptographic primitives and has passed automated
+> tests, but the complete product should not be considered independently
+> audited until it has been reviewed by an external applied-cryptography and
+> Android security specialist.

@@ -1,12 +1,10 @@
 # ADR 0002: Word presentation over canonical ciphertext
 
-- Status / Статус: accepted / принято
-- Date / Дата: 2026-07-14
-- Scope / Область: transport presentation, settings, parser limits, dictionaries
+- Status: accepted
+- Date: 2026-07-14
+- Scope: transport presentation, settings, parser limits, dictionaries
 
-## English
-
-### Context
+## Context
 
 Compact `CB1:` text is efficient and interoperable, but visibly resembles an
 encoded payload. Users requested an optional Russian- or English-word rendering
@@ -18,7 +16,7 @@ The previous Universal/SMS selector mixed a core fragmentation choice with
 transport presentation. CipherBoard is primarily used in messengers, and the
 receiver does not need a different cryptographic protocol for SMS.
 
-### Decision
+## Decision
 
 All new sends use the existing universal 16-KiB Olm-payload fragmentation and
 canonical `CB1:` envelope parts. After those exact ordered parts are built,
@@ -37,7 +35,7 @@ The preference affects future sends only. It is not stored per contact,
 included in pairing, negotiated, or required to match the receiver's preference.
 CipherBoard 0.4+ auto-detects compact, Russian-word, and English-word input.
 
-### `CBW1` format
+## `CBW1` format
 
 The word layer wraps the binary canonical CBOR bytes from every complete ordered
 `CB1` part. Before Base4096, the wrapper is:
@@ -63,7 +61,7 @@ Limits are fixed at a 48-KiB decoded wrapper, 32,768 word tokens, and 384 Ki
 UTF-16 code units at Android clipboard/selection boundaries. Exceeding any
 limit fails before Vault access or unbounded allocation.
 
-### Dictionaries and license
+## Dictionaries and license
 
 The version-1 lists are derived from `hermitdave/FrequencyWords`, commit
 `525f9b560de45753a5ea01069454e72e9aa541c6`, files
@@ -81,7 +79,7 @@ Changing a token or its order is a protocol change and requires a new word-
 presentation version. Attribution is retained in `LICENSES.md` and
 `THIRD_PARTY_NOTICES.md`.
 
-### Security consequences
+## Security consequences
 
 Olm session state, message keys, AEAD, forward secrecy, integrity, replay
 handling, and authenticated inner/outer metadata are unchanged. Word rendering
@@ -94,7 +92,7 @@ detection and reversal possible. Word output is substantially longer than
 compact `CB1`, exposes comparable transport metadata, and is more fragile under
 autocorrect, translation, truncation, substitution, or token reordering.
 
-### Alternatives rejected
+## Alternatives rejected
 
 - Natural grammar/synonym coding has low capacity, much greater expansion, and
   a larger unaudited parser/model surface.
@@ -104,49 +102,3 @@ autocorrect, translation, truncation, substitution, or token reordering.
   removed by transports.
 - Replacing `CB1` cryptography with word-based encryption would be custom crypto
   and is prohibited.
-
-## Русский
-
-### Контекст и решение
-
-Компактный `CB1:` эффективен, но внешне похож на кодированный блок. Для менее
-заметного вида в обычном мессенджере добавлено необязательное представление
-русскими или английскими словами. Это только способ записи уже готового
-шифротекста, а не изменение Olm/Double Ratchet.
-
-Все новые сообщения используют единое универсальное разбиение Olm-payload по
-16 КиБ и канонические части `CB1`. После этого локальная настройка отправителя
-выбирает компактный вид, русские слова или английские слова. Отдельный режим SMS
-удалён из интерфейса и отправки. Приём старых `CB1`, созданных прежним SMS-
-профилем, сохранён. Компактный вид совместим со старыми версиями, а для слов
-CipherBoard 0.4+ нужен обоим участникам.
-
-Настройка не привязана к контакту, не передаётся при сопряжении и не требует
-совпадения на двух устройствах: версия 0.4+ определяет вид при чтении
-автоматически.
-
-### Формат и границы
-
-`CBW1` упаковывает полный упорядоченный набор канонических `CB1`-частей. В
-начале бинарной обёртки находится 8-байтовый усечённый SHA-256, затем magic
-`CBW`, версия, алфавит, флаги, число частей, длина и сами части. Далее каждые
-12 бит выбирают одно слово из зафиксированного словаря на 4096 слов.
-Литералы `CBW1` снаружи не печатаются: первые видимые слова кодируют checksum.
-
-Checksum не содержит ключа: его можно пересчитать, поэтому он только раньше
-обнаруживает случайное повреждение и не аутентифицирует отправителя. Целостность
-и подлинность по-прежнему проверяются неизменённым Olm/AEAD после строгого
-восстановления `CB1`. Лимиты: 48 КиБ декодированной обёртки, 32 768 слов и
-384 КиБ UTF-16 code units на Android-границе.
-
-Словари получены из `hermitdave/FrequencyWords` по зафиксированному commit и
-файлам, указанным выше, с лицензией CC-BY-SA-4.0. Преобразования и точные SHA-256
-также перечислены выше; изменение порядка слов требует новой версии формата.
-
-### Ограничения безопасности
-
-Словарный вид не является естественной фразой, стеганографией или правдоподобным
-отрицанием. Наблюдатель может распознать структуру и выполнить обратное
-преобразование по публичному словарю. Такой текст значительно длиннее `CB1`, не
-скрывает участников, время и примерный размер сообщения и легче повреждается
-автозаменой, переводом, обрезанием, заменой или перестановкой слов.

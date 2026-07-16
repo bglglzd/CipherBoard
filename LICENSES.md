@@ -40,7 +40,7 @@ under the same content license; the complete text is
 [`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0).
 
 The generation process extracts the word column, keeps only already-lowercase
-alphabetic English `a-z` or Russian `а-я` words of 4--10 letters,
+alphabetic English ASCII or Russian Cyrillic words of 4--10 letters,
 deduplicates entries, removes profanity and alarming words/fragments, then
 takes a deterministic 4096-entry list in source-frequency order. These
 transformations produce codebook tokens, not natural phrases or a language

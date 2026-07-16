@@ -47,7 +47,7 @@ CC-BY-SA-4.0, whose complete text is included in
 `LICENSE-CC-BY-SA-4.0` and the offline Licenses screen.
 
 CipherBoard extracted the word column and retained only already-lowercase
-alphabetic English `a-z` or Russian `а-я` words of 4--10 letters,
+alphabetic English ASCII or Russian Cyrillic words of 4--10 letters,
 deduplicated them, removed profanity and alarming words/fragments, and selected
 4096 entries deterministically in source-frequency order. The resulting files
 and SHA-256 digests are:
