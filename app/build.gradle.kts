@@ -232,7 +232,7 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.9")
 
     // androidx
-    implementation("androidx.core:core-ktx:1.17.0") // 1.18.0 requires minSdk 23
+    implementation("androidx.core:core-ktx:1.19.0") // 1.18.0 requires minSdk 23
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.autofill:autofill:1.3.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
@@ -263,7 +263,7 @@ dependencies {
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    androidTestImplementation("androidx.concurrent:concurrent-futures-ktx:1.3.0")
     androidTestImplementation("com.google.errorprone:error_prone_annotations:2.36.0")
-    "debugImplementation"("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+    "debugImplementation"("androidx.concurrent:concurrent-futures-ktx:1.3.0")
 }
