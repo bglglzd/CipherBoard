@@ -33,6 +33,22 @@ FREQUENCY_WORD_LISTS = (
         "6163eddf094c8c426959c1bb36d95dca3d7cbe4bdecc13bd13077279b7ccc8a9",
     ),
 )
+VOICE_MODELS = (
+    (
+        "en",
+        "vosk-model-small-en-us",
+        "0.15",
+        41_205_931,
+        "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498",
+    ),
+    (
+        "ru",
+        "vosk-model-small-ru",
+        "0.22",
+        46_236_750,
+        "961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4",
+    ),
+)
 
 
 def run(command: list[str], cwd: pathlib.Path) -> str:
@@ -75,6 +91,8 @@ def normalize_license(name: str) -> str:
         return "BSD-3-Clause"
     if "eclipse public" in lowered or "epl" in lowered:
         return "EPL-1.0"
+    if ("lesser general public" in lowered or "lgpl" in lowered) and "2.1" in lowered:
+        return "LGPL-2.1-or-later"
     return name.strip()
 
 
@@ -107,7 +125,7 @@ def pom_license(group: str, artifact: str, version: str) -> str | None:
 
 
 def known_gradle_license(group: str, artifact: str) -> str | None:
-    if group.startswith("androidx.") or group.startswith("org.jetbrains."):
+    if group.startswith("androidx.") or group == "org.jetbrains" or group.startswith("org.jetbrains."):
         return "Apache-2.0"
     if group.startswith("org.jetbrainsx.") or group.startswith("org.jetbrains.kotlinx"):
         return "Apache-2.0"
@@ -266,6 +284,44 @@ def frequency_words_component(root: pathlib.Path) -> dict[str, object]:
     }
 
 
+def voice_model_components(apk: pathlib.Path) -> list[dict[str, object]]:
+    components: list[dict[str, object]] = []
+    with zipfile.ZipFile(apk) as archive:
+        names = set(archive.namelist())
+        for language, name, version, archive_bytes, expected_hash in VOICE_MODELS:
+            asset_root = f"assets/voice_models/{language}"
+            marker_path = f"{asset_root}/.cipherboard-model-sha256"
+            for required in (marker_path, f"{asset_root}/am/final.mdl", f"{asset_root}/conf/model.conf"):
+                if required not in names:
+                    raise RuntimeError(f"APK is missing offline voice model asset: {required}")
+            marker = archive.read(marker_path).decode("ascii").strip()
+            if marker != expected_hash:
+                raise RuntimeError(f"APK offline voice model hash marker mismatch: {language}")
+            purl = f"pkg:generic/alphacephei/{name}@{version}"
+            components.append(
+                {
+                    "type": "data",
+                    "group": "alphacephei",
+                    "name": name,
+                    "version": version,
+                    "bom-ref": purl,
+                    "purl": purl,
+                    "scope": "required",
+                    "licenses": [{"expression": "Apache-2.0"}],
+                    "externalReferences": [
+                        {"type": "distribution", "url": "https://alphacephei.com/vosk/models"}
+                    ],
+                    "properties": [
+                        {"name": "cipherboard:language", "value": language},
+                        {"name": "cipherboard:sourceArchiveBytes", "value": str(archive_bytes)},
+                        {"name": "cipherboard:sourceArchiveSha256", "value": expected_hash},
+                        {"name": "cipherboard:packagedAssetRoot", "value": asset_root},
+                    ],
+                }
+            )
+    return components
+
+
 def generate_sbom(
     root: pathlib.Path,
     output: pathlib.Path,
@@ -275,7 +331,12 @@ def generate_sbom(
     product_name: str,
     apk: pathlib.Path,
 ) -> None:
-    components = gradle_components(root) + cargo_components(root) + [frequency_words_component(root)]
+    components = (
+        gradle_components(root)
+        + cargo_components(root)
+        + [frequency_words_component(root)]
+        + voice_model_components(apk)
+    )
     seen: set[str] = set()
     unique = []
     for component in components:

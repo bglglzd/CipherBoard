@@ -1,6 +1,12 @@
 import com.android.build.api.variant.ApplicationVariant
 import com.android.build.api.artifact.SingleArtifact
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URI
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
 
 val cipherboardApplicationId = providers.gradleProperty("cipherboard.applicationId").get()
 val cipherboardProductName = providers.gradleProperty("cipherboard.productName").get()
@@ -9,6 +15,143 @@ val cipherboardVersionName = providers.gradleProperty("cipherboard.versionName")
 val cipherboardArtifactName = providers.gradleProperty("cipherboard.artifactName").get()
 val cipherboardBuildToolsVersion = providers.gradleProperty("cipherboard.buildToolsVersion").get()
 val generatedLicenseAssets = layout.buildDirectory.dir("generated/cipherboardLicenseAssets")
+val generatedVoiceModelAssets = layout.buildDirectory.dir("generated/cipherboardVoiceModelAssets")
+val voiceModelCache = rootProject.layout.projectDirectory.dir(".gradle/cipherboard-voice-models")
+data class VoiceModelSpec(
+    val language: String,
+    val archiveRoot: String,
+    val url: String,
+    val archiveBytes: Long,
+    val sha256: String,
+)
+val voiceModels = listOf(
+    VoiceModelSpec(
+        language = "en",
+        archiveRoot = "vosk-model-small-en-us-0.15",
+        url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+        archiveBytes = 41_205_931,
+        sha256 = "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498",
+    ),
+    VoiceModelSpec(
+        language = "ru",
+        archiveRoot = "vosk-model-small-ru-0.22",
+        url = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip",
+        archiveBytes = 46_236_750,
+        sha256 = "961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4",
+    ),
+)
+
+fun File.sha256(): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    inputStream().buffered().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+val prepareVoiceModelAssets by tasks.registering {
+    group = "build setup"
+    description = "Downloads checksum-pinned Vosk models and packages them as offline assets."
+    inputs.property("voiceModels", voiceModels.joinToString("|") { "${it.language}:${it.sha256}" })
+    outputs.dir(generatedVoiceModelAssets)
+    doLast {
+        val cacheDirectory = voiceModelCache.asFile.apply { mkdirs() }
+        val outputDirectory = generatedVoiceModelAssets.get().asFile
+        project.delete(outputDirectory)
+        outputDirectory.mkdirs()
+
+        voiceModels.forEach { spec ->
+            val archive = File(cacheDirectory, "${spec.archiveRoot}.zip")
+            fun archiveIsTrusted() = archive.isFile
+                    && archive.length() == spec.archiveBytes
+                    && archive.sha256() == spec.sha256
+            if (!archiveIsTrusted()) {
+                val temporary = File(cacheDirectory, "${spec.archiveRoot}.zip.part")
+                temporary.delete()
+                try {
+                    URI(spec.url).toURL().openStream().buffered().use { input ->
+                        temporary.outputStream().buffered().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var downloadedBytes = 0L
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                check(downloadedBytes + read <= spec.archiveBytes) {
+                                    "Offline voice model exceeds the pinned archive size"
+                                }
+                                output.write(buffer, 0, read)
+                                downloadedBytes += read
+                            }
+                        }
+                    }
+                    check(temporary.length() == spec.archiveBytes && temporary.sha256() == spec.sha256) {
+                        "Offline voice model failed checksum verification: ${spec.archiveRoot}"
+                    }
+                    try {
+                        Files.move(
+                            temporary.toPath(), archive.toPath(),
+                            StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    } catch (_: AtomicMoveNotSupportedException) {
+                        Files.move(temporary.toPath(), archive.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    }
+                } catch (failure: Exception) {
+                    temporary.delete()
+                    throw failure
+                }
+            }
+
+            val modelOutput = File(outputDirectory, "voice_models/${spec.language}")
+            modelOutput.mkdirs()
+            var entryCount = 0
+            var expandedBytes = 0L
+            ZipInputStream(archive.inputStream().buffered()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    entryCount += 1
+                    check(entryCount <= 64) { "Offline voice model archive has too many entries" }
+                    val prefix = "${spec.archiveRoot}/"
+                    check(entry.name == spec.archiveRoot || entry.name.startsWith(prefix)) {
+                        "Offline voice model archive has an unexpected root"
+                    }
+                    val relativeName = entry.name.removePrefix(prefix)
+                    if (relativeName.isNotEmpty()) {
+                        val destination = File(modelOutput, relativeName).canonicalFile
+                        check(destination.toPath().startsWith(modelOutput.canonicalFile.toPath())) {
+                            "Offline voice model archive contains an unsafe path"
+                        }
+                        if (entry.isDirectory) {
+                            destination.mkdirs()
+                        } else {
+                            destination.parentFile.mkdirs()
+                            destination.outputStream().buffered().use { output ->
+                                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                                while (true) {
+                                    val read = zip.read(buffer)
+                                    if (read < 0) break
+                                    check(expandedBytes + read <= 250L * 1024L * 1024L) {
+                                        "Offline voice model exceeds the expanded-size limit"
+                                    }
+                                    output.write(buffer, 0, read)
+                                    expandedBytes += read
+                                }
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+            check(File(modelOutput, "am/final.mdl").isFile)
+            check(File(modelOutput, "conf/model.conf").isFile)
+            File(modelOutput, ".cipherboard-model-sha256").writeText(spec.sha256, Charsets.US_ASCII)
+        }
+    }
+}
 val prepareLicenseAssets by tasks.registering(Sync::class) {
     from(rootProject.files(
         "LICENSE",
@@ -136,6 +279,7 @@ android {
     }
 
     sourceSets.getByName("main").assets.srcDir(generatedLicenseAssets)
+    sourceSets.getByName("main").assets.srcDir(generatedVoiceModelAssets)
 
     externalNativeBuild {
         ndkBuild {
@@ -182,7 +326,10 @@ android {
     }
 }
 
-tasks.named("preBuild").configure { dependsOn(prepareLicenseAssets) }
+tasks.named("preBuild").configure {
+    dependsOn(prepareLicenseAssets)
+    dependsOn(prepareVoiceModelAssets)
+}
 
 androidComponents {
     onVariants(selector().all()) { variant ->
@@ -239,6 +386,9 @@ dependencies {
 
     // kotlin
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+
+    // Offline speech recognition. The Russian and English models are packaged as APK assets.
+    implementation("com.alphacephei:vosk-android:0.3.75")
 
     // compose
     // newer than 2025.11.01 contains androidx.compose.material:material-android:1.10.0, which requires minSdk 23

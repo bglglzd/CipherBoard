@@ -37,8 +37,25 @@ try {
     $DexPackages = Join-Path $Temp "dex-packages.txt"
     & $ApkAnalyzer dex packages $Apk 2>&1 | Set-Content -LiteralPath $DexPackages
     if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer DEX package scan failed" }
-    if (Select-String -LiteralPath $DexPackages -SimpleMatch "java.lang.System void load(java.lang.String)" -Quiet) {
-        Fail "arbitrary-path native code loading reference found in DEX"
+    $PathLoadTree = Join-Path $Temp "path-native-load-tree.txt"
+    & $ApkAnalyzer dex reference-tree --references-to `
+        "java.lang.System void load(java.lang.String)" $Apk 2>&1 | Set-Content -LiteralPath $PathLoadTree
+    if ($LASTEXITCODE -ne 0) { Fail "apkanalyzer native path-load reference scan failed" }
+    $AllowedPathLoadCallers = @(
+        "com.sun.jna.Native void <clinit>()",
+        "com.sun.jna.Native void loadNativeDispatchLibrary()",
+        "com.sun.jna.Native void loadNativeDispatchLibraryFromClasspath()",
+        "helium314.keyboard.latin.utils.JniUtils void <clinit>()"
+    )
+    $PathLoadCallers = Get-Content -LiteralPath $PathLoadTree | Select-Object -Skip 1 | ForEach-Object {
+        $_.Trim()
+    } | Where-Object { $_ } | Sort-Object -Unique
+    $UnexpectedPathLoadCallers = @($PathLoadCallers | Where-Object { $_ -notin $AllowedPathLoadCallers })
+    if ($UnexpectedPathLoadCallers.Count -ne 0) {
+        Fail "unapproved arbitrary-path native loader found in DEX"
+    }
+    if ("helium314.keyboard.latin.utils.JniUtils void <clinit>()" -notin $PathLoadCallers) {
+        Fail "verified gesture native loader is missing from DEX"
     }
 
     $Forbidden = @(

@@ -20,6 +20,7 @@ def valid_manifest(extra_component: str = "", application_attributes: str = "") 
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="{ANDROID_NS}" package="org.cipherboard.securekeyboard">
   <uses-permission android:name="android.permission.CAMERA" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
   <application android:allowBackup="false" android:usesCleartextTraffic="false"
       android:fullBackupContent="@xml/backup_rules"
       android:dataExtractionRules="@xml/data_extraction_rules"
@@ -136,6 +137,13 @@ class ManifestPolicyTest(unittest.TestCase):
             "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\" />",
         )
         self.assertTrue(any("unreviewed permissions" in error for error in self.check(xml)))
+
+    def test_offline_voice_microphone_permission_is_required(self) -> None:
+        xml = valid_manifest().replace(
+            '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+            "",
+        )
+        self.assertTrue(any("offline voice input requires" in error for error in self.check(xml)))
 
     def test_identity_and_security_resource_mismatches_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

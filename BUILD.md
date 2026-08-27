@@ -4,7 +4,8 @@ CipherBoard is built from source as an Android application with Kotlin/Java,
 the inherited HeliBoard C++ dictionary engine, and a Rust JNI crypto library.
 Runtime operation is offline and the release manifest must not request
 `android.permission.INTERNET`. Network access may be needed only to populate
-development dependency caches.
+development dependency caches and the checksum-pinned Vosk model cache used to
+assemble APK assets.
 
 ## Pinned Build Baseline
 
@@ -21,6 +22,8 @@ development dependency caches.
 | Rust used for verified JNI work | 1.94.0 |
 | cargo-ndk used for verified JNI work | 4.1.2 |
 | vodozemac | 0.10.0, locked |
+| Vosk Android / JNA | 0.3.75 / 5.18.1, locked |
+| Offline voice models | `vosk-model-small-en-us-0.15`, `vosk-model-small-ru-0.22`; size and SHA-256 pinned |
 | Android ABIs | release `arm64-v8a`; debug/test `arm64-v8a`, `x86_64` |
 
 The Gradle product identity is centralized in `gradle.properties`:
@@ -28,8 +31,8 @@ The Gradle product identity is centralized in `gradle.properties`:
 ```text
 cipherboard.applicationId=org.cipherboard.securekeyboard
 cipherboard.productName=CipherBoard
-cipherboard.versionCode=40002
-cipherboard.versionName=0.4.2
+cipherboard.versionCode=50000
+cipherboard.versionName=0.5.0
 cipherboard.artifactName=CipherBoard
 ```
 
@@ -78,6 +81,12 @@ Studio runtime can be used when it includes `javac`.
 
 Do not refresh locks incidentally during an unrelated change. Review both the
 lockfile diff and regenerated SBOM before accepting an upgrade.
+
+- The English and Russian Vosk archives are downloaded only by the build. The
+  build accepts the exact expected byte size and SHA-256, safely expands the
+  single expected archive root, and writes generated APK assets. Trusted
+  archives are cached under `.gradle/cipherboard-voice-models`; a release can be
+  assembled offline once dependencies and those exact archives are cached.
 
 After dependencies have been cached, Gradle may be tested with `--offline`.
 This does not change the requirement that the installed application has no
@@ -131,6 +140,11 @@ The Android library build invokes cargo-ndk for both supported ABIs and
 packages only `libcipherboard_crypto_jni.so`; generated native libraries remain
 under `build/` and are not committed.
 
+The optional proprietary gesture-typing library is not packaged in the APK or
+source archive. A user may select it locally after installation; CipherBoard
+accepts only the ABI-specific SHA-256 values pinned in
+`GestureLibraryInstaller.kt` and revalidates the private copy before loading it.
+
 ## Convenience Scripts
 
 Unix-like shell:
@@ -176,7 +190,8 @@ The verifier requires `aapt`, `apkanalyzer`, `apksigner`, `zipalign` and
 Python 3. It fails closed on:
 
 - forbidden network, contacts, SMS, overlay, package-query or accessibility
-  permissions;
+  permissions, or a missing `RECORD_AUDIO` permission required by the reviewed
+  embedded offline-voice feature;
 - `allowBackup` or cleartext traffic, and release `debuggable`/`testOnly`;
 - unapproved exported components or network deep links;
 - Firebase, Google Play Services, analytics, crash-reporting, advertising,
@@ -190,7 +205,7 @@ native hardening, and source review.
 
 ## Current Status
 
-On the current 2026-07-14 worktree, the complete app/library debug unit tasks and
+On the current 2026-08-27 worktree, the complete app/library debug unit tasks and
 release lint gates for all four modules pass after the API 23 compatibility
 fixes. The Rust native suite reports 43 passing tests and the narrow JNI crate
 reports 3; Rust format, Clippy and dependency audit gates also pass. These

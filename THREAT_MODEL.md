@@ -1,6 +1,6 @@
 # CipherBoard Threat Model
 
-**Status:** design-time threat model, 2026-07-14
+**Status:** design-time threat model, reviewed 2026-08-27
 **Scope:** CipherBoard v1: one-to-one offline pairing and encrypted text
 transport through untrusted applications  
 **Assurance:** no independent product security audit has been performed
@@ -105,7 +105,11 @@ CipherBoard relies on:
 The external input field, `InputConnection`, clipboard, SMS/messenger/email
 application, network, carrier, messenger service, cloud backup, and message
 recipient account are outside the trusted boundary. Camera input and selected
-text received through Android intents are attacker-controlled inputs.
+text received through Android intents are attacker-controlled inputs. Ordinary
+voice recognition stays inside CipherBoard through packaged Vosk/JNA code and
+checksum-pinned Russian and English acoustic models. Those third-party native
+components therefore belong to the IME process trust boundary and require
+dependency, license, SBOM, and APK review.
 
 Rust/JNI or UniFFI is also a trust boundary. Its API must be narrow, length
 checked, fail closed, and avoid representing secret keys as Kotlin `String`
@@ -443,7 +447,12 @@ not guaranteed RAM erasure. The UI and documentation must not claim otherwise.
 ## 14. Logs, Diagnostics, and Supply Chain
 
 The reviewed source declares no remote analytics, crash reporting, advertising,
-dynamic code loading, or WebView. The newly added secure paths do not contain
+unverified dynamic code loading, or WebView. The one optional native-code
+exception is the local gesture-typing importer: it accepts only an ABI-specific,
+compile-time-pinned SHA-256 and revalidates the app-private file before every
+load. This prevents arbitrary-library selection but does not make the accepted
+proprietary library auditable; enabling it expands the IME/Vault process trust
+boundary and the UI must say so. The newly added secure paths do not contain
 content-bearing log calls, and user errors are mapped to fixed messages. This
 passed source and APK-marker policy on a pre-public local signed candidate, but
 has not yet been demonstrated by a physical runtime leakage/sentinel campaign;
@@ -453,10 +462,15 @@ Safety Numbers, and contact names must never enter diagnostics. Stack traces
 must not be shown to users.
 
 The final manifest must contain no Internet, network-state, contacts, SMS,
-package-query, overlay, or Accessibility-service permission. Camera is requested
-only when the user explicitly starts local QR scanning. GrapheneOS Network
-denial is defense in depth and not a substitute for removing network permission
-and network-capable dependencies.
+package-query, overlay, or Accessibility-service permission. Camera is
+requested only when the user explicitly starts local QR scanning.
+`RECORD_AUDIO` is the only voice permission: it is requested just in time after
+an ordinary-field microphone tap, used by the local Vosk recognizer, and is not
+available in email/password fields or any CipherBoard editor. Audio and partial
+hypotheses are not written to storage or logs, recognition stops after a second
+tap or 60 seconds, and all language models are already in the APK. GrapheneOS
+Network denial is defense in depth and not a substitute for removing network
+permission and network-capable dependencies.
 
 CipherBoard also does not request `REQUEST_INSTALL_PACKAGES` and has no in-app
 update client. Update discovery/download belongs to an external installer such

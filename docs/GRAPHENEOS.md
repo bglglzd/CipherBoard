@@ -22,8 +22,9 @@ stable updates without granting CipherBoard network access.
    releases.
 5. In **Settings > Apps > CipherBoard**, deny **Network** as defense in depth.
    Deny **Sensors** when exposed and unnecessary. Grant **Camera** only when you
-   deliberately start local QR scanning. Do not grant Contacts, SMS, or storage
-   access.
+   deliberately start local QR scanning. Grant **Microphone** only when you use
+   the packaged offline voice recognizer; it can be revoked afterward without
+   affecting ordinary typing. Do not grant Contacts, SMS, or storage access.
 
 Keep the bootloader locked and use a strong device PIN or password. Avoid
 untrusted Accessibility services because they can weaken the confidentiality
@@ -53,6 +54,10 @@ use Obtainium as an external installer:
 5. Check that the selected asset is the single production APK named
    `CipherBoard-<version>-release.apk`, then install the update over the current
    version.
+6. Enable Obtainium's scheduled background checks and update notifications. If
+   the device and installer policy allow unattended installation, enable that
+   option there; otherwise Android will require confirmation when an update is
+   ready.
 
 Android may require confirmation for the first installation or an update. This
 depends on the Android version, system policy, and whether Obtainium is the

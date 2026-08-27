@@ -112,7 +112,7 @@
     <string name="button_restore">Загрузить</string>
     <string name="secondary_locale">Многоязычный набор текста</string>
     <string name="load_gesture_library">Загрузить библиотеку ввода жестами</string>
-    <string name="load_gesture_library_summary">Предоставьте встроенную библиотеку для обеспечения поддержки ввода с помощью жестов</string>
+    <string name="load_gesture_library_summary">Установить выбранную локально библиотеку с обязательной проверкой контрольной суммы</string>
     <string name="more_keys_strip_description">Больше клавиш</string>
     <string name="incognito">Включить режим инкогнито</string>
     <string name="prefs_force_incognito_mode_summary">Отключить запоминание новых слов</string>
@@ -187,6 +187,15 @@
     <string name="internal_dictionary_summary">Внутренний основной словарь</string>
     <string name="main_colors">Показывать только основные цвета</string>
     <string name="voice" tools:keep="@string/voice">Голосовой ввод</string>
+    <string name="offline_voice_preparing">Подготовка офлайн-модели распознавания…</string>
+    <string name="offline_voice_listening">Слушаю офлайн — нажмите микрофон ещё раз, чтобы закончить</string>
+    <string name="offline_voice_processing">Завершаю офлайн-распознавание…</string>
+    <string name="offline_voice_inserted">Распознанный офлайн текст вставлен</string>
+    <string name="offline_voice_no_speech">Речь не распознана</string>
+    <string name="offline_voice_cancelled">Голосовой ввод отменён</string>
+    <string name="offline_voice_permission_denied">Для локального голосового ввода нужен доступ к микрофону</string>
+    <string name="offline_voice_model_error">Не удалось загрузить встроенную офлайн-модель</string>
+    <string name="offline_voice_microphone_error">Не удалось включить микрофон</string>
     <string name="theme_name_dynamic" tools:keep="@string/theme_name_dynamic">Динамические цвета</string>
     <string name="show_popup_hints">Показать функциональные подсказки</string>
     <string name="message_add_custom_layout">Выберите файл в поддерживаемом формате. Информация о форматах доступна по адресу %s.</string>
@@ -204,10 +213,15 @@
     <string name="language_and_layouts_title">Языки и раскладки</string>
     <string name="hidden_features_text">защищённое хранилище устройства</string>
     <string name="theme_name_forest" tools:keep="@string/theme_name_forest">Лес</string>
-    <string name="load_gesture_library_message">Вам потребуется библиотека для \"%s\". Несовместимые библиотеки могут приводить к аварийному завершению работы при вводе с помощью жестов. \n\nВнимание: загрузка внешнего кода может представлять угрозу безопасности. Используйте библиотеки только из надёжных источников.</string>
+    <string name="load_gesture_library_message">Выберите libjni_latinimegoogle.so для «%s». CipherBoard примет только известный совместимый файл с закреплённым SHA-256.\n\nЭта проприетарная библиотека выполняется внутри процесса клавиатуры и потенциально может получить доступ к обычному и приватному вводу. Устанавливайте её, только если принимаете этот риск.</string>
     <string name="load_gesture_library_button_delete">Удалить</string>
     <string name="localized_number_row_summary">Предпочитать локализованные числа вместо латинских</string>
-    <string name="checksum_mismatch_message">Неизвестный файл библиотеки. Вы уверены, что получили это из надёжного источника и оно предназначено для \"%s\"?</string>
+    <string name="checksum_mismatch_message">Библиотека отклонена: её SHA-256 не совпадает с доверенным файлом для этого устройства.</string>
+    <string name="gesture_library_installed">Проверенная библиотека установлена. Настройки непрерывного ввода доступны.</string>
+    <string name="gesture_library_unsupported_abi">Непрерывный ввод недоступен для архитектуры этого устройства.</string>
+    <string name="gesture_library_file_too_large">Библиотека отклонена: выбранный файл имеет неожиданно большой размер.</string>
+    <string name="gesture_library_import_error">Не удалось безопасно скопировать выбранную библиотеку.</string>
+    <string name="gesture_library_delete_error">Не удалось удалить установленную библиотеку ввода жестами.</string>
     <string name="theme_name_blue_gray" tools:keep="@string/theme_name_blue_gray">Серо-голубой</string>
     <string name="user_dict_add_word_button">Добавить слово</string>
     <string name="select_color_suggestion">Текст в строке подсказок</string>

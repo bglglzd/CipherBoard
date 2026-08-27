@@ -4,6 +4,33 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.5.0] - 2026-08-27
+
+### Added
+
+- Optional Russian and English gesture typing through **Settings → Advanced →
+  Load gesture typing library**. The compatible library stays outside the APK
+  and is loaded locally after installation.
+- Fully offline Russian and English voice typing from the toolbar microphone.
+  CipherBoard now packages checksum-pinned Vosk models, selects one from the
+  active layout, requests microphone access only after the first tap, and stops
+  on a second tap or after 60 seconds. Audio is processed in memory and is not
+  saved or handed to another app.
+
+### Security Notes
+
+- Gesture-library import has no trust override: CipherBoard accepts only the
+  ABI-specific SHA-256 values pinned in source, copies the file into private
+  read-only storage, and revalidates it before every load. Enabling the optional
+  proprietary library still expands the code trusted with keyboard and private
+  input; the confirmation dialog states that risk.
+- Voice typing adds the narrowly scoped `RECORD_AUDIO` runtime permission but
+  no Internet or network-state permission. The build pins Vosk/JNA dependencies
+  and exact model sizes/hashes; APK/source policy requires the microphone
+  permission while continuing to reject every network permission and runtime
+  networking surface. Voice remains blocked in passwords, email fields, and
+  all CipherBoard-owned editors.
+
 ## [0.4.2] - 2026-07-14
 
 ### Fixed
@@ -242,6 +269,7 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.5.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.5.0
 [0.4.2]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.2
 [0.4.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.1
 [0.4.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.0

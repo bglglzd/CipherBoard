@@ -18,6 +18,12 @@ SPEC.loader.exec_module(release_metadata)
 
 
 class ReleaseMetadataTest(unittest.TestCase):
+    def test_jetbrains_annotations_without_cached_pom_has_reviewed_license(self) -> None:
+        self.assertEqual(
+            "Apache-2.0",
+            release_metadata.known_gradle_license("org.jetbrains", "annotations"),
+        )
+
     def test_property_must_be_unique_and_nonempty(self) -> None:
         self.assertEqual("value", release_metadata.require_property("key=value\n", "key"))
         with self.assertRaises(RuntimeError):
@@ -67,7 +73,7 @@ class ReleaseMetadataTest(unittest.TestCase):
             }
             with mock.patch.object(release_metadata, "gradle_components", return_value=[component]), mock.patch.object(
                 release_metadata, "cargo_components", return_value=[]
-            ):
+            ), mock.patch.object(release_metadata, "voice_model_components", return_value=[]):
                 release_metadata.generate_sbom(
                     ROOT,
                     output,
@@ -116,6 +122,31 @@ class ReleaseMetadataTest(unittest.TestCase):
             properties["cipherboard:russianWordListSha256"],
         )
 
+    def test_voice_model_components_require_pinned_packaged_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            apk = pathlib.Path(directory) / "voice.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for language, _name, _version, _bytes, digest in release_metadata.VOICE_MODELS:
+                    root = f"assets/voice_models/{language}"
+                    archive.writestr(f"{root}/.cipherboard-model-sha256", digest)
+                    archive.writestr(f"{root}/am/final.mdl", b"model")
+                    archive.writestr(f"{root}/conf/model.conf", b"config")
+
+            components = release_metadata.voice_model_components(apk)
+            self.assertEqual(2, len(components))
+            self.assertEqual({"Apache-2.0"}, {item["licenses"][0]["expression"] for item in components})
+            self.assertEqual(
+                {item[4] for item in release_metadata.VOICE_MODELS},
+                {
+                    next(
+                        prop["value"]
+                        for prop in component["properties"]
+                        if prop["name"] == "cipherboard:sourceArchiveSha256"
+                    )
+                    for component in components
+                },
+            )
+
     def test_sbom_rejects_dependency_without_reviewed_license(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "SBOM.json"
@@ -130,7 +161,7 @@ class ReleaseMetadataTest(unittest.TestCase):
             }
             with mock.patch.object(release_metadata, "gradle_components", return_value=[component]), mock.patch.object(
                 release_metadata, "cargo_components", return_value=[]
-            ):
+            ), mock.patch.object(release_metadata, "voice_model_components", return_value=[]):
                 with self.assertRaises(RuntimeError):
                     release_metadata.generate_sbom(
                         ROOT,
