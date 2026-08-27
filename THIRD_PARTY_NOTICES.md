@@ -72,6 +72,20 @@ portions. CameraX artifacts declare Apache-2.0 and BSD-3-Clause license metadata
 Exact direct versions are recorded in `LICENSES.md`; the resolved Gradle graph
 must be captured in the release SBOM.
 
+## Vosk Offline Speech Recognition
+
+CipherBoard uses `vosk-android 0.3.75` and its JNA 5.18.1 dependency for local
+speech recognition. It packages `vosk-model-small-en-us-0.15` and
+`vosk-model-small-ru-0.22`; their exact archive sizes and SHA-256 values are
+recorded in `LICENSES.md`. Runtime recognition, model access, and microphone
+capture occur locally without a network permission or cloud service.
+
+Vosk and the two packaged models are published under Apache License 2.0. JNA is
+offered under Apache License 2.0 or LGPL 2.1-or-later; CipherBoard relies on the
+Apache-2.0 option for this distribution. The complete Apache 2.0 text is
+included in `LICENSE-Apache-2.0`. Project names are used only for attribution
+and do not imply endorsement of CipherBoard.
+
 ## Dalek Cryptography BSD Notices
 
 The following locked crates are BSD-3-Clause licensed:

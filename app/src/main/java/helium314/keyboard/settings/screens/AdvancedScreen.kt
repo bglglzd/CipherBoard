@@ -31,6 +31,7 @@ import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.latin.utils.NextScreenIcon
 import helium314.keyboard.settings.SettingsContainer
 import helium314.keyboard.settings.preferences.ListPreference
+import helium314.keyboard.settings.preferences.LoadGestureLibPreference
 import helium314.keyboard.settings.SettingsWithoutKey
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.preferences.Preference
@@ -82,6 +83,7 @@ fun AdvancedSettingsScreen(
         Settings.PREF_TIMESTAMP_FORMAT,
         if (BuildConfig.DEBUG || prefs.getBoolean(DebugSettings.PREF_SHOW_DEBUG_SETTINGS, Defaults.PREF_SHOW_DEBUG_SETTINGS))
             SettingsWithoutKey.DEBUG_SETTINGS else null,
+        if (BuildConfig.BUILD_TYPE != "nouserlib") SettingsWithoutKey.LOAD_GESTURE_LIB else null,
         R.string.settings_category_experimental,
         Settings.PREF_EMOJI_MAX_SDK,
         Settings.PREF_URL_DETECTION,
@@ -226,6 +228,14 @@ fun createAdvancedSettings(context: Context) = listOf(
             name = it.title,
             onClick = { SettingsDestination.navigateTo(SettingsDestination.Debug) }
         ) { NextScreenIcon() }
+    },
+    Setting(
+        context,
+        SettingsWithoutKey.LOAD_GESTURE_LIB,
+        R.string.load_gesture_library,
+        R.string.load_gesture_library_summary,
+    ) {
+        LoadGestureLibPreference(it)
     },
     Setting(context, Settings.PREF_EMOJI_MAX_SDK, R.string.prefs_key_emoji_max_sdk) { setting ->
         val ctx = LocalContext.current

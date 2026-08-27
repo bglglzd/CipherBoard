@@ -249,12 +249,16 @@
     <!-- Preferences item for loading an external gesture typing library -->
     <string name="load_gesture_library">Load gesture typing library</string>
     <!-- Description for "load_gesture_library" option -->
-    <string name="load_gesture_library_summary">Provide a native library to enable gesture typing</string>
+    <string name="load_gesture_library_summary">Install a locally selected, checksum-verified library to enable gesture typing</string>
     <!-- Message in load gesture library dialog -->
-    <string name="load_gesture_library_message">You will need the library for \'%s\'. Incompatible libraries may crash when using gesture typing.
-        \n\nWarning: loading external code can be a security risk. Only use a library from a source you trust.</string>
+    <string name="load_gesture_library_message">Select libjni_latinimegoogle.so for \'%s\'. CipherBoard accepts only the known compatible file with its pinned SHA-256.\n\nThis proprietary library runs inside the keyboard process and can potentially access typed and private data. Install it only if you accept that risk.</string>
     <!-- Message when the library checksum doesn't match -->
-    <string name="checksum_mismatch_message">Unknown library file. Are you sure you got it from a trusted source and it is for \'%s\'?</string>
+    <string name="checksum_mismatch_message">Library rejected: its SHA-256 does not match the trusted file for this device.</string>
+    <string name="gesture_library_installed">Verified gesture library installed. Gesture typing settings are available.</string>
+    <string name="gesture_library_unsupported_abi">Gesture typing is not available for this device architecture.</string>
+    <string name="gesture_library_file_too_large">Library rejected: the selected file is unexpectedly large.</string>
+    <string name="gesture_library_import_error">Could not securely copy the selected library.</string>
+    <string name="gesture_library_delete_error">Could not remove the installed gesture library.</string>
     <!-- Button text for loading gesture library -->
     <string name="load_gesture_library_button_load">Load library</string>
     <!-- Button text for deleting gesture library -->
@@ -350,6 +354,15 @@
     <string name="clipboard" tools:keep="@string/clipboard">Clipboard</string>
     <string name="clear_clipboard" tools:keep="@string/clear_clipboard">Clear clipboard</string>
     <string name="voice" tools:keep="@string/voice">Voice input</string>
+    <string name="offline_voice_preparing">Preparing the offline voice model…</string>
+    <string name="offline_voice_listening">Listening offline — tap the microphone again to finish</string>
+    <string name="offline_voice_processing">Finishing offline recognition…</string>
+    <string name="offline_voice_inserted">Offline voice text inserted</string>
+    <string name="offline_voice_no_speech">No speech recognized</string>
+    <string name="offline_voice_cancelled">Offline voice input cancelled</string>
+    <string name="offline_voice_permission_denied">Microphone permission is required for local voice input</string>
+    <string name="offline_voice_model_error">The packaged offline voice model could not be loaded</string>
+    <string name="offline_voice_microphone_error">The microphone could not be started</string>
     <string name="numpad" tools:keep="@string/numpad" translatable="false">@string/layout_numpad</string>
     <string name="settings" tools:keep="@string/settings">Settings</string>
     <string name="select_all" tools:keep="@string/select_all" translatable="false">@android:string/selectAll</string>

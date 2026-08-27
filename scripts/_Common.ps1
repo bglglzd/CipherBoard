@@ -48,6 +48,25 @@ function Get-SdkTool([string]$Base) {
     Fail "Android SDK tool not found: $Base"
 }
 
+function Get-Python3 {
+    $candidates = @(
+        Get-Command python3, python -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandType -eq [System.Management.Automation.CommandTypes]::Application } |
+            Select-Object -ExpandProperty Source -Unique |
+            Sort-Object { if ($_ -match '[\\/]Scripts[\\/]python(?:3)?\.exe$') { 1 } else { 0 } }
+    )
+    foreach ($candidate in $candidates) {
+        # Windows Store app-execution aliases can virtualize LocalAppData. Release checks must
+        # see the real signing/tool caches, so only use a normal Python installation on Windows.
+        if ($IsWindows -and $candidate -match '[\\/]Microsoft[\\/]WindowsApps[\\/]') { continue }
+        $major = & $candidate -c "import sys; print(sys.version_info.major)" 2>$null
+        if ($LASTEXITCODE -eq 0 -and "$major".Trim() -eq "3") {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    Fail "a non-WindowsApps Python 3 installation is required"
+}
+
 function Invoke-Checked([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) { Fail "command failed ($LASTEXITCODE): $Command" }

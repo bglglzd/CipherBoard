@@ -13,9 +13,13 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WRITE_USER_DICTIONARY" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.microphone"
         android:required="false" />
 
     <application android:label="@string/english_ime_name"
@@ -182,6 +186,13 @@ SPDX-License-Identifier: Apache-2.0 AND GPL-3.0-only
         <activity android:name="helium314.keyboard.keyboard.emoji.EmojiSearchActivity" android:exported="false"
             android:theme="@style/TransparentActivityTheme" android:excludeFromRecents="true" android:noHistory="true"
             android:windowSoftInputMode="adjustResize|stateAlwaysVisible" android:configChanges="orientation|screenSize"/>
+
+        <activity
+            android:name="helium314.keyboard.latin.OfflineVoicePermissionActivity"
+            android:theme="@style/TransparentActivityTheme"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true" />
 
         <!-- Broadcast receivers -->
         <receiver android:name="SystemBroadcastReceiver"

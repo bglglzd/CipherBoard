@@ -45,9 +45,6 @@ class PrivacyLeakSurfaceTest {
             "READ_CONTACTS",
             "PREF_USE_CONTACTS",
             "use_contacts_dict",
-            "System.load(",
-            "LoadGestureLibPreference",
-            "JNI_LIB_IMPORT_FILE_NAME",
             "BackupRestorePreference",
             "ContextCompat.RECEIVER_EXPORTED",
         )
@@ -67,6 +64,24 @@ class PrivacyLeakSurfaceTest {
     }
 
     @Test
+    fun gestureLibraryImportHasNoUnverifiedOverride() {
+        val utilsRoot = mainSourceRoot().resolve("helium314/keyboard/latin/utils")
+        val installer = sourceText(utilsRoot.resolve("GestureLibraryInstaller.kt"))
+        val jniUtils = sourceText(utilsRoot.resolve("JniUtils.java"))
+        val preference = sourceText(
+            mainSourceRoot().resolve("helium314/keyboard/settings/preferences/LoadGestureLibPreference.kt")
+        )
+
+        assertTrue(installer.contains("trustedChecksums"))
+        assertTrue(installer.contains("ChecksumCalculator.checksum(source) != expected"))
+        assertTrue(installer.contains("ChecksumCalculator.checksum(candidate) != expected"))
+        assertTrue(jniUtils.contains("validInstalledLibrary"))
+        assertTrue(jniUtils.contains("System.load(importedLibrary.getAbsolutePath())"))
+        assertFalse(preference.contains("PREF_LIBRARY_CHECKSUM"))
+        assertFalse(preference.contains("Are you sure"))
+    }
+
+    @Test
     fun launcherBroadcastReceiverDoesNotKillOnLocaleOrBootBroadcast() {
         val receiver = mainSourceRoot().resolve("helium314/keyboard/latin/SystemBroadcastReceiver.java")
         val source = String(Files.readAllBytes(receiver), StandardCharsets.UTF_8)
@@ -82,4 +97,7 @@ class PrivacyLeakSurfaceTest {
             workingDirectory.resolve("app/src/main/java"),
         ).first { it.exists() }
     }
+
+    private fun sourceText(path: Path) =
+        String(Files.readAllBytes(path), StandardCharsets.UTF_8)
 }

@@ -51,9 +51,23 @@ trap cleanup EXIT HUP INT TERM
 "$apkanalyzer" manifest print "$apk" >"$temp_dir/manifest.xml" || die "apkanalyzer manifest print failed"
 "$aapt" dump resources "$apk" >"$temp_dir/aapt-resources.txt" || die "aapt resource dump failed"
 "$apkanalyzer" dex packages "$apk" >"$temp_dir/dex-packages.txt" || die "apkanalyzer DEX package scan failed"
-if grep -F 'java.lang.System void load(java.lang.String)' "$temp_dir/dex-packages.txt" >/dev/null 2>&1; then
-    die "arbitrary-path native code loading reference found in DEX"
-fi
+"$apkanalyzer" dex reference-tree --references-to \
+    'java.lang.System void load(java.lang.String)' "$apk" >"$temp_dir/path-native-load-tree.txt" || \
+    die "apkanalyzer native path-load reference scan failed"
+tail -n +2 "$temp_dir/path-native-load-tree.txt" | sed 's/^[[:space:]]*//' | \
+    sed '/^$/d' | sort -u >"$temp_dir/path-native-load-callers.txt"
+while IFS= read -r caller; do
+    case "$caller" in
+        'com.sun.jna.Native void <clinit>()'|\
+        'com.sun.jna.Native void loadNativeDispatchLibrary()'|\
+        'com.sun.jna.Native void loadNativeDispatchLibraryFromClasspath()'|\
+        'helium314.keyboard.latin.utils.JniUtils void <clinit>()') ;;
+        *) die "unapproved arbitrary-path native loader found in DEX" ;;
+    esac
+done <"$temp_dir/path-native-load-callers.txt"
+grep -Fx 'helium314.keyboard.latin.utils.JniUtils void <clinit>()' \
+    "$temp_dir/path-native-load-callers.txt" >/dev/null || \
+    die "verified gesture native loader is missing from DEX"
 
 for permission in \
     android.permission.INTERNET \

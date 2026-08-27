@@ -1,8 +1,8 @@
 # CipherBoard Security Review Status
 
-**Review date:** 2026-07-14
+**Review date:** 2026-08-27
 
-**Reviewed tree:** current 2026-07-14 worktree. A clean pre-public local signed
+**Reviewed tree:** current 2026-08-27 worktree. A clean pre-public local signed
 candidate was verified separately, but its local evidence bundle is not tracked
 or published and must not be transferred to the rewritten public history.
 
@@ -15,6 +15,20 @@ establish those properties for a later public-source commit, and it provides no
 physical-device or GrapheneOS evidence.
 
 ## Evidence Observed
+
+- The v0.5 debug APK packages checksum-pinned small Vosk English and Russian
+  models and has no Internet or network-state permission. On the API 36
+  x86_64 AOSP emulator, both model trees were extracted to private no-backup
+  storage, Russian/English layout selection chose the corresponding model,
+  first-use microphone grant automatically started capture, a second tap
+  stopped it, and permission revocation returned to the just-in-time grant
+  flow. The emulator has no meaningful acoustic input, so physical bilingual
+  dictation accuracy and leakage/traffic observation remain pending.
+- The optional v0.5 gesture importer accepts only ABI-specific SHA-256 values
+  pinned in source, copies the selected file to read-only app-private storage,
+  and revalidates it before every process load. The x86_64 emulator decoded a
+  gesture into `Test`. This opt-in proprietary library shares the IME/Vault
+  process and remains an explicit trust expansion rather than audited code.
 
 - The 0.4.2 clipboard-fallback instrumentation waits for the protected
   Activity's window focus before setting and explicitly reading ciphertext.
@@ -71,8 +85,10 @@ physical-device or GrapheneOS evidence.
   exposed the Russian hierarchy.
 - Source review confirms `allowBackup=false`, all-domain backup/device-transfer
   exclusions, cleartext denial and no `INTERNET` or `ACCESS_NETWORK_STATE`
-  declaration. The CameraX video/media dependency path that introduced the
-  latter permission is excluded.
+  declaration. `RECORD_AUDIO` is requested just in time by a non-exported
+  permission trampoline and is used only by the embedded recognizer. The
+  CameraX video/media dependency path that introduced network state is
+  excluded.
 - Packageable `:app` dependency graphs use strict locking in the checked-in
   `app/gradle.lockfile`. Release SBOM generation consumes the resolved Gradle
   graph plus locked Rust graphs; the generated artifact still needs manual
@@ -89,9 +105,10 @@ physical-device or GrapheneOS evidence.
   activity. Release staging also creates an exact-commit source archive; both
   outputs still require inspection on the final artifact.
 - Source search found no production HTTP client, Firebase, Google Play Services,
-  analytics, crash-reporting, advertising, WebView, or dynamic-code-loader use.
-  An inherited JVM test uses `HttpURLConnection`; it is not packaged production
-  code.
+  analytics, crash-reporting, advertising, WebView, or unverified dynamic-code
+  loader. The sole path-based native load is the checksum-gated local gesture
+  library described above. An inherited JVM test uses `HttpURLConnection`; it
+  is not packaged production code.
 - New Vaults on API 23--29 fail closed to a biometric authentication-per-use
   Keystore key with validity `-1`. The legacy API cannot express the requested
   biometric-or-device-credential policy without a time-based authorization
