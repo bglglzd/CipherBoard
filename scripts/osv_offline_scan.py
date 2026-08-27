@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -137,7 +138,10 @@ def main() -> int:
 
     now = dt.datetime.now(dt.timezone.utc)
     scanner = args.scanner.resolve(strict=True)
-    database_root = args.database_root.resolve(strict=True)
+    # On Windows the OSV cache directory can briefly fail strict Path.resolve() while the
+    # scanner's cache machinery is reopening it. Keep the user-supplied absolute location and
+    # validate the two exact database files below instead of depending on directory resolution.
+    database_root = pathlib.Path(os.path.abspath(args.database_root))
     sbom = args.sbom.resolve(strict=True)
     scanner_hash, platform = validate_scanner(scanner)
     databases = validate_databases(database_root, now)
