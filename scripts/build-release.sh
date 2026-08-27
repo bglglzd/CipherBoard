@@ -92,7 +92,9 @@ cargo test --locked --manifest-path crypto-core/native/Cargo.toml
 cargo audit --file crypto-core/native/Cargo.lock
 cargo fmt --all --manifest-path crypto-core/native/fuzz/Cargo.toml -- --check
 cargo clippy --locked --manifest-path crypto-core/native/fuzz/Cargo.toml --all-targets -- -D warnings
-cargo test --locked --manifest-path crypto-core/native/fuzz/Cargo.toml
+# The cargo-fuzz binary has test=false and no unit-test target. `cargo test` still
+# links libFuzzer with the active stable host linker on some platforms; the real
+# sanitizer campaign is the separate pinned nightly gate documented in BUILD.md.
 cargo audit --file crypto-core/native/fuzz/Cargo.lock
 cargo fmt --all --manifest-path crypto-core/jni/Cargo.toml -- --check
 cargo clippy --locked --manifest-path crypto-core/jni/Cargo.toml --all-targets --all-features -- -D warnings

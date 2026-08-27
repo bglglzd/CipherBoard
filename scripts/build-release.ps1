@@ -84,7 +84,10 @@ try {
         Invoke-Checked "cargo" @("audit", "--file", "crypto-core/native/Cargo.lock")
         Invoke-Checked "cargo" @("fmt", "--all", "--manifest-path", "crypto-core/native/fuzz/Cargo.toml", "--", "--check")
         Invoke-Checked "cargo" @("clippy", "--locked", "--manifest-path", "crypto-core/native/fuzz/Cargo.toml", "--all-targets", "--", "-D", "warnings")
-        Invoke-Checked "cargo" @("test", "--locked", "--manifest-path", "crypto-core/native/fuzz/Cargo.toml")
+        # The cargo-fuzz binary has test=false and no unit-test target. `cargo test` still tries to
+        # link libFuzzer with the active stable host linker on Windows, which is neither a test nor
+        # portable. The sanitizer campaign remains the separate, pinned nightly gate documented in
+        # BUILD.md and crypto-core/native/fuzz/README.md.
         Invoke-Checked "cargo" @("audit", "--file", "crypto-core/native/fuzz/Cargo.lock")
         Invoke-Checked "cargo" @("fmt", "--all", "--manifest-path", "crypto-core/jni/Cargo.toml", "--", "--check")
         Invoke-Checked "cargo" @("clippy", "--locked", "--manifest-path", "crypto-core/jni/Cargo.toml", "--all-targets", "--all-features", "--", "-D", "warnings")
