@@ -127,7 +127,9 @@ cargo +nightly fuzz run transport_parser fuzz/corpus/transport_parser -- \
 
 See `crypto-core/native/fuzz/README.md` for pinned prerequisites and the Windows
 AddressSanitizer runtime setup. Fuzz dependencies are development-only and are
-not packaged in the APK.
+not packaged in the APK. The release scripts run a 1,000-input sanitizer smoke
+campaign from a temporary copy of the seed corpus; the 60-second campaign above
+remains the minimum manual release evidence.
 
 Run Android JNI instrumentation on an emulator or device:
 

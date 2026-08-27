@@ -83,11 +83,53 @@ try {
         Invoke-Checked "cargo" @("test", "--locked", "--manifest-path", "crypto-core/native/Cargo.toml")
         Invoke-Checked "cargo" @("audit", "--file", "crypto-core/native/Cargo.lock")
         Invoke-Checked "cargo" @("fmt", "--all", "--manifest-path", "crypto-core/native/fuzz/Cargo.toml", "--", "--check")
-        Invoke-Checked "cargo" @("clippy", "--locked", "--manifest-path", "crypto-core/native/fuzz/Cargo.toml", "--all-targets", "--", "-D", "warnings")
-        # The cargo-fuzz binary has test=false and no unit-test target. `cargo test` still tries to
-        # link libFuzzer with the active stable host linker on Windows, which is neither a test nor
-        # portable. The sanitizer campaign remains the separate, pinned nightly gate documented in
-        # BUILD.md and crypto-core/native/fuzz/README.md.
+        $FuzzCorpus = Join-Path $Temp "fuzz-corpus"
+        New-Item -ItemType Directory -Path $FuzzCorpus | Out-Null
+        Get-ChildItem -LiteralPath (Join-Path $Root "crypto-core/native/fuzz/corpus/transport_parser") -File |
+            Copy-Item -Destination $FuzzCorpus
+        Push-Location (Join-Path $Root "crypto-core/native")
+        try {
+            if ($IsWindows) {
+                $AsanCandidates = @()
+                foreach ($VisualStudioRoot in @(
+                    (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/2022"),
+                    (Join-Path $env:ProgramFiles "Microsoft Visual Studio/18")
+                )) {
+                    if (Test-Path -LiteralPath $VisualStudioRoot -PathType Container) {
+                        $AsanCandidates += Get-ChildItem -Path (
+                            Join-Path $VisualStudioRoot "*/VC/Tools/MSVC/*/bin/Hostx64/x64/clang_rt.asan_dynamic-x86_64.dll"
+                        ) -File -ErrorAction SilentlyContinue
+                    }
+                }
+                $AsanRuntime = $AsanCandidates | Sort-Object FullName | Select-Object -Last 1
+                if (-not $AsanRuntime) { Fail "Visual Studio AddressSanitizer runtime is required for fuzz smoke testing" }
+                $MsvcTools = $AsanRuntime.Directory.Parent.Parent.Parent.FullName
+                $MsvcLibrary = Join-Path $MsvcTools "lib/x64"
+                if (-not (Test-Path -LiteralPath (Join-Path $MsvcLibrary "clang_rt.asan_dynamic_runtime_thunk-x86_64.lib") -PathType Leaf)) {
+                    Fail "Visual Studio AddressSanitizer import library is required for fuzz smoke testing"
+                }
+                $PreviousPath = $env:PATH
+                $PreviousLib = $env:LIB
+                try {
+                    $env:PATH = "$(Join-Path $MsvcTools 'bin/Hostx64/x64');$PreviousPath"
+                    $env:LIB = "$MsvcLibrary;$PreviousLib"
+                    Invoke-Checked "cargo" @(
+                        "+nightly-x86_64-pc-windows-msvc", "fuzz", "run", "transport_parser", $FuzzCorpus,
+                        "--", "-runs=1000", "-max_len=393216", "-timeout=5"
+                    )
+                } finally {
+                    $env:PATH = $PreviousPath
+                    $env:LIB = $PreviousLib
+                }
+            } else {
+                Invoke-Checked "cargo" @(
+                    "+nightly", "fuzz", "run", "transport_parser", $FuzzCorpus,
+                    "--", "-runs=1000", "-max_len=393216", "-timeout=5"
+                )
+            }
+        } finally {
+            Pop-Location
+        }
         Invoke-Checked "cargo" @("audit", "--file", "crypto-core/native/fuzz/Cargo.lock")
         Invoke-Checked "cargo" @("fmt", "--all", "--manifest-path", "crypto-core/jni/Cargo.toml", "--", "--check")
         Invoke-Checked "cargo" @("clippy", "--locked", "--manifest-path", "crypto-core/jni/Cargo.toml", "--all-targets", "--all-features", "--", "-D", "warnings")
