@@ -13,9 +13,7 @@ $Aapt = Get-SdkTool (Join-Path $BuildTools "aapt")
 $ApkSigner = Get-SdkTool (Join-Path $BuildTools "apksigner")
 $ZipAlign = Get-SdkTool (Join-Path $BuildTools "zipalign")
 $ApkAnalyzer = Get-SdkTool (Join-Path $Sdk "cmdline-tools/latest/bin/apkanalyzer")
-$Python = (Get-Command python3 -ErrorAction SilentlyContinue)?.Source
-if (-not $Python) { $Python = (Get-Command python -ErrorAction SilentlyContinue)?.Source }
-if (-not $Python) { Fail "Python 3 is required for manifest and DEX policy checks" }
+$Python = Get-Python3
 
 $Temp = Join-Path ([IO.Path]::GetTempPath()) ("cipherboard-verify-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $Temp | Out-Null

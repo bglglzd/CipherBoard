@@ -33,9 +33,7 @@ $BuildTools = Get-ConfiguredBuildTools $Sdk $Root
 $ApkSigner = Get-SdkTool (Join-Path $BuildTools "apksigner")
 $ZipAlign = Get-SdkTool (Join-Path $BuildTools "zipalign")
 $ApkAnalyzer = Get-SdkTool (Join-Path $Sdk "cmdline-tools/latest/bin/apkanalyzer")
-$Python = (Get-Command python3 -ErrorAction SilentlyContinue)?.Source
-if (-not $Python) { $Python = (Get-Command python -ErrorAction SilentlyContinue)?.Source }
-if (-not $Python) { Fail "Python 3 is required for release metadata" }
+$Python = Get-Python3
 $OsvScanner = if ($env:CIPHERBOARD_OSV_SCANNER) {
     $env:CIPHERBOARD_OSV_SCANNER
 } else {
