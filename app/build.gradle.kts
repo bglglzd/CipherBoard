@@ -57,6 +57,9 @@ fun File.sha256(): String {
 val prepareVoiceModelAssets by tasks.registering {
     group = "build setup"
     description = "Downloads checksum-pinned Vosk models and packages them as offline assets."
+    notCompatibleWithConfigurationCache(
+        "Downloads and safely expands checksum-pinned model archives into generated assets."
+    )
     inputs.property("voiceModels", voiceModels.joinToString("|") { "${it.language}:${it.sha256}" })
     outputs.dir(generatedVoiceModelAssets)
     doLast {
