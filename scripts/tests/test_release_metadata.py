@@ -128,7 +128,7 @@ class ReleaseMetadataTest(unittest.TestCase):
             with zipfile.ZipFile(apk, "w") as archive:
                 for language, _name, _version, _bytes, digest in release_metadata.VOICE_MODELS:
                     root = f"assets/voice_models/{language}"
-                    archive.writestr(f"{root}/.cipherboard-model-sha256", digest)
+                    archive.writestr(f"{root}/cipherboard-model.sha256", digest)
                     archive.writestr(f"{root}/am/final.mdl", b"model")
                     archive.writestr(f"{root}/conf/model.conf", b"config")
 

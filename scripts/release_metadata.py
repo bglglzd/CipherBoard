@@ -290,7 +290,7 @@ def voice_model_components(apk: pathlib.Path) -> list[dict[str, object]]:
         names = set(archive.namelist())
         for language, name, version, archive_bytes, expected_hash in VOICE_MODELS:
             asset_root = f"assets/voice_models/{language}"
-            marker_path = f"{asset_root}/.cipherboard-model-sha256"
+            marker_path = f"{asset_root}/cipherboard-model.sha256"
             for required in (marker_path, f"{asset_root}/am/final.mdl", f"{asset_root}/conf/model.conf"):
                 if required not in names:
                     raise RuntimeError(f"APK is missing offline voice model asset: {required}")

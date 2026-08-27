@@ -28,7 +28,7 @@ final class OfflineVoiceModelAssets {
         }
         final AssetManager assets = context.getAssets();
         final String assetPath = ASSET_ROOT + "/" + language;
-        final String modelHash = readSmallAsset(assets, assetPath + "/.cipherboard-model-sha256");
+        final String modelHash = readSmallAsset(assets, assetPath + "/cipherboard-model.sha256");
         if (!modelHash.matches("[0-9a-f]{64}")) {
             throw new IOException("Invalid packaged voice model marker");
         }

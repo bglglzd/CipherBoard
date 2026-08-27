@@ -61,6 +61,7 @@ val prepareVoiceModelAssets by tasks.registering {
         "Downloads and safely expands checksum-pinned model archives into generated assets."
     )
     inputs.property("voiceModels", voiceModels.joinToString("|") { "${it.language}:${it.sha256}" })
+    inputs.property("voiceModelMarker", "cipherboard-model.sha256")
     outputs.dir(generatedVoiceModelAssets)
     doLast {
         val cacheDirectory = voiceModelCache.asFile.apply { mkdirs() }
@@ -151,7 +152,8 @@ val prepareVoiceModelAssets by tasks.registering {
             }
             check(File(modelOutput, "am/final.mdl").isFile)
             check(File(modelOutput, "conf/model.conf").isFile)
-            File(modelOutput, ".cipherboard-model-sha256").writeText(spec.sha256, Charsets.US_ASCII)
+            // Android's asset packager drops dotfiles, so this integrity marker must be visible.
+            File(modelOutput, "cipherboard-model.sha256").writeText(spec.sha256, Charsets.US_ASCII)
         }
     }
 }
