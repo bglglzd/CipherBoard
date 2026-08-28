@@ -381,10 +381,10 @@ dependencies {
     implementation(project(":secure-storage"))
     implementation("androidx.biometric:biometric:1.1.0")
     // FragmentActivity + Activity Result APIs require Fragment >= 1.3; use the current stable line.
-    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    implementation("androidx.fragment:fragment-ktx:1.9.0")
 
     // androidx
-    implementation("androidx.core:core-ktx:1.17.0") // 1.18.0 requires minSdk 23
+    implementation("androidx.core:core-ktx:1.19.0") // 1.18.0 requires minSdk 23
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.autofill:autofill:1.3.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
