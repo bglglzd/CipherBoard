@@ -28,6 +28,8 @@ import java.util.concurrent.Executors;
 final class OfflineVoiceInputController {
     interface Callback {
         void showStatus(@StringRes int message);
+        void showVoiceUi(
+                @StringRes int message, @NonNull String recognizedText, boolean listening);
         void commitRecognizedText(@NonNull String text);
         void onSessionClosed();
     }
@@ -42,6 +44,7 @@ final class OfflineVoiceInputController {
     private final LatinIME service;
     private final Callback callback;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final OfflineVoiceAutoFinish autoFinish = new OfflineVoiceAutoFinish(mainHandler);
     private final ExecutorService loader = Executors.newSingleThreadExecutor(runnable -> {
         final Thread thread = new Thread(runnable, "CipherBoardOfflineVoiceModel");
         thread.setDaemon(true);
@@ -56,6 +59,7 @@ final class OfflineVoiceInputController {
     private Recognizer recognizer;
     private Model model;
     private Runnable listeningTimeout;
+    private String partialText = "";
 
     OfflineVoiceInputController(
             @NonNull final LatinIME service, @NonNull final Callback callback) {
@@ -65,7 +69,7 @@ final class OfflineVoiceInputController {
 
     void toggle(final Locale locale) {
         if (state != State.IDLE) {
-            stopOrCancel();
+            finishOrCancel();
             return;
         }
         if (!hasMicrophonePermission()) {
@@ -99,7 +103,8 @@ final class OfflineVoiceInputController {
         state = State.LOADING;
         completedSegments.clear();
         completedCharacters = 0;
-        callback.showStatus(R.string.offline_voice_preparing);
+        partialText = "";
+        callback.showVoiceUi(R.string.offline_voice_preparing, "", false);
         loader.execute(() -> {
             Model loadedModel = null;
             try {
@@ -129,7 +134,7 @@ final class OfflineVoiceInputController {
                 fail(session, R.string.offline_voice_microphone_error);
                 return;
             }
-            callback.showStatus(R.string.offline_voice_listening);
+            callback.showVoiceUi(R.string.offline_voice_listening, "", true);
             listeningTimeout = () -> stopForResult(session);
             mainHandler.postDelayed(listeningTimeout, MAX_LISTENING_MILLIS);
         } catch (Exception | LinkageError exception) {
@@ -137,12 +142,13 @@ final class OfflineVoiceInputController {
         }
     }
 
-    private void stopOrCancel() {
+    void finishOrCancel() {
         if (state == State.LOADING) {
             generation += 1;
             state = State.IDLE;
             completedSegments.clear();
             completedCharacters = 0;
+            partialText = "";
             callback.showStatus(R.string.offline_voice_cancelled);
             callback.onSessionClosed();
             return;
@@ -153,7 +159,9 @@ final class OfflineVoiceInputController {
     private void stopForResult(final int session) {
         if (session != generation || state != State.LISTENING || speechService == null) return;
         state = State.STOPPING;
-        callback.showStatus(R.string.offline_voice_processing);
+        autoFinish.cancel();
+        callback.showVoiceUi(
+                R.string.offline_voice_processing, currentTranscript(partialText), false);
         try {
             speechService.stop();
         } catch (RuntimeException | LinkageError exception) {
@@ -164,10 +172,12 @@ final class OfflineVoiceInputController {
     void cancel() {
         generation += 1;
         cancelListeningTimeout();
+        autoFinish.cancel();
         cancelSpeechQuietly();
         releaseNativeResources();
         completedSegments.clear();
         completedCharacters = 0;
+        partialText = "";
         state = State.IDLE;
     }
 
@@ -181,9 +191,11 @@ final class OfflineVoiceInputController {
         addSegment(finalJson);
         final String text = OfflineVoiceTextKt.joinOfflineVoiceSegments(completedSegments);
         cancelListeningTimeout();
+        autoFinish.cancel();
         releaseNativeResources();
         completedSegments.clear();
         completedCharacters = 0;
+        partialText = "";
         state = State.IDLE;
         if (text.isEmpty()) {
             callback.showStatus(R.string.offline_voice_no_speech);
@@ -198,10 +210,12 @@ final class OfflineVoiceInputController {
         if (session != generation) return;
         generation += 1;
         cancelListeningTimeout();
+        autoFinish.cancel();
         cancelSpeechQuietly();
         releaseNativeResources();
         completedSegments.clear();
         completedCharacters = 0;
+        partialText = "";
         state = State.IDLE;
         callback.showStatus(message);
         callback.onSessionClosed();
@@ -257,6 +271,17 @@ final class OfflineVoiceInputController {
         listeningTimeout = null;
     }
 
+    private void scheduleAutoFinish(final int session) {
+        autoFinish.schedule(() -> stopForResult(session));
+    }
+
+    @NonNull
+    private String currentTranscript(@NonNull final String partial) {
+        final ArrayList<String> visibleSegments = new ArrayList<>(completedSegments);
+        if (!partial.isEmpty()) visibleSegments.add(partial);
+        return OfflineVoiceTextKt.joinOfflineVoiceSegments(visibleSegments);
+    }
+
     private static void closeModelQuietly(final Model model) {
         if (model == null) return;
         try {
@@ -275,7 +300,16 @@ final class OfflineVoiceInputController {
 
         @Override
         public void onResult(final String hypothesis) {
-            if (session == generation && state != State.IDLE) addSegment(hypothesis);
+            if (session != generation || state != State.LISTENING) return;
+            final String text = OfflineVoiceTextKt.parseOfflineVoiceResult(hypothesis);
+            if (text == null) return;
+            addSegment(hypothesis);
+            partialText = "";
+            callback.showVoiceUi(
+                    R.string.offline_voice_listening, currentTranscript(""), true);
+            // Vosk emits a result after its local endpoint detector sees trailing silence.
+            // Keep a short grace interval so a natural pause does not cut off the next phrase.
+            scheduleAutoFinish(session);
         }
 
         @Override
@@ -285,7 +319,13 @@ final class OfflineVoiceInputController {
 
         @Override
         public void onPartialResult(final String hypothesis) {
-            // Partial hypotheses are intentionally neither stored nor logged.
+            if (session != generation || state != State.LISTENING) return;
+            final String text = OfflineVoiceTextKt.parseOfflineVoicePartialResult(hypothesis);
+            if (text == null) return;
+            partialText = text;
+            autoFinish.cancel();
+            callback.showVoiceUi(
+                    R.string.offline_voice_listening, currentTranscript(partialText), true);
         }
 
         @Override

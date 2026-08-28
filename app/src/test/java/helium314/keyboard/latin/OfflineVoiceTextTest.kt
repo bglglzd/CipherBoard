@@ -18,6 +18,9 @@ class OfflineVoiceTextTest {
     fun voskJsonIsReducedToBoundedSingleLineText() {
         assertEquals("привет мир", parseOfflineVoiceResult("""{"text":"  привет\nмир  "}"""))
         assertNull(parseOfflineVoiceResult("""{"partial":"привет"}"""))
+        assertEquals("привет мир", parseOfflineVoicePartialResult("""{"partial":" привет  мир "}"""))
+        assertNull(parseOfflineVoicePartialResult("""{"partial":""}"""))
+        assertNull(parseOfflineVoicePartialResult("""{"text":"привет"}"""))
         assertNull(parseOfflineVoiceResult("not json"))
     }
 

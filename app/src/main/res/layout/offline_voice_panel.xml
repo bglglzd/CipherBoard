@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:background="@color/keyboard_background"
+    android:clickable="true"
+    android:focusable="true"
+    android:importantForAccessibility="yes"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="10dp">
+
+        <FrameLayout
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <View
+                android:id="@+id/offline_voice_pulse"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:layout_gravity="center"
+                android:background="@drawable/offline_voice_circle" />
+
+            <ImageButton
+                android:id="@+id/offline_voice_microphone"
+                android:layout_width="68dp"
+                android:layout_height="68dp"
+                android:layout_gravity="center"
+                android:background="@drawable/offline_voice_circle"
+                android:contentDescription="@string/offline_voice_finish_action"
+                android:padding="17dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/sym_keyboard_voice_rounded" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/offline_voice_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:accessibilityLiveRegion="polite"
+            android:maxLines="1"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/offline_voice_transcript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/offline_voice_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:gravity="center"
+            android:maxLines="2"
+            android:text="@string/offline_voice_auto_finish_hint"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/offline_voice_privacy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center"
+            android:maxLines="1"
+            android:text="@string/offline_voice_on_device"
+            android:textSize="12sp" />
+    </LinearLayout>
+</FrameLayout>

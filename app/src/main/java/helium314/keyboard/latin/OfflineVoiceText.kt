@@ -13,9 +13,17 @@ internal fun offlineVoiceModelLanguage(locale: Locale?): String =
     if (locale?.language.equals("ru", ignoreCase = true)) "ru" else "en"
 
 internal fun parseOfflineVoiceResult(json: String?): String? {
+    return parseOfflineVoiceField(json, "text")
+}
+
+internal fun parseOfflineVoicePartialResult(json: String?): String? {
+    return parseOfflineVoiceField(json, "partial")
+}
+
+private fun parseOfflineVoiceField(json: String?, field: String): String? {
     if (json.isNullOrBlank()) return null
     val text = runCatching {
-        Json.parseToJsonElement(json).jsonObject["text"]?.jsonPrimitive?.contentOrNull
+        Json.parseToJsonElement(json).jsonObject[field]?.jsonPrimitive?.contentOrNull
     }.getOrNull() ?: return null
     return text.replace(Regex("\\s+"), " ").trim().take(MAX_TRANSCRIPT_CHARS).ifEmpty { null }
 }

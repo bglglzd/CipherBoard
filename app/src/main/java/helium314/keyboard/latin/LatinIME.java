@@ -153,6 +153,7 @@ public class LatinIME extends InputMethodService implements
     private SuggestionStripView mSuggestionStripView;
     private EmbeddedSecureComposerController mEmbeddedSecureComposer;
     private OfflineVoiceInputController mOfflineVoiceInputController;
+    private OfflineVoicePanel mOfflineVoicePanel;
     private boolean mPendingOfflineVoiceStart;
     private boolean mOfflineVoicePermissionResultReceived;
     private long mOfflineVoicePermissionReadyAtMillis;
@@ -626,15 +627,31 @@ public class LatinIME extends InputMethodService implements
                     }
 
                     @Override
+                    public void showVoiceUi(
+                            final int message,
+                            @NonNull final String recognizedText,
+                            final boolean listening) {
+                        if (mOfflineVoicePanel != null) {
+                            mOfflineVoicePanel.show(message, recognizedText, listening);
+                        }
+                    }
+
+                    @Override
                     public void commitRecognizedText(@NonNull final String text) {
                         commitOfflineVoiceText(text);
                     }
 
                     @Override
                     public void onSessionClosed() {
+                        if (mOfflineVoicePanel != null) mOfflineVoicePanel.hide();
                         mOfflineVoiceInputConnection = null;
                     }
                 });
+        mOfflineVoicePanel = new OfflineVoicePanel(() -> {
+            if (mOfflineVoiceInputController != null) {
+                mOfflineVoiceInputController.finishOrCancel();
+            }
+        });
 
         loadSettings();
         mClipboardHistoryManager.onCreate();
@@ -799,6 +816,10 @@ public class LatinIME extends InputMethodService implements
             mOfflineVoiceInputController.destroy();
             mOfflineVoiceInputController = null;
         }
+        if (mOfflineVoicePanel != null) {
+            mOfflineVoicePanel.detach();
+            mOfflineVoicePanel = null;
+        }
         clearPendingOfflineVoiceStart();
         mOfflineVoiceInputConnection = null;
         closeEmbeddedSecureComposer(false);
@@ -874,6 +895,7 @@ public class LatinIME extends InputMethodService implements
         if (mEmbeddedSecureComposer != null) {
             mEmbeddedSecureComposer.attach(inputView);
         }
+        if (mOfflineVoicePanel != null) mOfflineVoicePanel.attach(inputView);
         return inputView;
     }
 
@@ -1742,6 +1764,7 @@ public class LatinIME extends InputMethodService implements
 
     private void cancelOfflineVoiceInputSession() {
         if (mOfflineVoiceInputController != null) mOfflineVoiceInputController.cancel();
+        if (mOfflineVoicePanel != null) mOfflineVoicePanel.hide();
         mOfflineVoiceInputConnection = null;
     }
 
