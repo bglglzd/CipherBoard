@@ -33,7 +33,6 @@ final class OfflineVoicePanel {
     @Nullable private TextView hint;
     @Nullable private TextView privacy;
     @Nullable private ObjectAnimator pulseAnimator;
-    private int lastAnnouncedStatus;
 
     OfflineVoicePanel(@NonNull final Runnable finishAction) {
         this.finishAction = finishAction;
@@ -84,15 +83,10 @@ final class OfflineVoicePanel {
         } else {
             stopPulse();
         }
-        if (lastAnnouncedStatus != statusMessage) {
-            lastAnnouncedStatus = statusMessage;
-            status.announceForAccessibility(status.getText());
-        }
     }
 
     void hide() {
         stopPulse();
-        lastAnnouncedStatus = 0;
         if (panel != null) panel.setVisibility(View.GONE);
     }
 

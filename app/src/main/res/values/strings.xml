@@ -357,9 +357,6 @@
     <string name="offline_voice_preparing">Preparing the offline voice model…</string>
     <string name="offline_voice_listening">Listening…</string>
     <string name="offline_voice_processing">Finishing offline recognition…</string>
-    <string name="offline_voice_inserted">Offline voice text inserted</string>
-    <string name="offline_voice_no_speech">No speech recognized</string>
-    <string name="offline_voice_cancelled">Offline voice input cancelled</string>
     <string name="offline_voice_permission_denied">Microphone permission is required for local voice input</string>
     <string name="offline_voice_model_error">The packaged offline voice model could not be loaded</string>
     <string name="offline_voice_microphone_error">The microphone could not be started</string>

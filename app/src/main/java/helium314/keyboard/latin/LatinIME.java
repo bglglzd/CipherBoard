@@ -622,7 +622,7 @@ public class LatinIME extends InputMethodService implements
         mOfflineVoiceInputController = new OfflineVoiceInputController(
                 this, new OfflineVoiceInputController.Callback() {
                     @Override
-                    public void showStatus(final int message) {
+                    public void showError(final int message) {
                         mKeyboardSwitcher.showToast(getString(message), false);
                     }
 

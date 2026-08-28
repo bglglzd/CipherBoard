@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 /** Owns one explicit, in-memory, fully offline voice-dictation session. */
 final class OfflineVoiceInputController {
     interface Callback {
-        void showStatus(@StringRes int message);
+        void showError(@StringRes int message);
         void showVoiceUi(
                 @StringRes int message, @NonNull String recognizedText, boolean listening);
         void commitRecognizedText(@NonNull String text);
@@ -149,7 +149,6 @@ final class OfflineVoiceInputController {
             completedSegments.clear();
             completedCharacters = 0;
             partialText = "";
-            callback.showStatus(R.string.offline_voice_cancelled);
             callback.onSessionClosed();
             return;
         }
@@ -197,11 +196,8 @@ final class OfflineVoiceInputController {
         completedCharacters = 0;
         partialText = "";
         state = State.IDLE;
-        if (text.isEmpty()) {
-            callback.showStatus(R.string.offline_voice_no_speech);
-        } else {
+        if (!text.isEmpty()) {
             callback.commitRecognizedText(text);
-            callback.showStatus(R.string.offline_voice_inserted);
         }
         callback.onSessionClosed();
     }
@@ -217,7 +213,7 @@ final class OfflineVoiceInputController {
         completedCharacters = 0;
         partialText = "";
         state = State.IDLE;
-        callback.showStatus(message);
+        callback.showError(message);
         callback.onSessionClosed();
     }
 
