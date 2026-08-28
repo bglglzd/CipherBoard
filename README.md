@@ -58,17 +58,17 @@ servers, phone numbers, or network requests.
 ## Download
 
 <p align="center">
-  <a href="https://github.com/bglglzd/CipherBoard/releases/latest/download/CipherBoard-0.5.0-release.apk"><img src="https://img.shields.io/badge/Download-CipherBoard_0.5.0_APK-2ea44f?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Download CipherBoard 0.5.0 APK"></a>
+  <a href="https://github.com/bglglzd/CipherBoard/releases/latest/download/CipherBoard-0.5.1-release.apk"><img src="https://img.shields.io/badge/Download-CipherBoard_0.5.1_APK-2ea44f?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Download CipherBoard 0.5.1 APK"></a>
 </p>
 
-The current production build is **CipherBoard 0.5.0** for `arm64-v8a` devices.
+The current production build is **CipherBoard 0.5.1** for `arm64-v8a` devices.
 Open the [latest release](https://github.com/bglglzd/CipherBoard/releases/latest)
 for release notes and verification evidence.
 
 | Release file | Purpose |
 | --- | --- |
-| `CipherBoard-0.5.0-release.apk` | **Install this file.** It is the only application package. |
-| `CipherBoard-0.5.0-release.apk.sha256` | Optional checksum for verifying the APK download. |
+| `CipherBoard-0.5.1-release.apk` | **Install this file.** It is the only application package. |
+| `CipherBoard-0.5.1-release.apk.sha256` | Optional checksum for verifying the APK download. |
 | Other attachments | Build, source, SBOM, license, and vulnerability-scan evidence for auditors. Do not install them. |
 | GitHub's `Source code` archives | Automatic source snapshots, not Android applications. |
 
@@ -80,16 +80,16 @@ for release notes and verification evidence.
 Verify the APK checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.5.0-release.apk.sha256
-adb install -r CipherBoard-0.5.0-release.apk
+sha256sum --check CipherBoard-0.5.1-release.apk.sha256
+adb install -r CipherBoard-0.5.1-release.apk
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.5.0-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.5.0-release.apk.sha256
-adb install -r .\CipherBoard-0.5.0-release.apk
+(Get-FileHash .\CipherBoard-0.5.1-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.5.1-release.apk.sha256
+adb install -r .\CipherBoard-0.5.1-release.apk
 ```
 
 If Android Build Tools are installed, verify the signature and compare the
@@ -97,7 +97,7 @@ certificate SHA-256 with [`SIGNING_CERTIFICATE_SHA256`](SIGNING_CERTIFICATE_SHA2
 through a separately trusted channel:
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.5.0-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.5.1-release.apk
 ```
 
 For stable update notifications without giving CipherBoard network access, add
@@ -159,7 +159,11 @@ keyboard layout selects the matching model.
 Android asks for `RECORD_AUDIO` the first time the button is used. CipherBoard
 captures 16 kHz microphone samples only during that explicit session, keeps
 recognition in memory, does not create an audio recording, and releases the
-recognizer after the second microphone tap or the 60-second limit. The first
+recognizer automatically when Vosk detects the end of an utterance, after a
+short continuation window. A keyboard-height panel shows a large pulsing
+microphone, live partial text, and preparation/listening/processing states;
+tapping the microphone still finishes manually. The 60-second limit remains a
+hard fallback. The first
 use of each language can take a few seconds while its packaged model is copied
 to app-private, no-backup storage. Voice input is hidden and blocked in
 passwords, email fields, and CipherBoard's Private editor.
@@ -211,13 +215,13 @@ sensitive use.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.5.0` |
+| Maturity | Pre-1.0; current version `0.5.1` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
 | Runtime network | No Internet or network-state permission; no runtime network feature |
 | Interface languages | English and Russian |
-| Latest notes | [CipherBoard 0.5.0](docs/releases/v0.5.0.md) |
+| Latest notes | [CipherBoard 0.5.1](docs/releases/v0.5.1.md) |
 
 CipherBoard is an unofficial modified fork of HeliBoard. It is not an official
 HeliBoard release and is not endorsed or supported by the HeliBoard project.

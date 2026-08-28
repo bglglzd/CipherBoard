@@ -4,6 +4,25 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.5.1] - 2026-08-28
+
+### Improved
+
+- Offline Russian and English dictation now opens a dedicated keyboard-height
+  listening panel with a large pulsing microphone, live partial transcript,
+  explicit on-device privacy status, and clear preparation/processing states.
+- Vosk endpoint results now finish and insert the utterance automatically after
+  a short continuation window. A new non-empty partial result cancels that
+  pending finish, so a natural pause can continue into another phrase; tapping
+  the large microphone still provides a manual finish control.
+
+### Security Notes
+
+- Voice audio and partial/final transcripts remain in process and are neither
+  logged nor persisted. This release adds no network permission or runtime
+  network path and keeps voice blocked in passwords, email fields, Private
+  mode, and every other CipherBoard-owned editor.
+
 ## [0.5.0] - 2026-08-27
 
 ### Added
@@ -269,6 +288,7 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
   Android security audit. Physical GrapheneOS, StrongBox, TEE-only, live-camera
   pairing, and hostile-device validation remain necessary before high-risk use.
 
+[0.5.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.5.1
 [0.5.0]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.5.0
 [0.4.2]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.2
 [0.4.1]: https://github.com/bglglzd/CipherBoard/releases/tag/v0.4.1

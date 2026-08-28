@@ -15,4 +15,7 @@
     <include
         android:id="@+id/main_keyboard_frame"
         layout="@layout/main_keyboard_frame" />
+    <include
+        android:id="@+id/offline_voice_panel"
+        layout="@layout/offline_voice_panel" />
 </helium314.keyboard.latin.InputView>
