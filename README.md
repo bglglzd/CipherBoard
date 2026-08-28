@@ -58,17 +58,17 @@ servers, phone numbers, or network requests.
 ## Download
 
 <p align="center">
-  <a href="https://github.com/bglglzd/CipherBoard/releases/latest/download/CipherBoard-0.5.1-release.apk"><img src="https://img.shields.io/badge/Download-CipherBoard_0.5.1_APK-2ea44f?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Download CipherBoard 0.5.1 APK"></a>
+  <a href="https://github.com/bglglzd/CipherBoard/releases/latest/download/CipherBoard-0.5.2-release.apk"><img src="https://img.shields.io/badge/Download-CipherBoard_0.5.2_APK-2ea44f?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Download CipherBoard 0.5.2 APK"></a>
 </p>
 
-The current production build is **CipherBoard 0.5.1** for `arm64-v8a` devices.
+The current production build is **CipherBoard 0.5.2** for `arm64-v8a` devices.
 Open the [latest release](https://github.com/bglglzd/CipherBoard/releases/latest)
 for release notes and verification evidence.
 
 | Release file | Purpose |
 | --- | --- |
-| `CipherBoard-0.5.1-release.apk` | **Install this file.** It is the only application package. |
-| `CipherBoard-0.5.1-release.apk.sha256` | Optional checksum for verifying the APK download. |
+| `CipherBoard-0.5.2-release.apk` | **Install this file.** It is the only application package. |
+| `CipherBoard-0.5.2-release.apk.sha256` | Optional checksum for verifying the APK download. |
 | Other attachments | Build, source, SBOM, license, and vulnerability-scan evidence for auditors. Do not install them. |
 | GitHub's `Source code` archives | Automatic source snapshots, not Android applications. |
 
@@ -80,16 +80,16 @@ for release notes and verification evidence.
 Verify the APK checksum before installation:
 
 ```sh
-sha256sum --check CipherBoard-0.5.1-release.apk.sha256
-adb install -r CipherBoard-0.5.1-release.apk
+sha256sum --check CipherBoard-0.5.2-release.apk.sha256
+adb install -r CipherBoard-0.5.2-release.apk
 ```
 
 On Windows PowerShell:
 
 ```powershell
-(Get-FileHash .\CipherBoard-0.5.1-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\CipherBoard-0.5.1-release.apk.sha256
-adb install -r .\CipherBoard-0.5.1-release.apk
+(Get-FileHash .\CipherBoard-0.5.2-release.apk -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\CipherBoard-0.5.2-release.apk.sha256
+adb install -r .\CipherBoard-0.5.2-release.apk
 ```
 
 If Android Build Tools are installed, verify the signature and compare the
@@ -97,7 +97,7 @@ certificate SHA-256 with [`SIGNING_CERTIFICATE_SHA256`](SIGNING_CERTIFICATE_SHA2
 through a separately trusted channel:
 
 ```sh
-apksigner verify --verbose --print-certs CipherBoard-0.5.1-release.apk
+apksigner verify --verbose --print-certs CipherBoard-0.5.2-release.apk
 ```
 
 For stable update notifications without giving CipherBoard network access, add
@@ -215,13 +215,13 @@ sensitive use.
 
 | Project fact | Current value |
 | --- | --- |
-| Maturity | Pre-1.0; current version `0.5.1` |
+| Maturity | Pre-1.0; current version `0.5.2` |
 | Application ID | `org.cipherboard.securekeyboard` |
 | Android baseline | `minSdk 23`, `targetSdk 36`; acceptance target is current GrapheneOS |
 | Release ABI | `arm64-v8a`; debug builds also include `x86_64` for emulators |
 | Runtime network | No Internet or network-state permission; no runtime network feature |
 | Interface languages | English and Russian |
-| Latest notes | [CipherBoard 0.5.1](docs/releases/v0.5.1.md) |
+| Latest notes | [CipherBoard 0.5.2](docs/releases/v0.5.2.md) |
 
 CipherBoard is an unofficial modified fork of HeliBoard. It is not an official
 HeliBoard release and is not endorsed or supported by the HeliBoard project.

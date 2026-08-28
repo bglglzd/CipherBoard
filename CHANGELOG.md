@@ -4,6 +4,22 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## [0.5.2] - 2026-08-28
+
+### Fixed
+
+- Normal offline-dictation transitions no longer generate Android accessibility
+  announcements or keyboard Toast banners. Preparation, listening, processing,
+  successful insertion, an empty result, and user cancellation are now conveyed
+  only by the in-keyboard voice panel or by the resulting text.
+- Genuine microphone and packaged-model failures still show an error message so
+  that voice input cannot fail silently.
+
+### Security Notes
+
+- This UI-only correction does not change offline recognition, model selection,
+  microphone lifetime, editor restrictions, storage, or network permissions.
+
 ## [0.5.1] - 2026-08-28
 
 ### Improved

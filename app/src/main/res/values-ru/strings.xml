@@ -190,9 +190,6 @@
     <string name="offline_voice_preparing">Подготовка офлайн-модели распознавания…</string>
     <string name="offline_voice_listening">Слушаю…</string>
     <string name="offline_voice_processing">Завершаю офлайн-распознавание…</string>
-    <string name="offline_voice_inserted">Распознанный офлайн текст вставлен</string>
-    <string name="offline_voice_no_speech">Речь не распознана</string>
-    <string name="offline_voice_cancelled">Голосовой ввод отменён</string>
     <string name="offline_voice_permission_denied">Для локального голосового ввода нужен доступ к микрофону</string>
     <string name="offline_voice_model_error">Не удалось загрузить встроенную офлайн-модель</string>
     <string name="offline_voice_microphone_error">Не удалось включить микрофон</string>
