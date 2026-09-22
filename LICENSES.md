@@ -1,7 +1,7 @@
 # CipherBoard Licensing Inventory
 
 This inventory was checked against the repository state and resolved dependency
-metadata on 2026-07-14. It is not a substitute for preserving source-file
+metadata on 2026-08-27. It is not a substitute for preserving source-file
 headers or the complete license texts shipped in this repository.
 
 ## CipherBoard and HeliBoard
@@ -66,8 +66,8 @@ resolved Android runtime graph can be inspected with:
 
 | Component | Pinned declaration | License |
 | --- | --- | --- |
-| Android Gradle Plugin / ViewBinding | 8.13.2 | Apache-2.0 |
-| Kotlin stdlib and compiler plugins | 2.3.20 | Apache-2.0 |
+| Android Gradle Plugin / ViewBinding | 9.3.3 | Apache-2.0 |
+| Kotlin stdlib and compiler plugins | 2.4.20 | Apache-2.0 |
 | AndroidX Core KTX | 1.17.0 | Apache-2.0 |
 | AndroidX RecyclerView | 1.4.0 | Apache-2.0 |
 | AndroidX Autofill | 1.3.0 | Apache-2.0 |
@@ -78,8 +78,19 @@ resolved Android runtime graph can be inspected with:
 | AndroidX Navigation Compose | 2.9.8 | Apache-2.0 |
 | kotlinx.serialization JSON | 1.11.0 | Apache-2.0 |
 | ZXing Core | 3.5.4 | Apache-2.0 |
+| Vosk Android | 0.3.75 | Apache-2.0 |
+| JNA (Vosk transitive) | 5.18.1 | Apache-2.0 OR LGPL-2.1-or-later; Apache-2.0 selected for this distribution |
 | Reorderable | 3.1.0 | Apache-2.0 |
 | colorpicker-compose | 1.1.3 | Apache-2.0 |
+
+The APK also contains the Apache-2.0 Vosk models
+`vosk-model-small-en-us-0.15` and `vosk-model-small-ru-0.22`. Their source
+archives are accepted by the build only at these exact sizes and SHA-256 values:
+
+| Model archive | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `vosk-model-small-en-us-0.15.zip` | 41,205,931 | `30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498` |
+| `vosk-model-small-ru-0.22.zip` | 46,236,750 | `961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4` |
 
 AndroidX transitives, Dagger, AutoValue annotations, Kotlin coroutines,
 JetBrains Compose compatibility artifacts, JSpecify and the empty Guava

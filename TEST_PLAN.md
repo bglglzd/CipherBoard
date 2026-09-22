@@ -37,7 +37,7 @@ hardware/device acceptance gate.
 
 ### 1.1 Current evidence snapshot (not an independent audit)
 
-As of 2026-07-14, stored/reported local evidence is:
+As of 2026-08-27, stored/reported local evidence is:
 
 | Scope | Result | Limitation |
 | --- | --- | --- |
@@ -51,10 +51,11 @@ As of 2026-07-14, stored/reported local evidence is:
 | pending recovery/IME handoff | 2 store close/reopen atomicity tests plus 3 debug-only remote-process SIGKILL tests pass; unit tests cover `READY` -> `COMMIT_UNCERTAIN`, no automatic retry, exact live-connection scope, nullable Binder tokens and local draft routing | no failpoint inside individual SQLite statements or kill immediately around real `commitText()` acknowledgement |
 | v0.3 embedded decrypt controls | targeted tests pass for bounded ciphertext clipboard input, drawing-only/first-draw behavior, one-shot unlock, reply draft wipe, race-safe worker-result ownership, render-time Vault expiry, background cancellation and secure-IME lifecycle | manual API 36 English/Russian landscape/font-2.0 covers locked Encrypt and idle Decrypt only; no paired-contact decrypt, biometric, process-kill-at-first-draw or physical GrapheneOS evidence |
 | v0.4 word presentation source | pinned dictionary, Compact/Russian/English, malformed/limit/property, real Olm, JNI, pending-state and settings tests pass; fuzz uses nine reviewed seeds | rerun and archive every gate on the exact release commit; no paired-contact messenger or physical GrapheneOS E2E evidence |
+| v0.5 local input | checksum-gated gesture import tests pass; API 36 x86_64 emulator shows gesture decoding, Russian/English model extraction, just-in-time microphone grant with automatic post-grant start, and microphone start/stop with no network permission | acoustic accuracy and microphone behavior still require a physical Russian/English device test |
 | Android instrumentation | `:app:connectedDebugAndroidTest --no-configuration-cache` passes 7/7, zero failed/skipped, on API 36 x86_64 AOSP no-Play | targeted process-text/viewer/clipboard/vault scope; no full IME/private-panel/live-camera E2E |
 | debug Home/UI smoke | current APK installs/launches; Message format remains reachable with a locked Vault at font scale 2.0; the Russian settings screen has no status-bar overlap and scrolls in portrait/landscape at font scale 2.0 | targeted Home/settings only; no full screen/theme/RTL matrix and no ordinary IME input claim |
 | signed release candidate | a clean pre-public local pipeline produced a non-debug-signed APK and passed scripted signature, permission, APK-policy, SBOM/vulnerability, and artifact-hash gates | its evidence bundle is local, untracked, and unpublished; rebuild and publish new evidence for the final public tag; physical install acceptance is not claimed |
-| GrapheneOS/physical devices | not run | D01-D14 remain residual validation prerequisites before high-risk use, not demonstrated critical code defects |
+| GrapheneOS/physical devices | not run | D01-D15 remain residual validation prerequisites before high-risk use, not demonstrated critical code defects |
 
 Independent protocol review should validate the exact documented routing,
 capability, inner-binding, assembly-integrity, 192-KiB Compact limit and 32-KiB
@@ -256,12 +257,15 @@ regression fixture.
 ### 6.1 Ordinary HeliBoard regression
 
 On API 30, 34, 36 and the current GrapheneOS API, test English/Russian layout
-selection, language switch, shift/caps, autocorrection, gesture input where
-supported, numbers, symbols, emoji search/recents, combining Unicode, multiline
-enter, delete/selection, landscape, one-handed mode, light/dark themes, dynamic
-color option, large fonts, and IME restart. Test against a local host app with
-single-line, multiline, SMS-like, Telegram-like, RTL, and password
-`EditorInfo` configurations. Ordinary behavior may retain upstream features;
+selection, language switch, shift/caps, autocorrection, checksum-gated gesture
+input, packaged offline voice input, numbers, symbols, emoji search/recents,
+combining Unicode, multiline enter, delete/selection, landscape, one-handed
+mode, light/dark themes, dynamic color option, large fonts, and IME restart.
+For voice, grant/deny/revoke the microphone, dictate both languages, switch
+fields and layouts while loading/listening, exercise the 60-second limit, and
+verify no audio file/log/network traffic is produced. Test against a local host
+app with single-line, multiline, SMS-like, Telegram-like, RTL, email, password,
+and CipherBoard-owned `EditorInfo` configurations. Ordinary behavior may retain upstream features;
 secure-mode isolation must not weaken when those preferences are enabled.
 
 ### 6.2 Embedded Private panel and `InputConnection` defense
@@ -550,7 +554,8 @@ launch settings, enable/select the IME, and execute a smoke pair/send/decrypt.
 Checks require:
 
 - no `INTERNET`, `ACCESS_NETWORK_STATE`, Contacts, SMS, query-all, overlay, or
-  accessibility permission; camera is the only pairing runtime permission;
+  accessibility permission; `CAMERA` and `RECORD_AUDIO` are the only dangerous
+  runtime permissions and each is tied to its explicit local feature;
 - no Firebase/analytics/crash/ads/Play Services classes/resources/native code;
 - `allowBackup=false`, secret-excluding extraction rules, no WebView/dynamic
   loading, and no cleartext traffic;
@@ -564,7 +569,7 @@ Checks require:
 - SHA-256, signing certificate fingerprint, permissions, versions, ABI and git
   revision in `BUILD_INFO.txt` match independent tool output;
 - `VULNERABILITY_SCAN.json` records the approved scanner/database/SBOM hashes,
-  255 packages and zero findings; and
+  the exact generated package count, and zero findings; and
 - the three public assets are the production APK, its `.sha256` file, and the
   verification ZIP; and
 - every public or bundled file matches `RELEASE_ARTIFACTS.sha256` after bounded,
@@ -598,6 +603,7 @@ critical code vulnerability.
 | D12 Camera permission | Camera is unrequested until Scan, grant/deny/revoke paths work fully offline |
 | D13 Destructive lifecycle | App data clear/reinstall changes identity and peer shows critical key change/pairing required |
 | D14 Locked-device theft model | With device locked/rebooted, CE vault unavailable; DB copy available to test harness contains only authenticated ciphertext |
+| D15 Offline voice | Physical Russian/English dictation works with Network denied; permission grant/deny/revoke, model first-use, second-tap/timeout stop, field/layout switch cancellation, and no audio-file/log/traffic checks pass |
 
 At least one non-Play AOSP `x86_64` emulator is also required for repeatable
 `connectedCheck`. It supplements but does not replace GrapheneOS device gates.
@@ -615,7 +621,7 @@ At least one non-Play AOSP `x86_64` emulator is also required for repeatable
 | 6 Decryption | both entry points, viewer lifecycle, replay/reorder, no result/clipboard/plaintext leakage |
 | 7 UX/localization | en/ru, themes, font/orientation/RTL/accessibility and understandable error-state review |
 | 8 Hardening | full fuzz/static/dependency/native/log/manifest/security review; all findings resolved or release-blocked |
-| 9 Release | signed APK/APK tool agreement, SBOM/notices/build info, automated acceptance and install/update smoke; D01-D14 remain high-risk-use prerequisites |
+| 9 Release | signed APK/APK tool agreement, SBOM/notices/build info, automated acceptance and install/update smoke; D01-D15 remain high-risk-use prerequisites |
 
 ## 14. Release Evidence Package
 

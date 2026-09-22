@@ -91,8 +91,14 @@ cargo clippy --locked --manifest-path crypto-core/native/Cargo.toml --all-target
 cargo test --locked --manifest-path crypto-core/native/Cargo.toml
 cargo audit --file crypto-core/native/Cargo.lock
 cargo fmt --all --manifest-path crypto-core/native/fuzz/Cargo.toml -- --check
-cargo clippy --locked --manifest-path crypto-core/native/fuzz/Cargo.toml --all-targets -- -D warnings
-cargo test --locked --manifest-path crypto-core/native/fuzz/Cargo.toml
+fuzz_corpus="$temp_dir/fuzz-corpus"
+mkdir -p "$fuzz_corpus"
+cp -- "$ROOT_DIR"/crypto-core/native/fuzz/corpus/transport_parser/* "$fuzz_corpus/"
+(
+    cd "$ROOT_DIR/crypto-core/native"
+    cargo +nightly fuzz run transport_parser "$fuzz_corpus" -- \
+        -runs=1000 -max_len=393216 -timeout=5
+)
 cargo audit --file crypto-core/native/fuzz/Cargo.lock
 cargo fmt --all --manifest-path crypto-core/jni/Cargo.toml -- --check
 cargo clippy --locked --manifest-path crypto-core/jni/Cargo.toml --all-targets --all-features -- -D warnings

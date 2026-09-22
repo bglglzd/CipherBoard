@@ -4,7 +4,7 @@ Status: normative design for CipherBoard v1. Statements marked **MUST** are
 release requirements, not claims about the current worktree. Implementation
 status is tracked separately in `SECURITY_CHECKLIST.md`.
 
-### Current implementation snapshot (2026-07-14)
+### Current implementation snapshot (2026-08-27)
 
 The worktree currently contains four physical Gradle modules: `:app`,
 `:crypto-core`, `:secure-storage`, and `:pairing`. `keyboard`, `secure-ui`, and
@@ -41,6 +41,12 @@ Implemented source paths include:
   and
 - a non-exported contact-details UI for fingerprint/Safety Number display,
   rename, reverify, session destruction, deletion, and explicit re-pairing.
+- an optional ABI-specific gesture-library importer that accepts only source-
+  pinned SHA-256 values, stores the verified library privately, and rechecks it
+  before each process-local load; and
+- an embedded Vosk recognizer with checksum-pinned Russian and English models
+  packaged as APK assets, just-in-time microphone permission, bounded sessions,
+  and no audio persistence or external voice-provider handoff.
 
 Pending outbound records are contact-bound. A `READY` operation may be offered
 once without another ratchet step. Before the external Binder call it is
@@ -71,6 +77,17 @@ CipherBoard is one offline Android APK with two user-facing roles:
    symbols, and Unicode input; and
 2. a secure one-to-one messaging tool whose plaintext is composed and viewed
    only inside CipherBoard.
+
+Ordinary-field voice typing runs inside the IME process through Vosk. Russian
+and English models are pinned by archive size and SHA-256 during the build,
+expanded into APK assets, and copied on first use to app-private no-backup
+storage. The active keyboard locale selects the model. CipherBoard requests
+`RECORD_AUDIO` only after an explicit microphone action, captures 16 kHz audio
+only for the bounded recognition session, keeps hypotheses in memory, never
+persists audio, and releases Vosk native state at completion or cancellation.
+Voice input is hidden and blocked for passwords, email fields, and every
+CipherBoard editor, including the Private editor. The APK MUST NOT request
+Internet or network-state permission and contains no runtime model downloader.
 
 The host application is an untrusted text transport. The IME may read selected
 compact or word-presented ciphertext from it, explicitly read copied ciphertext
@@ -132,8 +149,14 @@ modules do not by themselves mean the logical boundaries above are complete.
   They never open the secure database before user unlock.
 - Providers are non-exported and MUST NOT expose secure storage. Upstream file
   import and clipboard providers require a separate path/URI review.
-- There is no WebView, dynamic code loading, remote service, sync adapter,
-  account authenticator, accessibility service, or network service.
+- There is no WebView, unverified dynamic code loading, remote service, sync
+  adapter, account authenticator, accessibility service, or network service.
+  The optional gesture-typing importer is the sole native-code exception: it
+  copies a user-selected local file into app-private storage only after its
+  ABI-specific SHA-256 matches a compile-time allowlist, verifies it again at
+  every process start, and offers no checksum override. The accepted
+  proprietary code still shares the IME/Vault process and is an explicit
+  opt-in trust expansion.
 
 All externally supplied intents, URIs, QR bytes, and selected text are hostile.
 Parsing precedes contact lookup and uses the limits in `CRYPTO_PROTOCOL.md`.
@@ -509,15 +532,20 @@ operation IDs; release logging has no content-bearing path.
 The merged manifest for every distributable variant MUST contain none of:
 `INTERNET`, `ACCESS_NETWORK_STATE`, SMS, Contacts, package-wide query,
 overlay, or accessibility permissions. Camera is requested only after the user
-presses Scan QR. `allowBackup=false`, restrictive data-extraction rules, and
-cleartext traffic denial are mandatory defense in depth.
+presses Scan QR. `RECORD_AUDIO` is requested only after the user presses the
+ordinary-field microphone and is used exclusively by the embedded recognizer.
+`allowBackup=false`, restrictive data-extraction rules, and cleartext traffic
+denial are mandatory defense in depth.
 
 Build and release gates also verify:
 
 - no Firebase, Google Play services, analytics, crash reporting, ads, HTTP
-  client, WebView, localhost access, remote configuration, or dynamic loader;
+  client, WebView, localhost access, remote configuration, or unverified
+  dynamic loader;
 - the pinned offline QR decoder contains no Play Services/cloud path;
-- all dictionaries, codebooks, models, and configuration are APK resources;
+- all dictionaries, codebooks, voice models, and configuration are APK
+  resources; imported gesture code is the single optional exception and must
+  match the source-pinned ABI-specific SHA-256 before every load;
 - `aapt`, `apkanalyzer`, and source/dependency scans agree on permissions; and
 - GrapheneOS Network permission is disabled during device acceptance even
   though the APK itself lacks Android network permissions.

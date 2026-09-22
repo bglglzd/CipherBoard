@@ -8,6 +8,18 @@ import org.junit.Test
 
 class InputAttributesCipherBoardTest {
     @Test
+    fun ordinaryTextEditorOffersEmbeddedOfflineVoice() {
+        val editorInfo = EditorInfo().apply {
+            packageName = "example.app"
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+
+        val attributes = InputAttributes(editorInfo, false, BuildConfig.APPLICATION_ID)
+
+        assertTrue(attributes.mShouldShowVoiceInputKey)
+    }
+
+    @Test
     fun cipherBoardEditorsAlwaysDisableLearning() {
         val editorInfo = EditorInfo().apply {
             packageName = BuildConfig.APPLICATION_ID
@@ -36,5 +48,6 @@ class InputAttributesCipherBoardTest {
         assertTrue(attributes.mIsCipherBoardEditor)
         assertTrue(!attributes.mIsCipherBoardSecureEditor)
         assertTrue(attributes.mNoLearning)
+        assertTrue(!attributes.mShouldShowVoiceInputKey)
     }
 }

@@ -4,23 +4,26 @@ CipherBoard is built from source as an Android application with Kotlin/Java,
 the inherited HeliBoard C++ dictionary engine, and a Rust JNI crypto library.
 Runtime operation is offline and the release manifest must not request
 `android.permission.INTERNET`. Network access may be needed only to populate
-development dependency caches.
+development dependency caches and the checksum-pinned Vosk model cache used to
+assemble APK assets.
 
 ## Pinned Build Baseline
 
 | Tool or input | Version |
 | --- | --- |
 | HeliBoard upstream | `v4.0`, `bd48798b99cccc99704eebf2a9259c02dbd684d5` |
-| Gradle wrapper | 8.14; distribution SHA-256 pinned in wrapper properties |
-| Android Gradle Plugin | 8.13.2 |
-| Kotlin | 2.3.20 |
+| Gradle wrapper | 9.7.1; distribution SHA-256 pinned in wrapper properties |
+| Android Gradle Plugin | 9.3.3 |
+| Kotlin | 2.4.20; AGP built-in Android Kotlin support |
 | JDK | 21 with `javac` (application bytecode remains Java 17 compatible) |
 | Android build-tools | 36.1.0 |
-| compileSdk / targetSdk / minSdk | 36 / 36 / 23 |
+| compileSdk / targetSdk / minSdk | 37 / 36 / 23 |
 | Android NDK | 28.0.13004108 |
 | Rust used for verified JNI work | 1.94.0 |
 | cargo-ndk used for verified JNI work | 4.1.2 |
 | vodozemac | 0.10.0, locked |
+| Vosk Android / JNA | 0.3.75 / 5.18.1, locked |
+| Offline voice models | `vosk-model-small-en-us-0.15`, `vosk-model-small-ru-0.22`; size and SHA-256 pinned |
 | Android ABIs | release `arm64-v8a`; debug/test `arm64-v8a`, `x86_64` |
 
 The Gradle product identity is centralized in `gradle.properties`:
@@ -28,17 +31,23 @@ The Gradle product identity is centralized in `gradle.properties`:
 ```text
 cipherboard.applicationId=org.cipherboard.securekeyboard
 cipherboard.productName=CipherBoard
-cipherboard.versionCode=40002
-cipherboard.versionName=0.4.2
+cipherboard.versionCode=50000
+cipherboard.versionName=0.5.0
 cipherboard.artifactName=CipherBoard
 ```
 
 Change these values intentionally and review upgrade behavior before release.
 
+AGP 9 uses built-in Kotlin support for Android modules. The build explicitly keeps
+compile/runtime dependency constraints and all existing unit-test variants so
+that the strict application lock continues to cover the same graphs. Kotlin
+tests declare the JUnit adapter explicitly. Generated license, voice-model, and
+JNI directories are registered through the Android Components sources API.
+
 ## Prerequisites
 
 1. A JDK 21 installation containing `java`, `javac`, and `keytool`.
-2. Android SDK platform 36, Build Tools `36.1.0`, command-line tools and NDK
+2. Android SDK platform 37 (`platforms;android-37.0`), Build Tools `36.1.0`, command-line tools and NDK
    `28.0.13004108`.
 3. Rust and Cargo with Android targets `aarch64-linux-android` and
    `x86_64-linux-android`.
@@ -79,6 +88,12 @@ Studio runtime can be used when it includes `javac`.
 Do not refresh locks incidentally during an unrelated change. Review both the
 lockfile diff and regenerated SBOM before accepting an upgrade.
 
+- The English and Russian Vosk archives are downloaded only by the build. The
+  build accepts the exact expected byte size and SHA-256, safely expands the
+  single expected archive root, and writes generated APK assets. Trusted
+  archives are cached under `.gradle/cipherboard-voice-models`; a release can be
+  assembled offline once dependencies and those exact archives are cached.
+
 After dependencies have been cached, Gradle may be tested with `--offline`.
 This does not change the requirement that the installed application has no
 network permission or runtime network behavior.
@@ -118,7 +133,9 @@ cargo +nightly fuzz run transport_parser fuzz/corpus/transport_parser -- \
 
 See `crypto-core/native/fuzz/README.md` for pinned prerequisites and the Windows
 AddressSanitizer runtime setup. Fuzz dependencies are development-only and are
-not packaged in the APK.
+not packaged in the APK. The release scripts run a 1,000-input sanitizer smoke
+campaign from a temporary copy of the seed corpus; the 60-second campaign above
+remains the minimum manual release evidence.
 
 Run Android JNI instrumentation on an emulator or device:
 
@@ -130,6 +147,11 @@ Run Android JNI instrumentation on an emulator or device:
 The Android library build invokes cargo-ndk for both supported ABIs and
 packages only `libcipherboard_crypto_jni.so`; generated native libraries remain
 under `build/` and are not committed.
+
+The optional proprietary gesture-typing library is not packaged in the APK or
+source archive. A user may select it locally after installation; CipherBoard
+accepts only the ABI-specific SHA-256 values pinned in
+`GestureLibraryInstaller.kt` and revalidates the private copy before loading it.
 
 ## Convenience Scripts
 
@@ -176,7 +198,8 @@ The verifier requires `aapt`, `apkanalyzer`, `apksigner`, `zipalign` and
 Python 3. It fails closed on:
 
 - forbidden network, contacts, SMS, overlay, package-query or accessibility
-  permissions;
+  permissions, or a missing `RECORD_AUDIO` permission required by the reviewed
+  embedded offline-voice feature;
 - `allowBackup` or cleartext traffic, and release `debuggable`/`testOnly`;
 - unapproved exported components or network deep links;
 - Firebase, Google Play Services, analytics, crash-reporting, advertising,
@@ -190,7 +213,7 @@ native hardening, and source review.
 
 ## Current Status
 
-On the current 2026-07-14 worktree, the complete app/library debug unit tasks and
+On the current 2026-08-27 worktree, the complete app/library debug unit tasks and
 release lint gates for all four modules pass after the API 23 compatibility
 fixes. The Rust native suite reports 43 passing tests and the narrow JNI crate
 reports 3; Rust format, Clippy and dependency audit gates also pass. These

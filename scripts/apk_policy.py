@@ -34,6 +34,7 @@ FORBIDDEN_PERMISSIONS = {
 EXPECTED_PERMISSIONS = {
     "android.permission.CAMERA",
     "android.permission.READ_USER_DICTIONARY",
+    "android.permission.RECORD_AUDIO",
     "android.permission.RECEIVE_BOOT_COMPLETED",
     "android.permission.USE_BIOMETRIC",
     "android.permission.USE_FINGERPRINT",
@@ -370,6 +371,8 @@ def check_manifest(
     unreviewed_permissions = set(permissions).difference(expected_permissions)
     if unreviewed_permissions:
         errors.append("unreviewed permissions: " + ", ".join(sorted(unreviewed_permissions)))
+    if "android.permission.RECORD_AUDIO" not in permissions:
+        errors.append("offline voice input requires the reviewed RECORD_AUDIO permission")
 
     application = root.find("application")
     if application is None:

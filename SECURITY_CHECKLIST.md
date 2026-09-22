@@ -1,6 +1,6 @@
 # CipherBoard Security Checklist
 
-**Snapshot date:** 2026-07-14
+**Snapshot date:** 2026-08-27
 **Public release branch:** `main`
 **Upstream baseline:** HeliBoard `v4.0`, commit
 `bd48798b99cccc99704eebf2a9259c02dbd684d5`
@@ -60,7 +60,7 @@ still unverified.
 | GOV-04 | GPLv3 license, source obligations, and upstream notices are preserved | 5 | Implemented | Complete license texts/notices are retained, packaged for offline viewing, and included with the exact-commit source archive; final artifact review pending |
 | GOV-05 | Third-party versions, licenses, and notices are complete | 5, 30 | Implemented | GPL/Apache/BlueOak/CC texts, consolidated BSD notices, inventory/notices and nonempty offline-asset unit test exist; final resolved-graph/manual review pending |
 | GOV-06 | Threat model accurately states scope and residual risk | 3 | Implemented | `THREAT_MODEL.md`; independent security review pending |
-| GOV-07 | Architecture, crypto protocol, build, release, and test documents match code | 6, 30 | Implemented | 2026-07-14 embedded-Private-mode documentation audit; repeat at release candidate |
+| GOV-07 | Architecture, crypto protocol, build, release, and test documents match code | 6, 30 | Implemented | 2026-08-27 documentation audit covering Private mode, offline voice input, and verified gesture-library loading; repeat at each release candidate |
 | GOV-08 | UI/README contain no absolute-security or independent-audit claims | 3, 33 | Implemented | Security UI and docs state limitations/no independent audit; final resource scan pending |
 | GOV-09 | No passwords, private keys, signing files, or credentials are tracked | 4, 29 | Pending | Secret scan plus Git history review |
 
@@ -72,10 +72,11 @@ still unverified.
 | NET-02 | No `ACCESS_NETWORK_STATE` or other network permission | 2, 19 | Verified | Source and pre-public local signed-candidate permission dumps contain no network permission; repeat for the final public tag |
 | NET-03 | Runtime performs no network or localhost request | 2 | Implemented | Production-source scan found no client/call; denied-Network device traffic test pending |
 | NET-04 | No Firebase, FCM, Play Services, analytics, crash-reporting, advertising, or remote-config SDK | 2, 20, 28 | Verified | Source, dependency and pre-public local signed-candidate APK policy scans passed; rerun against the final public artifact |
-| NET-05 | No WebView, dynamic code loading, downloaded model/dictionary/configuration, or proprietary cloud QR API | 2, 19, 27 | Implemented | Source uses local ZXing/CameraX and packaged assets; the pre-public local candidate's APK marker scan passed, while physical runtime verification remains pending |
+| NET-05 | No WebView, unverified dynamic code loading, runtime-downloaded model/configuration, or proprietary cloud QR API | 2, 19, 27 | Implemented | The optional offline gesture library is accepted only against an ABI-specific compile-time SHA-256 allowlist and reverified before each load; source uses local ZXing/CameraX and checksum-pinned Vosk models packaged as APK assets; repeat final APK and physical runtime verification |
 | NET-06 | App works on GrapheneOS without Sandboxed Google Play | 20, 31 | Pending | Physical-device acceptance evidence |
 | NET-07 | GrapheneOS Network denial is documented as defense in depth | 20 | Implemented | `RELEASE.md`, `THREAT_MODEL.md`; installation walkthrough review pending |
 | NET-08 | Update checks/install are external; CipherBoard has no in-app updater, `INTERNET`, or `REQUEST_INSTALL_PACKAGES` | 2, 20, 28 | Implemented | README/release notes document Obtainium as a separate trust boundary; final manifest and update-over-existing-install test pending |
+| NET-09 | Voice typing is fully local, uses only packaged Russian/English models, persists no audio, and remains unavailable for passwords, email, and every CipherBoard editor | 11, 19, 28 | Implemented | Embedded Vosk controller, just-in-time `RECORD_AUDIO`, 60-second bound, no-backup model extraction, fixed-message/no-audio-log paths, unit gates, and x86_64 emulator permission/model/microphone start-stop tests pass; physical Russian/English dictation accuracy remains pending |
 
 ## 3. Cryptographic Library and FFI
 
@@ -213,7 +214,7 @@ still unverified.
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
 | AND-01 | Manifest excludes Internet/network, package installation, Contacts, SMS, package-query, overlay, and Accessibility-service permissions | 19, 28 | Verified | The pre-public local signed candidate passed `aapt`/`apkanalyzer`/policy checks; repeat `INTERNET` and `REQUEST_INSTALL_PACKAGES` checks against the final public artifact |
-| AND-02 | Camera is the only planned dangerous runtime permission and is requested just in time | 19 | Implemented | Signed-candidate permission evidence and explicit Scan-triggered launcher are present; physical just-in-time grant/deny/revoke remains pending |
+| AND-02 | Camera and microphone are the only planned dangerous runtime permissions and are requested just in time for local QR scan or offline dictation | 19 | Implemented | Explicit non-exported launchers and APK permission evidence are present; microphone grant/revoke and automatic post-grant start passed on API 36 emulator; physical camera and microphone acceptance remains pending |
 | AND-03 | Sensitive activities/services/providers are non-exported unless required and strictly validate callers/input | 27, 28 | Implemented | Secure components are non-exported except launcher/process-text and the pre-public local candidate's APK exported-shape policy passed; deeper final intent validation remains pending |
 | AND-04 | Process-text component is exported only as Android requires and treats all input as hostile | 14, 27 | Implemented | Strict action/MIME/size/ASCII/envelope path and no result replacement; malicious-intent instrumentation pending |
 | AND-05 | PendingIntents, if any, are immutable/mutable only as necessary and explicit | 27 | Pending | Static manifest/source scan |

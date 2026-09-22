@@ -1,13 +1,10 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     id("com.android.library")
-    kotlin("android")
 }
 
 android {
     namespace = "org.cipherboard.pairing"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 23
@@ -22,14 +19,6 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-    }
-}
-
-kotlin {
-    target {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
     }
 }
 

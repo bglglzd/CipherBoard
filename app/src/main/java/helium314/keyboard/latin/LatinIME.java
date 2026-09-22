@@ -22,6 +22,7 @@ import android.os.Bundle;
 import android.os.Debug;
 import android.os.Message;
 import android.os.Process;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.util.PrintWriterPrinter;
 import android.util.Printer;
@@ -151,6 +152,15 @@ public class LatinIME extends InputMethodService implements
     private InsetsOutlineProvider mInsetsUpdater;
     private SuggestionStripView mSuggestionStripView;
     private EmbeddedSecureComposerController mEmbeddedSecureComposer;
+    private OfflineVoiceInputController mOfflineVoiceInputController;
+    private OfflineVoicePanel mOfflineVoicePanel;
+    private boolean mPendingOfflineVoiceStart;
+    private boolean mOfflineVoicePermissionResultReceived;
+    private long mOfflineVoicePermissionReadyAtMillis;
+    @Nullable private OfflineVoiceEditorScope mPendingOfflineVoiceEditorScope;
+    @Nullable private InputConnection mOfflineVoiceInputConnection;
+    private final Runnable mStartPendingOfflineVoiceRunnable =
+            this::startPendingOfflineVoiceInputIfReady;
 
     private RichInputMethodManager mRichImm;
     final KeyboardSwitcher mKeyboardSwitcher;
@@ -178,6 +188,26 @@ public class LatinIME extends InputMethodService implements
                     && mEmbeddedSecureComposer != null) {
                 mEmbeddedSecureComposer.onScreenOff();
             }
+        }
+    };
+
+    private final BroadcastReceiver mOfflineVoicePermissionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(final Context context, final Intent intent) {
+            if (!OfflineVoicePermissionActivity.ACTION_PERMISSION_RESULT.equals(intent.getAction())) {
+                return;
+            }
+            if (!intent.getBooleanExtra(OfflineVoicePermissionActivity.EXTRA_GRANTED, false)) {
+                clearPendingOfflineVoiceStart();
+                return;
+            }
+            // Let the permission activity finish and the host editor complete its IME rebind
+            // before loading a model. Starting synchronously here can be cancelled by the tail
+            // end of that rebind even though permission was granted successfully.
+            mOfflineVoicePermissionResultReceived = true;
+            mOfflineVoicePermissionReadyAtMillis = SystemClock.uptimeMillis() + 750L;
+            mHandler.removeCallbacks(mStartPendingOfflineVoiceRunnable);
+            mHandler.postDelayed(mStartPendingOfflineVoiceRunnable, 750L);
         }
     };
 
@@ -589,6 +619,39 @@ public class LatinIME extends InputMethodService implements
         KeyboardSwitcher.init(this);
         super.onCreate();
         mEmbeddedSecureComposer = new EmbeddedSecureComposerController(this);
+        mOfflineVoiceInputController = new OfflineVoiceInputController(
+                this, new OfflineVoiceInputController.Callback() {
+                    @Override
+                    public void showError(final int message) {
+                        mKeyboardSwitcher.showToast(getString(message), false);
+                    }
+
+                    @Override
+                    public void showVoiceUi(
+                            final int message,
+                            @NonNull final String recognizedText,
+                            final boolean listening) {
+                        if (mOfflineVoicePanel != null) {
+                            mOfflineVoicePanel.show(message, recognizedText, listening);
+                        }
+                    }
+
+                    @Override
+                    public void commitRecognizedText(@NonNull final String text) {
+                        commitOfflineVoiceText(text);
+                    }
+
+                    @Override
+                    public void onSessionClosed() {
+                        if (mOfflineVoicePanel != null) mOfflineVoicePanel.hide();
+                        mOfflineVoiceInputConnection = null;
+                    }
+                });
+        mOfflineVoicePanel = new OfflineVoicePanel(() -> {
+            if (mOfflineVoiceInputController != null) {
+                mOfflineVoiceInputController.finishOrCancel();
+            }
+        });
 
         loadSettings();
         mClipboardHistoryManager.onCreate();
@@ -624,6 +687,10 @@ public class LatinIME extends InputMethodService implements
 
         ContextCompat.registerReceiver(this, mSecureScreenOffReceiver,
                 new IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        ContextCompat.registerReceiver(this, mOfflineVoicePermissionReceiver,
+                new IntentFilter(OfflineVoicePermissionActivity.ACTION_PERMISSION_RESULT),
+                ContextCompat.RECEIVER_NOT_EXPORTED);
 
         StatsUtils.onCreate(mSettings.getCurrent(), mRichImm);
     }
@@ -745,6 +812,16 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onDestroy() {
+        if (mOfflineVoiceInputController != null) {
+            mOfflineVoiceInputController.destroy();
+            mOfflineVoiceInputController = null;
+        }
+        if (mOfflineVoicePanel != null) {
+            mOfflineVoicePanel.detach();
+            mOfflineVoicePanel = null;
+        }
+        clearPendingOfflineVoiceStart();
+        mOfflineVoiceInputConnection = null;
         closeEmbeddedSecureComposer(false);
         if (mEmbeddedSecureComposer != null) {
             mEmbeddedSecureComposer.destroy();
@@ -761,6 +838,7 @@ public class LatinIME extends InputMethodService implements
         unregisterReceiver(mDictionaryDumpBroadcastReceiver);
         unregisterReceiver(mRestartAfterDeviceUnlockReceiver);
         unregisterReceiver(mSecureScreenOffReceiver);
+        unregisterReceiver(mOfflineVoicePermissionReceiver);
         mStatsUtilsManager.onDestroy(this /* context */);
         super.onDestroy();
         mHandler.removeCallbacksAndMessages(null);
@@ -817,6 +895,7 @@ public class LatinIME extends InputMethodService implements
         if (mEmbeddedSecureComposer != null) {
             mEmbeddedSecureComposer.attach(inputView);
         }
+        if (mOfflineVoicePanel != null) mOfflineVoicePanel.attach(inputView);
         return inputView;
     }
 
@@ -922,6 +1001,7 @@ public class LatinIME extends InputMethodService implements
     }
 
     private void onStartInputInternal(final EditorInfo editorInfo, final boolean restarting) {
+        cancelOfflineVoiceInputSession();
         super.onStartInput(editorInfo, restarting);
         if (isEmbeddedSecureComposerActive()) {
             final InputBinding binding = getCurrentInputBinding();
@@ -1004,9 +1084,9 @@ public class LatinIME extends InputMethodService implements
         // we want to reload the settings before calling updateKeyboardTheme, because updateKeyboardTheme reads SettingsValues.mToolbarMode
         if (isDifferentTextField || !currentSettingsValues.hasSameOrientation(getResources().getConfiguration())) {
             loadSettings();
-            if (hasSuggestionStripView())
-                mSuggestionStripView.updateVoiceKey();
         }
+        if (hasSuggestionStripView())
+            mSuggestionStripView.updateVoiceKey();
 
         switcher.updateKeyboardTheme(mDisplayContext);
         MainKeyboardView mainKeyboardView = switcher.getMainKeyboardView();
@@ -1126,6 +1206,8 @@ public class LatinIME extends InputMethodService implements
                 currentSettingsValues.mGestureTrailEnabled,
                 currentSettingsValues.mGestureFloatingPreviewTextEnabled);
 
+        startPendingOfflineVoiceInputIfReady();
+
         if (TRACE) Debug.startMethodTracing("/data/trace/latinime");
     }
 
@@ -1156,6 +1238,7 @@ public class LatinIME extends InputMethodService implements
             setNavigationBarColor();
             workaroundForHuaweiStatusBarIssue();
         }
+        startPendingOfflineVoiceInputIfReady();
     }
 
     @Override
@@ -1178,6 +1261,7 @@ public class LatinIME extends InputMethodService implements
     }
 
     void onFinishInputInternal() {
+        cancelOfflineVoiceInputSession();
         final boolean preserveEmbedded = isEmbeddedSecureComposerActive()
                 && mEmbeddedSecureComposer.isAwaitingUnlock();
         if (isEmbeddedSecureComposerActive() && !preserveEmbedded) {
@@ -1198,6 +1282,7 @@ public class LatinIME extends InputMethodService implements
     }
 
     void onFinishInputViewInternal(final boolean finishingInput) {
+        cancelOfflineVoiceInputSession();
         super.onFinishInputView(finishingInput);
         Log.i(TAG, "onFinishInputView");
         if (isEmbeddedSecureComposerActive()) {
@@ -1610,7 +1695,25 @@ public class LatinIME extends InputMethodService implements
             return;
         }
         if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
-            mRichImm.switchToShortcutIme(this);
+            if (mOfflineVoiceInputController != null && canUseOfflineVoiceInput()) {
+                final InputConnection connection = getCurrentInputConnection();
+                if (connection == null) return;
+                if (mOfflineVoiceInputController.isIdle()) {
+                    if (!mOfflineVoiceInputController.hasMicrophonePermission()) {
+                        final InputBinding binding = getCurrentInputBinding();
+                        final OfflineVoiceEditorScope editorScope = OfflineVoiceEditorScope.from(
+                                getCurrentInputEditorInfo(), binding == null ? -1 : binding.getUid());
+                        if (editorScope == null) return;
+                        mPendingOfflineVoiceStart = true;
+                        mOfflineVoicePermissionResultReceived = false;
+                        mPendingOfflineVoiceEditorScope = editorScope;
+                    } else {
+                        mOfflineVoiceInputConnection = connection;
+                    }
+                }
+                mOfflineVoiceInputController.toggle(mRichImm.getCurrentSubtypeLocale());
+            }
+            return;
         }
         final InputTransaction completeInputTransaction =
                 mInputLogic.onCodeInput(mSettings.getCurrent(), event,
@@ -1618,6 +1721,62 @@ public class LatinIME extends InputMethodService implements
                         mKeyboardSwitcher.getCurrentKeyboardScript(), mHandler);
         updateStateAfterInputTransaction(completeInputTransaction);
         mKeyboardSwitcher.onEvent(event, getCurrentAutoCapsState(), getCurrentRecapitalizeState());
+    }
+
+    private boolean canUseOfflineVoiceInput() {
+        final SettingsValues current = mSettings.getCurrent();
+        return current != null
+                && current.mInputAttributes.mShouldShowVoiceInputKey
+                && !isCipherBoardSecureEditor();
+    }
+
+    private void startPendingOfflineVoiceInputIfReady() {
+        if (!mPendingOfflineVoiceStart
+                || !mOfflineVoicePermissionResultReceived
+                || SystemClock.uptimeMillis() < mOfflineVoicePermissionReadyAtMillis
+                || mOfflineVoiceInputController == null
+                || !mOfflineVoiceInputController.hasMicrophonePermission()
+                || !isInputViewShown()
+                || !canUseOfflineVoiceInput()) {
+            return;
+        }
+        final InputConnection currentConnection = getCurrentInputConnection();
+        if (currentConnection == null) return;
+        final InputBinding binding = getCurrentInputBinding();
+        if (mPendingOfflineVoiceEditorScope == null
+                || !mPendingOfflineVoiceEditorScope.matches(
+                        getCurrentInputEditorInfo(), binding == null ? -1 : binding.getUid())) {
+            clearPendingOfflineVoiceStart();
+            return;
+        }
+        mOfflineVoiceInputConnection = currentConnection;
+        clearPendingOfflineVoiceStart();
+        mOfflineVoiceInputController.startAfterPermission(mRichImm.getCurrentSubtypeLocale());
+    }
+
+    private void clearPendingOfflineVoiceStart() {
+        mHandler.removeCallbacks(mStartPendingOfflineVoiceRunnable);
+        mPendingOfflineVoiceStart = false;
+        mOfflineVoicePermissionResultReceived = false;
+        mOfflineVoicePermissionReadyAtMillis = 0L;
+        mPendingOfflineVoiceEditorScope = null;
+    }
+
+    private void cancelOfflineVoiceInputSession() {
+        if (mOfflineVoiceInputController != null) mOfflineVoiceInputController.cancel();
+        if (mOfflineVoicePanel != null) mOfflineVoicePanel.hide();
+        mOfflineVoiceInputConnection = null;
+    }
+
+    private void commitOfflineVoiceText(@NonNull final String text) {
+        if (!canUseOfflineVoiceInput()) return;
+        final InputConnection connection = getCurrentInputConnection();
+        if (connection == null || connection != mOfflineVoiceInputConnection) return;
+        final CharSequence beforeCursor = connection.getTextBeforeCursor(1, 0);
+        final boolean needsLeadingSpace = beforeCursor != null
+                && beforeCursor.length() > 0
+                && !Character.isWhitespace(beforeCursor.charAt(beforeCursor.length() - 1));
+        connection.commitText(needsLeadingSpace ? " " + text : text, 1);
     }
 
     private boolean isCipherBoardSecureEditor() {

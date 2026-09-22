@@ -68,11 +68,11 @@ jobs:
           rustup target add aarch64-linux-android x86_64-linux-android
           cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
 
-      - name: Install pinned NDK
+      - name: Install compile SDK, build tools, and pinned NDK
         run: |
           sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$sdkmanager"
-          "$sdkmanager" --install "ndk;${ANDROID_NDK}"
+          "$sdkmanager" --install "platforms;android-37.0" "build-tools;36.1.0" "ndk;${ANDROID_NDK}"
 
       - name: Grant the runner access to KVM
         run: |

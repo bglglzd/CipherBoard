@@ -18,7 +18,7 @@ jar {
 
 tasks.register('makeEmoji', JavaExec) {
     dependsOn['jar']
-    main = '-jar'
+    mainClass = '-jar'
     args jar.archiveFile.get()
     args '-assets'
     args project.rootProject.project('app').projectDir.path + File.separator + 'src' +
@@ -26,7 +26,7 @@ tasks.register('makeEmoji', JavaExec) {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.3.20"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.20"
 }
 
 java {

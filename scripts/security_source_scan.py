@@ -34,8 +34,16 @@ RUNTIME_PATTERNS = {
     r"\b(?:Firebase|Crashlytics|Sentry|Mixpanel|Amplitude|AppsFlyer)\b": "telemetry SDK",
     r"\bandroid\.webkit\.WebView\b": "WebView",
     r"\b(?:DexClassLoader|InMemoryDexClassLoader)\b": "dynamic code loading",
-    r"\bSystem\.load\s*\(": "arbitrary-path native loading",
     r"(?i)\b(?:localhost|127\.0\.0\.1)\b": "loopback endpoint",
+}
+
+NATIVE_PATH_LOAD_PATTERN = r"\bSystem\.load\s*\("
+PINNED_GESTURE_LOADER = "app/src/main/java/helium314/keyboard/latin/utils/JniUtils.java"
+MICROPHONE_PERMISSION_PATTERN = r"(?:android|Manifest)\.permission\.RECORD_AUDIO"
+APPROVED_MICROPHONE_FILES = {
+    "app/src/main/AndroidManifest.xml",
+    "app/src/main/java/helium314/keyboard/latin/OfflineVoiceInputController.java",
+    "app/src/main/java/helium314/keyboard/latin/OfflineVoicePermissionActivity.kt",
 }
 
 SECRET_PATTERNS = {
@@ -93,10 +101,29 @@ def scan(root: pathlib.Path) -> list[str]:
                 if re.search(pattern, text):
                     errors.append(f"{label} in {relative}")
 
-        if relative.startswith(RUNTIME_ROOTS):
+        is_runtime_source = relative.startswith(RUNTIME_ROOTS) \
+            or relative == "app/src/main/AndroidManifest.xml"
+        if is_runtime_source:
             for pattern, label in RUNTIME_PATTERNS.items():
                 if re.search(pattern, text):
                     errors.append(f"{label} in {relative}")
+            if re.search(NATIVE_PATH_LOAD_PATTERN, text):
+                approved_loader = (
+                    relative == PINNED_GESTURE_LOADER
+                    and len(re.findall(NATIVE_PATH_LOAD_PATTERN, text)) == 1
+                    and "validInstalledLibrary" in text
+                    and "System.load(importedLibrary.getAbsolutePath())" in text
+                )
+                if not approved_loader:
+                    errors.append(f"arbitrary-path native loading in {relative}")
+
+        if is_runtime_source and re.search(MICROPHONE_PERMISSION_PATTERN, text):
+            approved_microphone_use = relative in APPROVED_MICROPHONE_FILES and (
+                relative == "app/src/main/AndroidManifest.xml"
+                or "OfflineVoice" in relative
+            )
+            if not approved_microphone_use:
+                errors.append(f"unapproved microphone permission use in {relative}")
 
         if "/secure/" in relative or relative.startswith("app/src/main/java/org/cipherboard/"):
             for pattern, label in SECURE_SOURCE_PATTERNS.items():

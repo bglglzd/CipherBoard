@@ -5,9 +5,7 @@ $Version = Get-PropertyValue (Join-Path $Root "gradle.properties") "cipherboard.
 $Artifact = Get-PropertyValue (Join-Path $Root "gradle.properties") "cipherboard.artifactName"
 Push-Location $Root
 try {
-    $Python = (Get-Command python3 -ErrorAction SilentlyContinue)?.Source
-    if (-not $Python) { $Python = (Get-Command python -ErrorAction SilentlyContinue)?.Source }
-    if (-not $Python) { Fail "Python 3 is required for security source checks" }
+    $Python = Get-Python3
     Invoke-Checked $Python @((Join-Path $PSScriptRoot "security_source_scan.py"), $Root)
     Invoke-Checked $Python @((Join-Path $PSScriptRoot "kotlin_style_check.py"), $Root)
     Invoke-Checked (Join-Path $Root "gradlew.bat") @(
