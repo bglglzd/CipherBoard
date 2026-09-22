@@ -1,12 +1,24 @@
 import com.android.build.api.variant.ApplicationVariant
 import com.android.build.api.artifact.SingleArtifact
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
 import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+
+abstract class PrepareVoiceAssetsTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+}
+
+abstract class PrepareLicenseAssetsTask : Sync() {
+    @get:Internal
+    abstract val outputDirectory: DirectoryProperty
+}
 
 val cipherboardApplicationId = providers.gradleProperty("cipherboard.applicationId").get()
 val cipherboardProductName = providers.gradleProperty("cipherboard.productName").get()
@@ -54,7 +66,7 @@ fun File.sha256(): String {
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
-val prepareVoiceModelAssets by tasks.registering {
+val prepareVoiceModelAssets by tasks.registering(PrepareVoiceAssetsTask::class) {
     group = "build setup"
     description = "Downloads checksum-pinned Vosk models and packages them as offline assets."
     notCompatibleWithConfigurationCache(
@@ -62,7 +74,7 @@ val prepareVoiceModelAssets by tasks.registering {
     )
     inputs.property("voiceModels", voiceModels.joinToString("|") { "${it.language}:${it.sha256}" })
     inputs.property("voiceModelMarker", "cipherboard-model.sha256")
-    outputs.dir(generatedVoiceModelAssets)
+    outputDirectory.set(generatedVoiceModelAssets)
     doLast {
         val cacheDirectory = voiceModelCache.asFile.apply { mkdirs() }
         val outputDirectory = generatedVoiceModelAssets.get().asFile
@@ -157,7 +169,8 @@ val prepareVoiceModelAssets by tasks.registering {
         }
     }
 }
-val prepareLicenseAssets by tasks.registering(Sync::class) {
+val prepareLicenseAssets by tasks.registering(PrepareLicenseAssetsTask::class) {
+    outputDirectory.set(generatedLicenseAssets)
     from(rootProject.files(
         "LICENSE",
         "LICENSE-Apache-2.0",
@@ -176,7 +189,6 @@ val prepareLicenseAssets by tasks.registering(Sync::class) {
 
 plugins {
     id("com.android.application")
-    kotlin("android")
     kotlin("plugin.serialization") version "2.3.20"
     kotlin("plugin.compose") version "2.3.20"
 }
@@ -274,6 +286,7 @@ android {
     }
 
     buildFeatures {
+        resValues = true
         viewBinding = true
         buildConfig = true
         compose = true
@@ -282,9 +295,6 @@ android {
     androidResources {
         localeFilters += listOf("en", "ru")
     }
-
-    sourceSets.getByName("main").assets.srcDir(generatedLicenseAssets)
-    sourceSets.getByName("main").assets.srcDir(generatedVoiceModelAssets)
 
     externalNativeBuild {
         ndkBuild {
@@ -311,14 +321,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        target {
-            compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_17)
-            }
-        }
-    }
-
     // see https://github.com/HeliBorg/HeliBoard/issues/477
     dependenciesInfo {
         includeInApk = false
@@ -338,6 +340,8 @@ tasks.named("preBuild").configure {
 
 androidComponents {
     onVariants(selector().all()) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(prepareLicenseAssets) { it.outputDirectory }
+        variant.sources.assets?.addGeneratedSourceDirectory(prepareVoiceModelAssets) { it.outputDirectory }
         val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
         val variantName = variant.name
         val variantTaskName = variantName.replaceFirstChar { it.uppercase() }
@@ -408,7 +412,7 @@ dependencies {
     implementation("com.github.skydoves:colorpicker-compose:1.1.3") // for user-defined colors
 
     // test
-    testImplementation(kotlin("test"))
+    testImplementation(kotlin("test-junit"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.23.0")
     testImplementation("org.robolectric:robolectric:4.16.1")

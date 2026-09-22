@@ -18,7 +18,7 @@ jar {
 
 tasks.register('makeEmoji', JavaExec) {
     dependsOn['jar']
-    main = '-jar'
+    mainClass = '-jar'
     args jar.archiveFile.get()
     args '-assets'
     args project.rootProject.project('app').projectDir.path + File.separator + 'src' +

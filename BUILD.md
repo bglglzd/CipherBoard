@@ -12,9 +12,9 @@ assemble APK assets.
 | Tool or input | Version |
 | --- | --- |
 | HeliBoard upstream | `v4.0`, `bd48798b99cccc99704eebf2a9259c02dbd684d5` |
-| Gradle wrapper | 8.14; distribution SHA-256 pinned in wrapper properties |
-| Android Gradle Plugin | 8.13.2 |
-| Kotlin | 2.3.20 |
+| Gradle wrapper | 9.7.1; distribution SHA-256 pinned in wrapper properties |
+| Android Gradle Plugin | 9.3.3 |
+| Kotlin | 2.3.20; AGP built-in Android Kotlin support |
 | JDK | 21 with `javac` (application bytecode remains Java 17 compatible) |
 | Android build-tools | 36.1.0 |
 | compileSdk / targetSdk / minSdk | 36 / 36 / 23 |
@@ -37,6 +37,12 @@ cipherboard.artifactName=CipherBoard
 ```
 
 Change these values intentionally and review upgrade behavior before release.
+
+AGP 9 uses built-in Kotlin support for Android modules. The build explicitly keeps
+compile/runtime dependency constraints and all existing unit-test variants so
+that the strict application lock continues to cover the same graphs. Kotlin
+tests declare the JUnit adapter explicitly. Generated license, voice-model, and
+JNI directories are registered through the Android Components sources API.
 
 ## Prerequisites
 

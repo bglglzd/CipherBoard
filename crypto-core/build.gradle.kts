@@ -1,12 +1,17 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.Internal
+
+abstract class SyncNativeLibrariesTask : Sync() {
+    @get:Internal
+    abstract val outputDirectory: DirectoryProperty
+}
 
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 val pinnedNdkVersion = "28.0.13004108"
-val pinnedNdkDirectory = android.sdkDirectory.resolve("ndk/$pinnedNdkVersion")
+val pinnedNdkDirectory = androidComponents.sdkComponents.sdkDirectory.get().asFile.resolve("ndk/$pinnedNdkVersion")
 val rawRustJniLibs = layout.buildDirectory.dir("rustJniRaw")
 val packagedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
 
@@ -39,17 +44,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
-    }
-
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
-
-    sourceSets.getByName("main").jniLibs.srcDir(packagedJniLibs)
 
     lint {
         abortOnError = true
@@ -78,7 +75,8 @@ val buildRust by tasks.registering(Exec::class) {
     )
 }
 
-val syncNativeLibraries by tasks.registering(Sync::class) {
+val syncNativeLibraries by tasks.registering(SyncNativeLibrariesTask::class) {
+    outputDirectory.set(packagedJniLibs)
     dependsOn(buildRust)
     from(rawRustJniLibs) {
         include("**/libcipherboard_crypto_jni.so")
@@ -88,8 +86,12 @@ val syncNativeLibraries by tasks.registering(Sync::class) {
 
 tasks.named("preBuild").configure { dependsOn(syncNativeLibraries) }
 
+androidComponents.onVariants { variant ->
+    variant.sources.jniLibs?.addGeneratedSourceDirectory(syncNativeLibraries) { it.outputDirectory }
+}
+
 dependencies {
-    testImplementation(kotlin("test"))
+    testImplementation(kotlin("test-junit"))
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
