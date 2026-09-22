@@ -67,7 +67,7 @@ resolved Android runtime graph can be inspected with:
 | Component | Pinned declaration | License |
 | --- | --- | --- |
 | Android Gradle Plugin / ViewBinding | 9.3.3 | Apache-2.0 |
-| Kotlin stdlib and compiler plugins | 2.4.20 | Apache-2.0 |
+| Kotlin stdlib and compiler plugins | 2.3.20 | Apache-2.0 |
 | AndroidX Core KTX | 1.17.0 | Apache-2.0 |
 | AndroidX RecyclerView | 1.4.0 | Apache-2.0 |
 | AndroidX Autofill | 1.3.0 | Apache-2.0 |

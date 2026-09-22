@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "org.cipherboard.securestorage"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 23

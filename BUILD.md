@@ -14,10 +14,10 @@ assemble APK assets.
 | HeliBoard upstream | `v4.0`, `bd48798b99cccc99704eebf2a9259c02dbd684d5` |
 | Gradle wrapper | 9.7.1; distribution SHA-256 pinned in wrapper properties |
 | Android Gradle Plugin | 9.3.3 |
-| Kotlin | 2.4.20; AGP built-in Android Kotlin support |
+| Kotlin | 2.3.20; AGP built-in Android Kotlin support |
 | JDK | 21 with `javac` (application bytecode remains Java 17 compatible) |
 | Android build-tools | 36.1.0 |
-| compileSdk / targetSdk / minSdk | 37 / 36 / 23 |
+| compileSdk / targetSdk / minSdk | 36 / 36 / 23 |
 | Android NDK | 28.0.13004108 |
 | Rust used for verified JNI work | 1.94.0 |
 | cargo-ndk used for verified JNI work | 4.1.2 |
@@ -47,7 +47,7 @@ JNI directories are registered through the Android Components sources API.
 ## Prerequisites
 
 1. A JDK 21 installation containing `java`, `javac`, and `keytool`.
-2. Android SDK platform 37 (`platforms;android-37.0`), Build Tools `36.1.0`, command-line tools and NDK
+2. Android SDK platform 36, Build Tools `36.1.0`, command-line tools and NDK
    `28.0.13004108`.
 3. Rust and Cargo with Android targets `aarch64-linux-android` and
    `x86_64-linux-android`.

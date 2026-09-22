@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "org.cipherboard.pairing"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 23

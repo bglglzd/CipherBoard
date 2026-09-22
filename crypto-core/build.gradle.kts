@@ -17,7 +17,7 @@ val packagedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
 
 android {
     namespace = "org.cipherboard.cryptocore"
-    compileSdk = 37
+    compileSdk = 36
     ndkVersion = pinnedNdkVersion
 
     defaultConfig {

@@ -45,7 +45,7 @@ meet this floor.
 - Pinned upstream commit: `bd48798b99cccc99704eebf2a9259c02dbd684d5`
 - Upstream license: GPL-3.0, with inherited Apache-2.0 and CC BY-SA 4.0
   material documented separately
-- Android baseline: compile SDK 37 / target SDK 36, Java/JVM 17, NDK
+- Android baseline: compile/target SDK 36, Java/JVM 17, NDK
   `28.0.13004108`
 - Crypto decision: `matrix-org/vodozemac` `0.10.0`, exact crate checksum and
   commit recorded in `docs/adr/0001-crypto-library.md`

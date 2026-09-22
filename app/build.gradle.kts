@@ -189,12 +189,12 @@ val prepareLicenseAssets by tasks.registering(PrepareLicenseAssetsTask::class) {
 
 plugins {
     id("com.android.application")
-    kotlin("plugin.serialization") version "2.4.20"
-    kotlin("plugin.compose") version "2.4.20"
+    kotlin("plugin.serialization") version "2.3.20"
+    kotlin("plugin.compose") version "2.3.20"
 }
 
 android {
-    compileSdk = 37
+    compileSdk = 36
     buildToolsVersion = cipherboardBuildToolsVersion
 
     defaultConfig {
