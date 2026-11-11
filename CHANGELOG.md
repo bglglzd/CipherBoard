@@ -4,6 +4,20 @@ All notable CipherBoard changes are documented in this file. The project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version 0.1.0.
 Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
+## Unreleased
+
+- Update the pinned native crypto library to vodozemac 0.11.2 for the published
+  zeroization fixes, with pre-upgrade synthetic account/session, pending-message
+  and replay compatibility tests. Preserve existing identity, wire and state
+  schemas; no automatic Vault clearing or re-pairing is introduced.
+- Update Gradle to the security-patched 8.14.6 line, align Kotlin plugins at
+  2.3.21, and refresh compatible Core/Fragment, test tools and pinned CI actions.
+- Remove known vulnerable test transitive versions through Robolectric 4.17 and
+  a test-only Guava floor. Regenerate the complete application dependency locks.
+- Document the SDK/AGP/minSdk constraints on deferred major dependency migrations.
+
+No application release is published by this maintenance entry.
+
 ## [0.5.2] - 2026-08-28
 
 ### Fixed

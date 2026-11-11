@@ -1,6 +1,8 @@
 # ADR 0001: Cryptographic library and Android integration
 
-- Status: accepted
+- Status: accepted historical decision; dependency pin superseded by
+  [ADR 0003](0003-crypto-library-0.11.2.md). The original values below describe
+  the initial selection, not the current dependency graph.
 - Date: 2026-07-13
 - Scope: `crypto-core`, pairing, Olm state storage, JNI
 

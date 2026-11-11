@@ -12,16 +12,16 @@ assemble APK assets.
 | Tool or input | Version |
 | --- | --- |
 | HeliBoard upstream | `v4.0`, `bd48798b99cccc99704eebf2a9259c02dbd684d5` |
-| Gradle wrapper | 8.14; distribution SHA-256 pinned in wrapper properties |
+| Gradle wrapper | 8.14.6; distribution SHA-256 pinned in wrapper properties |
 | Android Gradle Plugin | 8.13.2 |
-| Kotlin | 2.3.20 |
+| Kotlin | 2.3.21 (compiler, Compose and serialization plugins aligned) |
 | JDK | 21 with `javac` (application bytecode remains Java 17 compatible) |
 | Android build-tools | 36.1.0 |
 | compileSdk / targetSdk / minSdk | 36 / 36 / 23 |
 | Android NDK | 28.0.13004108 |
 | Rust used for verified JNI work | 1.94.0 |
 | cargo-ndk used for verified JNI work | 4.1.2 |
-| vodozemac | 0.10.0, locked |
+| vodozemac | 0.11.2, locked; stored-state compatibility in ADR 0003 |
 | Vosk Android / JNA | 0.3.75 / 5.18.1, locked |
 | Offline voice models | `vosk-model-small-en-us-0.15`, `vosk-model-small-ru-0.22`; size and SHA-256 pinned |
 | Android ABIs | release `arm64-v8a`; debug/test `arm64-v8a`, `x86_64` |
@@ -64,6 +64,9 @@ On Windows, ensure `JAVA_HOME` points to a JDK rather than a JRE. The Android
 Studio runtime can be used when it includes `javac`.
 
 ## Dependency Integrity
+
+The selected compatible updates, security rationale and deferred SDK/AGP
+migrations are recorded in [the maintenance baseline](docs/dependency-maintenance.md).
 
 - Gradle itself is fetched through the wrapper with a pinned distribution
   checksum.

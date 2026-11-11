@@ -82,8 +82,8 @@ still unverified.
 
 | ID | Requirement | Req. | State | Evidence / next evidence |
 | --- | --- | --- | --- | --- |
-| CRY-01 | Crypto ADR evaluates official `vodozemac`, security policy, audits, support, and Apache-2.0/GPLv3 compatibility | 7.2 | Implemented | `docs/adr/0001-crypto-library.md`; external review pending |
-| CRY-02 | Exact crypto library version/commit is pinned and dependency-locked | 7.2, 27 | Implemented | Exact `0.10.0` and Cargo lockfiles; final SBOM/build info pending |
+| CRY-01 | Crypto ADR evaluates official `vodozemac`, security policy, audits, support, and Apache-2.0/GPLv3 compatibility | 7.2 | Implemented | ADR 0001 and the dependency update in ADR 0003; external applied-cryptography audit pending |
+| CRY-02 | Exact crypto library version/commit is pinned and dependency-locked | 7.2, 27 | Implemented | Exact `0.11.2`, ADR 0003 provenance and Cargo lockfiles; final release SBOM/build info pending |
 | CRY-03 | No custom Curve25519, Ed25519, AEAD, HKDF, ratchet, RNG, hash, signature, or PGP-like scheme | 7.1 | Implemented | Source delegates primitives/Olm to vodozemac, sha2, JCA/Keystore; independent crypto review pending |
 | CRY-04 | v1 uses one-to-one Olm/Double Ratchet, not Megolm/group sessions | 7.2 | Implemented | `SessionConfig::version_2()` source/tests; no Megolm API use found |
 | CRY-05 | FFI API is minimal, length checked, typed, and does not stringify keys/state | 7.2, 24 | Implemented | One byte-oriented JNI dispatch and bounded CBOR/error mapping; envelope parser has real ASan/libFuzzer evidence, JNI-specific target pending |
