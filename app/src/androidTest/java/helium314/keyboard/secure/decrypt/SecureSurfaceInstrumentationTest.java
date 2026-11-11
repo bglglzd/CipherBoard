@@ -167,6 +167,7 @@ public final class SecureSurfaceInstrumentationTest {
         AtomicReference<CiphertextClipboardActivity> clipboardActivity = new AtomicReference<>();
         AtomicReference<SecureMessageViewerActivity> viewer = new AtomicReference<>();
         ActivityScenario<CiphertextClipboardActivity> scenario = null;
+        Throwable primaryFailure = null;
         try {
             scenario = ActivityScenario.launch(new Intent(targetContext, CiphertextClipboardActivity.class));
             scenario.onActivity(activity -> {
@@ -214,25 +215,52 @@ public final class SecureSurfaceInstrumentationTest {
                 assertFalse(retained != null && retained.contains(PLAINTEXT_SENTINEL));
                 assertSecureWindow(activity);
             });
+        } catch (RuntimeException | Error failure) {
+            primaryFailure = failure;
+            throw failure;
         } finally {
-            try {
-                instrumentation.runOnMainSync(() -> {
+            List<Throwable> cleanupFailures = new ArrayList<>();
+            tryCleanup(cleanupFailures, () -> instrumentation.runOnMainSync(() -> {
+                tryCleanup(cleanupFailures, () -> {
                     if (originalClipCaptured.get()) {
                         ClipboardManager clipboard =
                             (ClipboardManager) targetContext.getSystemService(Context.CLIPBOARD_SERVICE);
                         if (originalClip.get() == null) clipboard.clearPrimaryClip();
                         else clipboard.setPrimaryClip(originalClip.get());
                     }
+                });
+                tryCleanup(cleanupFailures, () -> {
                     SecureMessageViewerActivity activity = viewer.get();
                     if (activity != null && !activity.isFinishing() && !activity.isDestroyed()) activity.finish();
                 });
-            } finally {
-                try {
-                    if (scenario != null) scenario.close();
-                } finally {
-                    instrumentation.removeMonitor(monitor);
-                }
+            }));
+            ActivityScenario<CiphertextClipboardActivity> ownedScenario = scenario;
+            tryCleanup(cleanupFailures, () -> { if (ownedScenario != null) ownedScenario.close(); });
+            tryCleanup(cleanupFailures, () -> instrumentation.removeMonitor(monitor));
+            finishCleanup(primaryFailure, cleanupFailures);
+        }
+    }
+
+    private static void tryCleanup(List<Throwable> failures, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException | Error failure) {
+            failures.add(failure);
+        }
+    }
+
+    private static void finishCleanup(Throwable primaryFailure, List<Throwable> failures) {
+        if (primaryFailure != null) {
+            for (Throwable failure : failures) {
+                if (failure != primaryFailure) primaryFailure.addSuppressed(failure);
             }
+        } else if (!failures.isEmpty()) {
+            Throwable first = failures.get(0);
+            for (int index = 1; index < failures.size(); index++) {
+                if (failures.get(index) != first) first.addSuppressed(failures.get(index));
+            }
+            if (first instanceof RuntimeException) throw (RuntimeException) first;
+            throw (Error) first;
         }
     }
 
