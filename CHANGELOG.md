@@ -6,6 +6,10 @@ Pre-1.0 releases may contain compatibility changes that require re-pairing.
 
 ## Unreleased
 
+- Make clipboard instrumentation establish its owned foreground task and sample
+  focus on the UI thread, with bounded diagnostics and three required fresh
+  launch cycles. Restore captured test clipboard state during cleanup.
+
 - Update the pinned native crypto library to vodozemac 0.11.2 for the published
   zeroization fixes, with pre-upgrade synthetic account/session, pending-message
   and replay compatibility tests. Preserve existing identity, wire and state

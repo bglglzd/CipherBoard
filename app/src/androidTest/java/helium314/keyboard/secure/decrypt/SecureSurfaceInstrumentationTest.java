@@ -11,10 +11,12 @@ import static org.junit.Assert.assertTrue;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.Instrumentation;
+import android.app.KeyguardManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
@@ -145,6 +147,13 @@ public final class SecureSurfaceInstrumentationTest {
 
     @Test
     public void clipboardFallbackReadsOnlyAfterClickAndDoesNotReplaceClipboard() {
+        // Each fresh launch must pass; failures are not retried.
+        for (int cycle = 0; cycle < 3; cycle++) {
+            assertClipboardFallbackRoundTrip();
+        }
+    }
+
+    private static void assertClipboardFallbackRoundTrip() {
         keepDesugarSynchronizedCollectionsReachable();
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         Context targetContext = instrumentation.getTargetContext();
@@ -154,23 +163,25 @@ public final class SecureSurfaceInstrumentationTest {
             false
         );
         AtomicReference<ClipData> originalClip = new AtomicReference<>();
+        AtomicBoolean originalClipCaptured = new AtomicBoolean();
         AtomicReference<CiphertextClipboardActivity> clipboardActivity = new AtomicReference<>();
         AtomicReference<SecureMessageViewerActivity> viewer = new AtomicReference<>();
-        try (ActivityScenario<CiphertextClipboardActivity> scenario = ActivityScenario.launch(
-            new Intent(targetContext, CiphertextClipboardActivity.class)
-        )) {
+        ActivityScenario<CiphertextClipboardActivity> scenario = null;
+        try {
+            scenario = ActivityScenario.launch(new Intent(targetContext, CiphertextClipboardActivity.class));
             scenario.onActivity(activity -> {
                 clipboardActivity.set(activity);
                 assertSecureWindow(activity);
             });
-            waitUntil(
+            waitForWindowFocus(
                 "clipboard fallback did not receive window focus",
-                () -> clipboardActivity.get() != null && clipboardActivity.get().hasWindowFocus()
+                clipboardActivity.get()
             );
             scenario.onActivity(activity -> {
                 ClipboardManager clipboard =
                     (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
                 originalClip.set(clipboard.getPrimaryClip());
+                originalClipCaptured.set(true);
                 ClipData ciphertextClip = ClipData.newPlainText("", CLIPBOARD_CIPHERTEXT_SENTINEL);
                 clipboard.setPrimaryClip(ciphertextClip);
                 List<Button> buttons = findDescendants(activity, Button.class);
@@ -191,7 +202,7 @@ public final class SecureSurfaceInstrumentationTest {
             assertTrue("clipboard fallback did not open secure viewer", monitored instanceof SecureMessageViewerActivity);
             SecureMessageViewerActivity activity = (SecureMessageViewerActivity) monitored;
             viewer.set(activity);
-            waitUntil("secure viewer did not receive window focus", activity::hasWindowFocus);
+            waitForWindowFocus("secure viewer did not receive window focus", activity);
             instrumentation.runOnMainSync(() -> {
                 ClipboardManager clipboard =
                     (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
@@ -202,18 +213,52 @@ public final class SecureSurfaceInstrumentationTest {
                 assertEquals(CLIPBOARD_CIPHERTEXT_SENTINEL, retained);
                 assertFalse(retained != null && retained.contains(PLAINTEXT_SENTINEL));
                 assertSecureWindow(activity);
-                if (originalClip.get() == null) clipboard.clearPrimaryClip();
-                else clipboard.setPrimaryClip(originalClip.get());
-                activity.finish();
             });
         } finally {
-            SecureMessageViewerActivity activity = viewer.get();
-            if (activity != null) {
+            try {
                 instrumentation.runOnMainSync(() -> {
-                    if (!activity.isFinishing() && !activity.isDestroyed()) activity.finish();
+                    if (originalClipCaptured.get()) {
+                        ClipboardManager clipboard =
+                            (ClipboardManager) targetContext.getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (originalClip.get() == null) clipboard.clearPrimaryClip();
+                        else clipboard.setPrimaryClip(originalClip.get());
+                    }
+                    SecureMessageViewerActivity activity = viewer.get();
+                    if (activity != null && !activity.isFinishing() && !activity.isDestroyed()) activity.finish();
                 });
+            } finally {
+                try {
+                    if (scenario != null) scenario.close();
+                } finally {
+                    instrumentation.removeMonitor(monitor);
+                }
             }
-            instrumentation.removeMonitor(monitor);
+        }
+    }
+
+    private static void waitForWindowFocus(String message, Activity activity) {
+        assertNotNull("owned Activity missing", activity);
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        instrumentation.runOnMainSync(() -> bringTaskToFront(activity, activity.getTaskId()));
+        AtomicBoolean focused = new AtomicBoolean();
+        try {
+            waitUntil(message, () -> {
+                instrumentation.runOnMainSync(() -> focused.set(
+                    !activity.isFinishing() && !activity.isDestroyed() && activity.hasWindowFocus()
+                ));
+                return focused.get();
+            });
+        } catch (AssertionError failure) {
+            AtomicReference<String> state = new AtomicReference<>();
+            instrumentation.runOnMainSync(() -> {
+                PowerManager power = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
+                KeyguardManager keyguard = (KeyguardManager) activity.getSystemService(Context.KEYGUARD_SERVICE);
+                state.set("task=" + activity.getTaskId() + ", focus=" + activity.hasWindowFocus()
+                    + ", finishing=" + activity.isFinishing() + ", destroyed=" + activity.isDestroyed()
+                    + ", interactive=" + (power != null && power.isInteractive())
+                    + ", keyguardLocked=" + (keyguard != null && keyguard.isKeyguardLocked()));
+            });
+            throw new AssertionError(message + " (" + state.get() + ")", failure);
         }
     }
 
