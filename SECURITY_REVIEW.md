@@ -2,6 +2,12 @@
 
 **Review date:** 2026-08-27
 
+This is a historical review snapshot. The subsequent dependency security update,
+current pins and compatibility boundaries are documented in
+[ADR 0003](docs/adr/0003-crypto-library-0.11.2.md) and
+[the maintenance baseline](docs/dependency-maintenance.md). The older checks
+below are not current-release acceptance evidence.
+
 **Reviewed tree:** current 2026-08-27 worktree. A clean pre-public local signed
 candidate was verified separately, but its local evidence bundle is not tracked
 or published and must not be transferred to the rewritten public history.

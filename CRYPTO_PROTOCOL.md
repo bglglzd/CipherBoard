@@ -21,17 +21,19 @@ decision and its non-security goals are recorded in
 
 ## 1. Cryptographic Dependency
 
-CipherBoard pins `matrix-org/vodozemac` crate `0.10.0` (tag `0.10.0`, commit
-`bb39ec65357989f975e0d47f9fb35e0656180151`, crates.io checksum
-`b98bf83c0992966775b8012f194b07b44928996163e5a05b741b43891571ae5b`).
+CipherBoard pins `matrix-org/vodozemac` crate `0.11.2` (tag `0.11.2`, commit
+`fb4a9980a1038c646824ea7e64567eec28bf582e`, crates.io checksum
+`cafdb6875115a436251b280d741286a9cec7fc4daab0588ea26481dd8e2bab2f`).
 Only one-to-one Olm is used. Every session is created with
 `SessionConfig::version_2()`; Megolm is not used.
 
-Vodozemac 0.10.0 labels the v2 session configuration experimental. The
+Vodozemac 0.11.2 labels the v2 session configuration experimental. The
 published Least Authority review covered older vodozemac commits and did not
 audit this Android/JNI/storage/UI integration or this complete wire protocol.
 Use of the library is not an independent audit of CipherBoard. See
-`docs/adr/0001-crypto-library.md`.
+`docs/adr/0001-crypto-library.md`. The security update and pre-upgrade synthetic
+stored-state compatibility checks are recorded in
+`docs/adr/0003-crypto-library-0.11.2.md`; the wire and storage schema are retained.
 
 CipherBoard uses vodozemac for Curve25519, Ed25519, Olm/Double Ratchet and its
 randomness. SHA-256 is provided by the Rust `sha2` crate. Android storage uses

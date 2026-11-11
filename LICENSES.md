@@ -67,8 +67,9 @@ resolved Android runtime graph can be inspected with:
 | Component | Pinned declaration | License |
 | --- | --- | --- |
 | Android Gradle Plugin / ViewBinding | 8.13.2 | Apache-2.0 |
-| Kotlin stdlib and compiler plugins | 2.3.20 | Apache-2.0 |
-| AndroidX Core KTX | 1.17.0 | Apache-2.0 |
+| Kotlin stdlib and compiler plugins | 2.3.21 | Apache-2.0 |
+| AndroidX Core KTX | 1.18.0 | Apache-2.0 |
+| AndroidX Fragment KTX | 1.9.1 | Apache-2.0 |
 | AndroidX RecyclerView | 1.4.0 | Apache-2.0 |
 | AndroidX Autofill | 1.3.0 | Apache-2.0 |
 | AndroidX ViewPager2 | 1.1.0 | Apache-2.0 |
@@ -112,7 +113,7 @@ graphs are fixed by `crypto-core/native/Cargo.lock` and
 
 | Crate | Version | License metadata |
 | --- | --- | --- |
-| vodozemac | 0.10.0 | Apache-2.0 |
+| vodozemac | 0.11.2 | Apache-2.0 |
 | matrix-pickle / derive | 0.2.3 | Apache-2.0 |
 | prost / derive | 0.14.4 | Apache-2.0 |
 | minicbor / derive | 0.25.1 / 0.15.3 | BlueOak-1.0.0 |
@@ -120,15 +121,15 @@ graphs are fixed by `crypto-core/native/Cargo.lock` and
 | combine | 4.6.7 | MIT |
 | generic-array | 0.14.7 | MIT |
 | jni | 0.21.1 | MIT OR Apache-2.0 |
-| base64 | 0.22.1 | MIT OR Apache-2.0 |
-| getrandom | 0.2.16 | MIT OR Apache-2.0 |
-| serde / derive | 1.0.219 | MIT OR Apache-2.0 |
-| serde_json | 1.0.140 | MIT OR Apache-2.0 |
-| sha2 | 0.10.9 | MIT OR Apache-2.0 |
-| zeroize / derive | 1.8.2 / 1.5.0 | Apache-2.0 OR MIT |
-| curve25519-dalek | 4.1.3 | BSD-3-Clause |
-| ed25519-dalek | 2.2.0 | BSD-3-Clause |
-| x25519-dalek | 2.0.1 | BSD-3-Clause |
+| base64 | 0.22.1 / 0.23.1 | MIT OR Apache-2.0 |
+| getrandom | 0.2.16 / 0.4.3 | MIT OR Apache-2.0 |
+| serde / derive | 1.0.229 | MIT OR Apache-2.0 |
+| serde_json | 1.0.151 | MIT OR Apache-2.0 |
+| sha2 | 0.10.9 / 0.11.1 | MIT OR Apache-2.0 |
+| zeroize / derive | 1.9.0 / 1.5.0 | Apache-2.0 OR MIT |
+| curve25519-dalek | 5.0.0 | BSD-3-Clause |
+| ed25519-dalek | 3.0.0 | BSD-3-Clause |
+| x25519-dalek | 3.0.0 | BSD-3-Clause |
 | subtle | 2.6.1 | BSD-3-Clause |
 
 `cargo tree --target aarch64-linux-android --edges normal` and the target
@@ -148,15 +149,17 @@ These are not intended to be packaged in the release APK:
 
 | Component | Version | License |
 | --- | --- | --- |
-| Gradle | 8.14 | Apache-2.0 |
+| Gradle | 8.14.6 | Apache-2.0 |
 | cargo-ndk | 4.1.2 used by the verified environment | MIT OR Apache-2.0 |
 | cargo-fuzz | 0.13.2 | MIT OR Apache-2.0 |
 | libfuzzer-sys | 0.4.13 | MIT OR Apache-2.0 |
-| proptest | 1.6.0 | MIT OR Apache-2.0 |
+| proptest | 1.11.0 | MIT OR Apache-2.0 |
 | winnow (host proc-macro graph) | 0.7.15 / 1.0.3 | MIT |
 | JUnit 4 | 4.13.2 | EPL-1.0 |
-| Mockito | 5.23.0 | MIT |
-| Robolectric | 4.16.1 | MIT |
+| Mockito | 5.24.0 | MIT |
+| Robolectric | 4.17 | MIT |
+| Guava (unit-test constraint) | 33.7.2-jre | Apache-2.0 |
+| Bouncy Castle (Robolectric transitive) | 1.85 | MIT |
 | AndroidX Test runner/core/ext | 1.7.0 / 1.7.0 / 1.3.0 | Apache-2.0 |
 
 ## Verification Evidence

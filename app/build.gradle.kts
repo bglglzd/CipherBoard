@@ -177,8 +177,8 @@ val prepareLicenseAssets by tasks.registering(Sync::class) {
 plugins {
     id("com.android.application")
     kotlin("android")
-    kotlin("plugin.serialization") version "2.3.20"
-    kotlin("plugin.compose") version "2.3.20"
+    kotlin("plugin.serialization") version "2.3.21"
+    kotlin("plugin.compose") version "2.3.21"
 }
 
 android {
@@ -381,10 +381,10 @@ dependencies {
     implementation(project(":secure-storage"))
     implementation("androidx.biometric:biometric:1.1.0")
     // FragmentActivity + Activity Result APIs require Fragment >= 1.3; use the current stable line.
-    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
 
     // androidx
-    implementation("androidx.core:core-ktx:1.17.0") // 1.18.0 requires minSdk 23
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.autofill:autofill:1.3.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
@@ -396,7 +396,7 @@ dependencies {
     implementation("com.alphacephei:vosk-android:0.3.75")
 
     // compose
-    // newer than 2025.11.01 contains androidx.compose.material:material-android:1.10.0, which requires minSdk 23
+    // Keep this BOM aligned with the tested compiler/SDK; review Compose updates together.
     // maybe it's possible to use tools:overrideLibrary="androidx.compose.material" as it's not used explicitly, but probably this is just going to crash
     implementation(platform("androidx.compose:compose-bom:2025.11.01"))
     implementation("androidx.compose.material3:material3")
@@ -410,8 +410,13 @@ dependencies {
     // test
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-core:5.23.0")
-    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("org.mockito:mockito-core:5.24.0")
+    testImplementation("org.robolectric:robolectric:4.17")
+    constraints {
+        testImplementation("com.google.guava:guava:33.7.2-jre") {
+            because("Robolectric's older transitive Guava is affected by GHSA-xxph-c9ww-hj94")
+        }
+    }
     testImplementation("androidx.test:runner:1.7.0")
     testImplementation("androidx.test:core:1.7.0")
 

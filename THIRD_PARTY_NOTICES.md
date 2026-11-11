@@ -23,7 +23,7 @@ readable without network access from CipherBoard's Licenses screen.
 
 ## Matrix vodozemac
 
-CipherBoard uses `vodozemac 0.10.0`, `matrix-pickle 0.2.3`, and related code
+CipherBoard uses `vodozemac 0.11.2`, `matrix-pickle 0.2.3`, and related code
 published by Matrix.org contributors under Apache License 2.0. Copyright
 notices in the upstream sources include The Matrix.org Foundation C.I.C. and
 the named vodozemac contributors. The Apache 2.0 license text is included in

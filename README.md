@@ -65,6 +65,9 @@ The current production build is **CipherBoard 0.5.2** for `arm64-v8a` devices.
 Open the [latest release](https://github.com/bglglzd/CipherBoard/releases/latest)
 for release notes and verification evidence.
 
+Source maintenance listed under [Unreleased](CHANGELOG.md#unreleased), including
+the newer dependency security fixes, is not included in that published APK.
+
 | Release file | Purpose |
 | --- | --- |
 | `CipherBoard-0.5.2-release.apk` | **Install this file.** It is the only application package. |

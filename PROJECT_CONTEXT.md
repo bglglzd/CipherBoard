@@ -47,8 +47,9 @@ meet this floor.
   material documented separately
 - Android baseline: compile/target SDK 36, Java/JVM 17, NDK
   `28.0.13004108`
-- Crypto decision: `matrix-org/vodozemac` `0.10.0`, exact crate checksum and
-  commit recorded in `docs/adr/0001-crypto-library.md`
+- Crypto decision: `matrix-org/vodozemac` `0.11.2`, exact crate checksum,
+  commit and persisted-state compatibility recorded in
+  `docs/adr/0003-crypto-library-0.11.2.md`; original Olm v2 design in ADR 0001
 
 CipherBoard is not an official HeliBoard release and must use distinct naming,
 iconography, signing, and support language. Russian and English layouts,

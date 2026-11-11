@@ -1,0 +1,39 @@
+{
+  "source_sha": "bdcaa5f14d2b218a2caf966a2d5dcad085b37251",
+  "vodozemac": "0.10.0",
+  "purpose": "Synthetic, process-local random identities and Olm v2 sessions for real pre-update compatibility verification. Never used with real people, accounts, devices or services.",
+  "artifacts": [
+    {
+      "name": "initiator-account.bin",
+      "bytes": 430,
+      "sha256": "7550a2bd74331def4e6f3fc11a7135309eb05b2c60c6896f067bd678870f320f"
+    },
+    {
+      "name": "initiator-session.bin",
+      "bytes": 2070,
+      "sha256": "87adce7edc2f13eb6264a103234f94e313f87eb486999cc7ca7f56a23e314d4a"
+    },
+    {
+      "name": "pending-parts.json",
+      "bytes": 258,
+      "sha256": "7bfc130f880e75c61af50d5608265c3ab3a356ac754974414b949d2c8f2098bf"
+    },
+    {
+      "name": "responder-account.bin",
+      "bytes": 425,
+      "sha256": "ef45e926dfe4ccec01b60ea450d12a631b9627cbfdd3fc7f3b918f2261387c9c"
+    },
+    {
+      "name": "responder-after-pending.bin",
+      "bytes": 1819,
+      "sha256": "6b35a50388d0b3af558e8d5975e883cb6d01e03a1f0afad8e2c560dd5b63d48b"
+    },
+    {
+      "name": "responder-session.bin",
+      "bytes": 1616,
+      "sha256": "ce24e0b14f67847affc52cbe5268921f7a8112c94b969d99b62a7c639665f71d"
+    }
+  ],
+  "baseline_restore": "PASS at generation",
+  "pending_message": "Synthetic legacy pending message"
+}

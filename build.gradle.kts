@@ -1,9 +1,10 @@
 import org.gradle.api.artifacts.dsl.LockMode
+import org.gradle.api.tasks.testing.Test
 
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-    val kotlinVersion = "2.3.20"
+    val kotlinVersion = "2.3.21"
     repositories {
         mavenCentral()
         google()
@@ -22,6 +23,24 @@ allprojects {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
+    }
+}
+
+// Robolectric 4.17 accesses these OpenJDK internals on JDK 17+.
+// Limit the upstream-recommended openings to the three unit-test JVMs.
+configure(listOf(project(":app"), project(":pairing"), project(":secure-storage"))) {
+    tasks.withType<Test>().configureEach {
+        jvmArgs(
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.util=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "--add-opens=java.base/java.net=ALL-UNNAMED",
+            "--add-opens=java.base/java.security=ALL-UNNAMED",
+            "--add-opens=java.base/java.text=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+            "--add-opens=java.desktop/java.awt.font=ALL-UNNAMED",
+            "--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        )
     }
 }
 
