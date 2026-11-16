@@ -189,7 +189,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.2.16",
- "minicbor",
+ "minicbor 0.25.1",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -203,7 +203,7 @@ version = "0.1.0"
 dependencies = [
  "cipherboard-crypto",
  "jni",
- "minicbor",
+ "minicbor 2.3.1",
  "proptest",
  "zeroize",
 ]
@@ -632,6 +632,12 @@ checksum = "c0452a60c1863c1f50b5f77cd295e8d2786849f35883f0b9e18e7e6e1b5691b0"
 dependencies = [
  "minicbor-derive",
 ]
+
+[[package]]
+name = "minicbor"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7244eafd1e09e7c4e33043881997aa6ab6dffff3ed2cee3395a278980481d6e"
 
 [[package]]
 name = "minicbor-derive"
