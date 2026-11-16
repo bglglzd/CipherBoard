@@ -413,7 +413,7 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.24.0")
     testImplementation("org.robolectric:robolectric:4.17")
     constraints {
-        testImplementation("com.google.guava:guava:33.7.2-jre") {
+        testImplementation("com.google.guava:guava:33.8.0-jre") {
             because("Robolectric's older transitive Guava is affected by GHSA-xxph-c9ww-hj94")
         }
     }
