@@ -197,7 +197,7 @@ jobs:
         run: git diff --exit-code -- app/gradle.lockfile '**/Cargo.lock'
 
       - name: Upload verified debug APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: CipherBoard-debug-${{ github.sha }}
           path: dist/CipherBoard-*-debug.apk
@@ -206,7 +206,7 @@ jobs:
 
       - name: Upload Android reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-reports-${{ github.sha }}
           path: |
