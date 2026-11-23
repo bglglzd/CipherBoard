@@ -35,10 +35,10 @@ kotlin {
 
 dependencies {
     implementation("com.google.zxing:core:3.5.4")
-    implementation("androidx.camera:camera-camera2:1.6.1")
-    implementation("androidx.camera:camera-lifecycle:1.6.1")
+    implementation("androidx.camera:camera-camera2:1.7.0")
+    implementation("androidx.camera:camera-lifecycle:1.7.0")
     // Exposed by PairingQrScannerController.bind(), so consumers need the type on their compile classpath.
-    api("androidx.camera:camera-view:1.6.1") {
+    api("androidx.camera:camera-view:1.7.0") {
         // PreviewView does not use video capture. Excluding it also removes Media3's
         // network-state-aware runtime from this offline-only application.
         exclude(group = "androidx.camera", module = "camera-video")
