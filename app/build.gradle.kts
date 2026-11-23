@@ -390,7 +390,7 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
 
     // kotlin
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
 
     // Offline speech recognition. The Russian and English models are packaged as APK assets.
     implementation("com.alphacephei:vosk-android:0.3.75")
@@ -403,7 +403,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     "debugCompileOnly"("androidx.compose.ui:ui-tooling")
     "debugNoMinifyCompileOnly"("androidx.compose.ui:ui-tooling")
-    implementation("androidx.navigation:navigation-compose:2.9.8")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
     implementation("sh.calvin.reorderable:reorderable:3.1.0") // for easier re-ordering
     implementation("com.github.skydoves:colorpicker-compose:1.1.3") // for user-defined colors
 
